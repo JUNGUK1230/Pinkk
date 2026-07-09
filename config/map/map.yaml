@@ -1,0 +1,12 @@
+map:
+  width_cm: 200.0
+  height_cm: 100.0
+  road_width_cm: 30.0
+
+parking:
+  width_cm: 17.5
+  height_cm: 20.0
+
+charging_parking:
+  width_cm: 17.5
+  height_cm: 20.0

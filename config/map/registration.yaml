@@ -1,0 +1,5 @@
+# Camera BEV -> LiDAR Map 정합 파라미터
+scale: 1.0
+rotation_deg: 0.0
+translation_x: 0.0
+translation_y: 0.0
