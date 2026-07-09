@@ -8,5 +8,5 @@ eb9b
 ```bash
 source ~/venv/mycobot/bin/activate
 cd ~/venv/mycobot
-python3 flask_server_py.
+python3 flask_server.py
 ```
