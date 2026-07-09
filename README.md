@@ -4,20 +4,12 @@ Python 기반 스마트 주차 및 자동 충전 프로젝트 기본 구조입�
 
 ## 주요 모듈
 
-- `src/overhead_vision`: 상단 카메라, BEV, LiDAR 맵 정합, YOLO, 경로 생성
-- `src/vehicle_control`: 차량 제어 담당 코드
-- `src/robot_arm/robot_camera`: 로봇팔 장착 카메라 및 비전 처리
-- `src/robot_arm/motion_control`: 로봇팔 관절 및 충전 동작 제어
-- `src/system_manager`: 전체 시스템 통합 및 상태 관리
-- `config`: 실행 파라미터
-- `camera/calibration`: 상단 카메라 촬영 및 렌즈 보정 도구
-- `camera/bird_eye_view`: 상단 카메라 BEV 변환 및 좌표 도구
-- `map/lidar_map`: LiDAR 맵 촬영 결과를 확인하는 작업 공간
-- `maps`: LiDAR / Camera / Fused Map
-- `models`: YOLO 모델 가중치 위치
-- `scripts`: 실행 스크립트
-- `tests`: 테스트 코드
-- `output`: 실행 결과 저장 경로
+- `src/robot_arm`: 로봇팔 카메라, 동작 제어 및 설정
+- `src/central_control`: 상단 카메라, BEV, 지도, 경로 계획, 모델, 시스템 통합 및 설정
+- `src/vehicle_control`: 차량 제어 코드 및 설정
+
+프로젝트 루트에는 안내 문서인 `README.md`와 라이브러리 의존성 파일인
+`requirements.txt`만 두고, 실행 코드와 데이터는 위 세 영역 안에서 관리합니다.
 
 ## 설치
 
@@ -32,16 +24,16 @@ pip install -r requirements.txt
 카메라 확인:
 
 ```bash
-python3 -m src.overhead_vision.camera.camera_capture
+python3 -m src.central_control.overhead_vision.camera.camera_capture
 ```
 
 전체 파이프라인:
 
 ```bash
-python3 main.py
+python3 -m src.central_control.main
 ```
 
 ## 주의
 
-- YOLO `.pt` 모델 파일은 기본적으로 Git에 올리지 않도록 설정되어 있습니다.
+- YOLO 모델은 `src/central_control/models`에서 관리합니다.
 - LiDAR 대용량 맵 및 실행 결과는 필요에 따라 별도 관리하세요.

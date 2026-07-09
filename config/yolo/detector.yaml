@@ -1,4 +1,0 @@
-yolo:
-  model_path: models/best.pt
-  confidence: 0.5
-  iou: 0.45

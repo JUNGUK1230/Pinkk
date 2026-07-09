@@ -40,7 +40,7 @@ def open_camera(config: dict) -> cv2.VideoCapture:
 
 
 def main() -> None:
-    config = load_camera_config("config/camera/camera.yaml")
+    config = load_camera_config("src/central_control/config/camera/camera.yaml")
     cap = open_camera(config)
 
     print("'q' 키를 누르면 종료됩니다.")
