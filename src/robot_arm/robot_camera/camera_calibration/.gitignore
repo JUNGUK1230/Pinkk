@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+
+# Captured calibration images can become large.
+images/raw/*
+images/accepted/*
+!images/raw/.gitkeep
+!images/accepted/.gitkeep
+
+# Calibration outputs are machine/camera specific.
+results/*
+!results/.gitkeep
