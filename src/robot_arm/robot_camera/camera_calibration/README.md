@@ -14,7 +14,7 @@ dist_coeffs: 렌즈 왜곡 계수
 ## 폴더 구조
 
 ```text
-Downloads/camera_calibration/
+camera_calibration/
   images/
     raw/        # 체스보드 촬영 원본 이미지
     accepted/   # 필요하면 좋은 이미지만 따로 모아두는 폴더
@@ -31,30 +31,40 @@ Downloads/camera_calibration/
 5. OpenCV 내부 캘리브레이션을 실행합니다.
 6. 재투영 오차와 왜곡 보정 결과를 확인합니다.
 
+## 실행 위치
+
+아래 명령어는 `camera_calibration` 폴더 안에서 실행하는 기준입니다.
+
+```bash
+cd src/robot_arm/robot_camera/camera_calibration
+```
+
+만약 저장소 루트가 아니라 다른 위치에서 실행한다면, 위 경로를 현재 위치에 맞게 조정하면 됩니다.
+
 ## OpenCV 카메라 연결 확인
 
 먼저 카메라가 OpenCV에서 정상적으로 열리는지 확인합니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/test_opencv_camera.py --camera 2
+python3 scripts/test_opencv_camera.py --camera 2
 ```
 
 USB 카메라가 몇 번 인덱스로 잡혔는지 모르면 먼저 스캔합니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/test_opencv_camera.py --scan
+python3 scripts/test_opencv_camera.py --scan
 ```
 
 리눅스에서 USB 카메라 장치 경로를 직접 지정할 수도 있습니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/test_opencv_camera.py --camera /dev/video2
+python3 scripts/test_opencv_camera.py --camera /dev/video2
 ```
 
 특정 해상도로 확인하고 싶으면 다음처럼 실행합니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/test_opencv_camera.py --camera 2 --width 1280 --height 720
+python3 scripts/test_opencv_camera.py --camera 2 --width 1280 --height 720
 ```
 
 실행 중 키 조작:
@@ -66,13 +76,13 @@ q: 종료
 ## 이미지 촬영
 
 ```bash
-python3 Downloads/camera_calibration/scripts/capture_checkerboard.py --camera 2
+python3 scripts/capture_checkerboard.py --camera 2
 ```
 
 USB 카메라 장치 경로를 직접 지정하려면:
 
 ```bash
-python3 Downloads/camera_calibration/scripts/capture_checkerboard.py --camera /dev/video2
+python3 scripts/capture_checkerboard.py --camera /dev/video2
 ```
 
 실행 중 키 조작:
@@ -85,7 +95,7 @@ q: 종료
 저장 위치:
 
 ```text
-Downloads/camera_calibration/images/raw
+images/raw
 ```
 
 ## 캘리브레이션 실행
@@ -95,8 +105,8 @@ Downloads/camera_calibration/images/raw
 주의: `cols`, `rows`는 체스보드 칸 수가 아니라 **내부 코너 개수**입니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/calibrate_intrinsics.py \
-  --images Downloads/camera_calibration/images/raw \
+python3 scripts/calibrate_intrinsics.py \
+  --images images/raw \
   --cols 9 \
   --rows 6 \
   --square-size 25.0
@@ -105,9 +115,9 @@ python3 Downloads/camera_calibration/scripts/calibrate_intrinsics.py \
 주요 결과 파일:
 
 ```text
-Downloads/camera_calibration/results/intrinsics.npz
-Downloads/camera_calibration/results/intrinsics.yaml
-Downloads/camera_calibration/results/calibration_report.txt
+results/intrinsics.npz
+results/intrinsics.yaml
+results/calibration_report.txt
 ```
 
 ## 왜곡 보정 미리보기
@@ -115,8 +125,8 @@ Downloads/camera_calibration/results/calibration_report.txt
 캘리브레이션 결과를 이용해서 원본 영상과 왜곡 보정 영상을 나란히 확인합니다.
 
 ```bash
-python3 Downloads/camera_calibration/scripts/preview_undistort.py \
-  --calib Downloads/camera_calibration/results/intrinsics.npz \
+python3 scripts/preview_undistort.py \
+  --calib results/intrinsics.npz \
   --camera 2
 ```
 
@@ -144,7 +154,7 @@ python3 Downloads/camera_calibration/scripts/preview_undistort.py \
 USB 포트 인식 코드에서는 보통 아래 파일을 불러와 사용하면 됩니다.
 
 ```text
-Downloads/camera_calibration/results/intrinsics.npz
+results/intrinsics.npz
 ```
 
 예시:
@@ -152,7 +162,7 @@ Downloads/camera_calibration/results/intrinsics.npz
 ```python
 import numpy as np
 
-data = np.load("Downloads/camera_calibration/results/intrinsics.npz")
+data = np.load("results/intrinsics.npz")
 camera_matrix = data["camera_matrix"]
 dist_coeffs = data["dist_coeffs"]
 ```
