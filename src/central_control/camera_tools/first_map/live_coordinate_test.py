@@ -16,9 +16,7 @@ CAMERA_HEIGHT = 1080
 FPS = 30
 
 
-PROJECT_DIR = Path(
-    "/home/junguk/pinkk/src/central_control/camera_tools/first_map"
-)
+PROJECT_DIR = Path(__file__).resolve().parent
 
 
 CALIBRATION_FILE = (
