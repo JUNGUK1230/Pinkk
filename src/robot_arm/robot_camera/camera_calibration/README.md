@@ -100,14 +100,15 @@ images/raw
 
 ## 캘리브레이션 실행
 
-예시는 내부 코너가 `9 x 6`이고, 체스보드 한 칸 크기가 `25 mm`인 경우입니다.
+예시는 체스보드 칸이 `9 x 7`이고, 한 칸 크기가 `25 mm`인 경우입니다.
 
 주의: `cols`, `rows`는 체스보드 칸 수가 아니라 **내부 코너 개수**입니다.
+체스보드 칸이 `9 x 7`이면 내부 코너는 `8 x 6`입니다.
 
 ```bash
 python3 scripts/calibrate_intrinsics.py \
   --images images/raw \
-  --cols 9 \
+  --cols 8 \
   --rows 6 \
   --square-size 25.0
 ```
