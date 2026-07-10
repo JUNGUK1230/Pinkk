@@ -10,3 +10,9 @@ source ~/venv/mycobot/bin/activate
 cd ~/venv/mycobot
 python3 flask_server.py
 ```
+
+웹캠 원격 접속할 노트북
+```bash
+cd ~/Download
+python3 test_0.py
+```
