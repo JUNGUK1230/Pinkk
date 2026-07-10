@@ -16,7 +16,7 @@ FPS = 30
 
 
 PROJECT_DIR = Path(
-    "/home/junguk/project"
+    "/home/junguk/pinkk/src/central_control/camera_tools/first_map"
 )
 
 
