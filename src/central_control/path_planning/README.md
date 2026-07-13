@@ -46,6 +46,7 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_map_load.py
 python3 scripts/test_astar.py
 python3 scripts/test_astar_overlay.py
+python3 scripts/test_astar_on_camera_bev.py
 ```
 
 생성되는 파일은 다음과 같습니다.
@@ -55,10 +56,13 @@ python3 scripts/test_astar_overlay.py
 - `output/astar_result.png`: inflated grid 위의 경로(빨강), 시작점(초록), 목표점(파랑)
 - `output/astar_inflation_comparison.png`: 원본 장애물(검정), inflation 영역(회색), A* 경로를 함께 표시
 - `output/astar_on_overlay.png`: camera/LiDAR rigid overlay 위에 표시한 A* 경로
+- `output/astar_on_camera_bev.png`: 역 affine 변환으로 Camera BEV 위에 표시한 A* 경로
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
 
 `test_astar_overlay.py`는 inflated grid에서 생성한 grid 경로를 world cm로 변환한 다음, 좌하단 world 원점과 `8 px/cm` 비율을 사용해 BEV pixel로 변환합니다. 정합 이미지가 기준 크기 `1600×800`과 다르면 경고하며, 이미지 범위 밖의 경로점은 그리지 않고 개수를 출력합니다. 현재 `camera_lidar_rigid_overlay.png`처럼 정합 결과가 LiDAR grid 크기로 저장된 경우에는 grid 셀이 이미 오버레이 pixel과 일치하므로 직접 좌표 정렬을 사용합니다.
+
+`test_astar_on_camera_bev.py`는 `camera_to_lidar_rigid_registration.npz`의 `affine_matrix`(방향: Camera BEV pixel → LiDAR pixel)를 `cv2.invertAffineTransform`으로 뒤집어 LiDAR grid의 A* 경로를 Camera BEV pixel로 투영합니다. `bev_result.png`, `latest_bev.png`, `camera_bev.png`, `live_bev.png`, `undistorted_bev.png` 순서로 이미지를 찾으며, 모두 없으면 경고 후 흰색 `1600×800` 배경을 사용합니다.
 
 ## 다음 단계
 
