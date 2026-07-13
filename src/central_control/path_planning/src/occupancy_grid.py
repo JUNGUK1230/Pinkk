@@ -1,4 +1,5 @@
 from collections import deque
+import math
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,9 @@ class OccupancyGridMap:
         self.grid = self._convert_to_occupancy(self.raw)
         if self.block_outside_area:
             self.grid = self._block_outside_area(self.grid)
+        # Inflation is generated on demand so the original occupancy data remains intact.
+        self.inflated_grid: np.ndarray | None = None
+        self.inflation_radius_cells: int | None = None
 
     def _convert_to_occupancy(self, img: np.ndarray) -> np.ndarray:
         """
@@ -129,6 +133,31 @@ class OccupancyGridMap:
         """Return the binary occupancy grid (0: free, 100: obstacle)."""
         return self.grid
 
+    def inflate_obstacles(
+        self, radius_cm: float, resolution_cm: float | None = None
+    ) -> np.ndarray:
+        """Return a grid whose obstacles are expanded by the requested safe radius."""
+        if radius_cm < 0:
+            raise ValueError("radius_cm must be zero or positive")
+        effective_resolution = self.resolution_cm if resolution_cm is None else resolution_cm
+        if effective_resolution <= 0:
+            raise ValueError("resolution_cm must be positive")
+
+        # Rounding upward guarantees the requested physical clearance is not reduced.
+        radius_cells = int(math.ceil(radius_cm / effective_resolution))
+        kernel_size = 2 * radius_cells + 1
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
+        )
+        obstacle_mask = (self.grid >= self.obstacle_threshold).astype(np.uint8)
+        inflated_mask = cv2.dilate(obstacle_mask, kernel, iterations=1)
+
+        inflated_grid = np.zeros_like(self.grid, dtype=np.uint8)
+        inflated_grid[inflated_mask > 0] = 100
+        self.inflated_grid = inflated_grid
+        self.inflation_radius_cells = radius_cells
+        return inflated_grid
+
     def save_debug_image(self, save_path: str) -> None:
         """
         obstacle = black, free = white 로 저장.
@@ -139,6 +168,18 @@ class OccupancyGridMap:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(output_path), vis):
             raise RuntimeError(f"Failed to save debug image: {output_path}")
+
+    def save_inflated_debug_image(self, save_path: str) -> None:
+        """Save the most recently generated inflated occupancy grid."""
+        if self.inflated_grid is None:
+            raise RuntimeError("inflate_obstacles() must be called before saving")
+
+        vis = np.full_like(self.inflated_grid, 255, dtype=np.uint8)
+        vis[self.inflated_grid >= self.obstacle_threshold] = 0
+        output_path = Path(save_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cv2.imwrite(str(output_path), vis):
+            raise RuntimeError(f"Failed to save inflated debug image: {output_path}")
 
     def print_info(self) -> None:
         """Print map metadata and occupancy statistics."""

@@ -18,6 +18,12 @@ Python 기반 자율주행 주차 경로계획 모듈의 기본 구현입니다.
 
 `OccupancyGridMap`은 기본적으로 `block_outside_area=True`를 사용합니다. 외벽의 작은 끊김을 morphology close로 막은 임시 mask에서 테두리와 연결된 자유 공간을 찾고, 그 외부 영역을 최종 grid의 장애물로 처리합니다. morphology로 두께워진 임시 장애물은 최종 grid에 복사하지 않습니다.
 
+## Obstacle inflation
+
+2D A*는 차량을 크기가 없는 하나의 점으로 보므로, 원본 occupancy grid만 사용하면 벽과 주차선 바로 옆으로 경로가 생성될 수 있습니다. 이를 방지하기 위해 차량 반폭과 안전 마진을 고려한 obstacle inflation을 적용합니다.
+
+현재 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. 향후 Hybrid A*에서는 차량의 회전된 rectangle footprint를 이용한 collision check로 개선할 예정입니다.
+
 ## 요구 환경
 
 - Python 3.10 이상
@@ -39,14 +45,20 @@ python3 -m pip install numpy opencv-python pyyaml
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_map_load.py
 python3 scripts/test_astar.py
+python3 scripts/test_astar_overlay.py
 ```
 
 생성되는 파일은 다음과 같습니다.
 
 - `output/debug_occupancy_grid.png`: 흰색 자유 공간과 검은색 장애물로 표현한 occupancy grid
-- `output/astar_result.png`: 경로(빨강), 시작점(초록), 목표점(파랑)을 표시한 A* 결과
+- `output/debug_inflated_grid.png`: 7 cm 안전 마진으로 팽창한 occupancy grid
+- `output/astar_result.png`: inflated grid 위의 경로(빨강), 시작점(초록), 목표점(파랑)
+- `output/astar_inflation_comparison.png`: 원본 장애물(검정), inflation 영역(회색), A* 경로를 함께 표시
+- `output/astar_on_overlay.png`: camera/LiDAR rigid overlay 위에 표시한 A* 경로
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
+
+`test_astar_overlay.py`는 inflated grid에서 생성한 grid 경로를 world cm로 변환한 다음, 좌하단 world 원점과 `8 px/cm` 비율을 사용해 BEV pixel로 변환합니다. 정합 이미지가 기준 크기 `1600×800`과 다르면 경고하며, 이미지 범위 밖의 경로점은 그리지 않고 개수를 출력합니다. 현재 `camera_lidar_rigid_overlay.png`처럼 정합 결과가 LiDAR grid 크기로 저장된 경우에는 grid 셀이 이미 오버레이 pixel과 일치하므로 직접 좌표 정렬을 사용합니다.
 
 ## 다음 단계
 

@@ -12,7 +12,7 @@ sys.path.append(str(PROJECT_ROOT / "src"))
 
 from astar_planner import AStarPlanner  # noqa: E402
 from occupancy_grid import OccupancyGridMap  # noqa: E402
-from visualization import draw_grid_with_path  # noqa: E402
+from visualization import draw_grid_with_path, draw_inflation_comparison  # noqa: E402
 
 GridPoint = tuple[int, int]
 
@@ -95,34 +95,60 @@ def main() -> None:
         str(yaml_path),
         block_outside_area=True,
     )
-    grid = occupancy_map.get_grid()
-    height, width = grid.shape
+    original_grid = occupancy_map.get_grid()
+    occupancy_map.save_debug_image(str(PROJECT_ROOT / "output" / "debug_occupancy_grid.png"))
+
+    inflation_radius_cm = 7.0
+    inflated_grid = occupancy_map.inflate_obstacles(
+        radius_cm=inflation_radius_cm,
+        resolution_cm=occupancy_map.resolution_cm,
+    )
+    inflated_debug_path = PROJECT_ROOT / "output" / "debug_inflated_grid.png"
+    occupancy_map.save_inflated_debug_image(str(inflated_debug_path))
+    radius_cells = occupancy_map.inflation_radius_cells
+    height, width = inflated_grid.shape
 
     original_start = (20, 20)
-    start = find_nearest_free(grid, original_start)
+    start = find_nearest_free(inflated_grid, original_start)
     # Keep the requested goal when possible; otherwise move it inside with a margin.
     original_goal = (200, 180)
     bounded_goal = (
         min(max(original_goal[0], 0), max(0, width - 20)),
         min(max(original_goal[1], 0), max(0, height - 20)),
     )
-    nearby_goal = find_nearest_free(grid, bounded_goal)
-    goal = find_nearest_reachable_free(grid, start, nearby_goal)
+    nearby_goal = find_nearest_free(inflated_grid, bounded_goal)
+    goal = find_nearest_reachable_free(inflated_grid, start, nearby_goal)
     print(f"Original start: {original_start}")
     print(f"Adjusted start: {start}")
     print(f"Original goal: {original_goal}")
     print(f"Adjusted goal: {goal}")
+    print(f"Inflation radius: {inflation_radius_cm} cm")
+    print(f"Inflation radius cells: {radius_cells}")
 
-    planner = AStarPlanner(grid, allow_diagonal=True, prevent_corner_cutting=True)
+    planner = AStarPlanner(inflated_grid, allow_diagonal=True, prevent_corner_cutting=True)
     result = planner.plan(start, goal)
     if not result.success:
         print(f"A* failed: no path from {start} to {goal}")
         return
 
-    output_path = PROJECT_ROOT / "output" / "astar_result.png"
-    draw_grid_with_path(grid, result.path, start, goal, str(output_path))
-    print(f"A* success: path length={len(result.path)}, total cost={result.total_cost:.3f}")
-    print(f"Result image saved: {output_path}")
+    astar_path = PROJECT_ROOT / "output" / "astar_result.png"
+    comparison_path = PROJECT_ROOT / "output" / "astar_inflation_comparison.png"
+    draw_grid_with_path(inflated_grid, result.path, start, goal, str(astar_path))
+    draw_inflation_comparison(
+        original_grid,
+        inflated_grid,
+        result.path,
+        start,
+        goal,
+        str(comparison_path),
+    )
+    print("Path found")
+    print(f"Path length: {len(result.path)}")
+    print(f"Total cost: {result.total_cost:.3f}")
+    print("Saved:")
+    print("- output/debug_inflated_grid.png")
+    print("- output/astar_result.png")
+    print("- output/astar_inflation_comparison.png")
 
 
 if __name__ == "__main__":
