@@ -4,6 +4,9 @@ Left click selects start and then goal. Press r to reset, s to save the current
 result, and q or ESC to quit.
 """
 
+import csv
+import json
+import math
 from pathlib import Path
 import sys
 
@@ -40,15 +43,20 @@ class InteractiveAStarApp:
         lidar_from_camera: np.ndarray,
         camera_from_lidar: np.ndarray,
         output_path: Path,
+        resolution_cm: float = 1.0,
     ) -> None:
         self.base_image = camera_bev
         self.planning_grid = planning_grid
         self.lidar_from_camera = lidar_from_camera
         self.camera_from_lidar = camera_from_lidar
         self.output_path = output_path
+        if resolution_cm <= 0:
+            raise ValueError("resolution_cm must be positive")
+        self.resolution_cm = resolution_cm
 
         self.camera_clicks: list[GridPoint] = []
         self.adjusted_lidar_points: list[GridPoint] = []
+        self.path_lidar_grid: list[GridPoint] = []
         self.path_camera_px: list[PixelPoint] = []
         self.display_image = self.base_image.copy()
 
@@ -89,6 +97,7 @@ class InteractiveAStarApp:
         except ValueError as error:
             print(f"A* input adjustment failed: {error}")
             self.adjusted_lidar_points = []
+            self.path_lidar_grid = []
             self.path_camera_px = []
             self._render()
             return
@@ -104,13 +113,16 @@ class InteractiveAStarApp:
         )
         result = planner.plan(start, goal)
         if not result.success:
+            self.path_lidar_grid = []
             self.path_camera_px = []
             self._render()
             print(f"A* failed: no path from {start} to {goal}")
             return
 
+        # Keep the authoritative LiDAR path; every controller export derives from it.
+        self.path_lidar_grid = list(result.path)
         self.path_camera_px = transform_points_affine(
-            result.path, self.camera_from_lidar
+            self.path_lidar_grid, self.camera_from_lidar
         )
         skipped_count = self._render()
         print("Path found")
@@ -162,17 +174,94 @@ class InteractiveAStarApp:
         """Clear clicks and path while preserving the loaded BEV image."""
         self.camera_clicks.clear()
         self.adjusted_lidar_points.clear()
+        self.path_lidar_grid.clear()
         self.path_camera_px.clear()
         self._render()
         print("Selections and path reset")
 
     def save(self) -> None:
-        """Save the currently displayed interactive result."""
+        """Save the result image and controller path files for the current path."""
+        if not self.path_lidar_grid:
+            print("No path to save.")
+            return
+
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(self.output_path), self.display_image):
             print(f"ERROR: Failed to save: {self.output_path}")
             return
-        print("Saved: output/click_astar_on_camera_bev.png")
+
+        output_dir = self.output_path.parent
+        lidar_csv_path = output_dir / "path_lidar_grid.csv"
+        camera_csv_path = output_dir / "path_camera_bev.csv"
+        world_csv_path = output_dir / "path_world_cm.csv"
+        world_json_path = output_dir / "path_world_cm.json"
+        world_path = self._build_world_path()
+
+        try:
+            with lidar_csv_path.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(["index", "x_grid", "y_grid"])
+                for index, (x_grid, y_grid) in enumerate(self.path_lidar_grid):
+                    writer.writerow([index, x_grid, y_grid])
+
+            with camera_csv_path.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(["index", "x_px", "y_px"])
+                for index, (x_px, y_px) in enumerate(self.path_camera_px):
+                    writer.writerow([index, f"{x_px:.6f}", f"{y_px:.6f}"])
+
+            world_columns = [
+                "index", "x_cm", "y_cm", "yaw_rad", "yaw_deg", "direction"
+            ]
+            with world_csv_path.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, fieldnames=world_columns)
+                writer.writeheader()
+                writer.writerows(world_path)
+
+            payload = {
+                "frame": "lidar_map_cm",
+                "resolution_cm": self.resolution_cm,
+                "planner": "astar",
+                "path": world_path,
+            }
+            with world_json_path.open("w", encoding="utf-8") as file:
+                json.dump(payload, file, indent=2, ensure_ascii=False)
+                file.write("\n")
+        except OSError as error:
+            print(f"ERROR: Failed to save path files: {error}")
+            return
+
+        print("Saved image: output/click_astar_on_camera_bev.png")
+        print("Saved LiDAR grid path: output/path_lidar_grid.csv")
+        print("Saved Camera BEV path: output/path_camera_bev.csv")
+        print("Saved world cm path: output/path_world_cm.csv")
+        print("Saved world cm json: output/path_world_cm.json")
+
+    def _build_world_path(self) -> list[dict[str, int | float]]:
+        """Convert the LiDAR grid path into controller-ready cm and heading rows."""
+        world_points = [
+            (x_grid * self.resolution_cm, y_grid * self.resolution_cm)
+            for x_grid, y_grid in self.path_lidar_grid
+        ]
+        yaw_values: list[float] = []
+        for index in range(len(world_points) - 1):
+            x_cm, y_cm = world_points[index]
+            next_x_cm, next_y_cm = world_points[index + 1]
+            yaw_values.append(math.atan2(next_y_cm - y_cm, next_x_cm - x_cm))
+        # The terminal point has no next segment, so preserve the previous heading.
+        yaw_values.append(yaw_values[-1] if yaw_values else 0.0)
+
+        return [
+            {
+                "index": index,
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "yaw_rad": yaw_values[index],
+                "yaw_deg": math.degrees(yaw_values[index]),
+                "direction": 1,
+            }
+            for index, (x_cm, y_cm) in enumerate(world_points)
+        ]
 
 
 def mouse_callback(
@@ -244,6 +333,7 @@ def main() -> int:
         lidar_from_camera,
         camera_from_lidar,
         PROJECT_ROOT / "output" / "click_astar_on_camera_bev.png",
+        resolution_cm=grid_map.resolution_cm,
     )
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.setMouseCallback(WINDOW_NAME, mouse_callback, app)

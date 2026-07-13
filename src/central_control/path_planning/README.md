@@ -59,6 +59,10 @@ python3 scripts/click_astar_on_camera_bev.py
 - `output/astar_on_overlay.png`: camera/LiDAR rigid overlay 위에 표시한 A* 경로
 - `output/astar_on_camera_bev.png`: 역 affine 변환으로 Camera BEV 위에 표시한 A* 경로
 - `output/click_astar_on_camera_bev.png`: Camera BEV에서 클릭한 시작점·목표점으로 생성한 A* 결과
+- `output/path_lidar_grid.csv`: A*가 생성한 원본 LiDAR grid 경로
+- `output/path_camera_bev.csv`: 역 affine 변환된 Camera BEV pixel 경로
+- `output/path_world_cm.csv`: 제어 테스트에 사용할 기본 world cm 경로
+- `output/path_world_cm.json`: world cm 경로와 frame·resolution·planner metadata
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
 
@@ -66,7 +70,16 @@ python3 scripts/click_astar_on_camera_bev.py
 
 `test_astar_on_camera_bev.py`는 `camera_to_lidar_rigid_registration.npz`의 `affine_matrix`(방향: Camera BEV pixel → LiDAR pixel)를 `cv2.invertAffineTransform`으로 뒤집어 LiDAR grid의 A* 경로를 Camera BEV pixel로 투영합니다. `bev_result.png`, `latest_bev.png`, `camera_bev.png`, `live_bev.png`, `undistorted_bev.png` 순서로 이미지를 찾으며, 모두 없으면 경고 후 흰색 `1600×800` 배경을 사용합니다.
 
-`click_astar_on_camera_bev.py`는 `camera_bev.png`의 첫 번째 클릭을 시작점, 두 번째 클릭을 목표점으로 사용합니다. Camera pixel을 정방향 affine로 LiDAR grid에 변환해 inflated grid에서 A*를 수행하고, 역 affine로 경로를 Camera BEV에 다시 표시합니다. `r`은 초기화, `s`는 `output/click_astar_on_camera_bev.png` 저장, `q` 또는 `ESC`는 종료입니다.
+`click_astar_on_camera_bev.py`는 `camera_bev.png`의 첫 번째 클릭을 시작점, 두 번째 클릭을 목표점으로 사용합니다. Camera pixel을 정방향 affine로 LiDAR grid에 변환해 inflated grid에서 A*를 수행하고, 역 affine로 경로를 Camera BEV에 다시 표시합니다. `r`은 초기화, `s`는 결과 이미지와 좌표 파일 저장, `q` 또는 `ESC`는 종료입니다.
+
+## 제어 경로 파일
+
+Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 이미지와 네 개의 좌표 파일을 함께 저장합니다. `output/path_world_cm.csv`가 제어 테스트용 기본 경로 파일입니다.
+
+- 좌표 단위: cm
+- `yaw_rad`, `yaw_deg`: 각 경로점에서 다음 경로점을 향하는 진행 방향
+- `direction`: 현재 2D A*에서는 모두 전진 `1`
+- Hybrid A* 적용 후 `yaw`와 `direction`은 차량 기구학을 반영한 값으로 변경 예정
 
 ## 다음 단계
 
