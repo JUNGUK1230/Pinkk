@@ -1,26 +1,37 @@
-"""실제 로봇 PC의 mc 초기화 코드를 연결하는 adapter.
+"""로봇 PC에서 MyCobot280 연결 객체를 생성하고 좌표계를 검사하는 adapter."""
 
-이 파일 하나만 현장 로봇 연결 방식에 맞게 수정하면 나머지 코드는 바꿀 필요가 없다.
-"""
-
+import os
+from pathlib import Path
 from typing import Any
 
 
+DEFAULT_ROBOT_PORT = "/dev/ttyUSB0"
+DEFAULT_ROBOT_BAUD = 1_000_000
+
+
 def create_robot() -> Any:
-    """get_coords()를 제공하는 기존 mc 객체를 생성해 반환한다.
+    """MyCobot280 serial 연결 객체를 생성해 반환한다.
 
-    로봇 PC에서 이미 사용하는 초기화 코드를 아래에 옮긴다. 로봇 모델, serial 포트,
-    baudrate를 이 노트북에서 추측하지 않기 위해 기본 구현은 의도적으로 중단한다.
-
-    예시 구조(그대로 사용하지 말 것)::
-
-        from pymycobot... import 실제_클래스
-        mc = 실제_클래스(실제_포트, 실제_baudrate)
-        return mc
+    로봇 PC에서 발견된 유일한 serial 후보는 /dev/ttyUSB0이고 baud 후보는
+    1,000,000이다. get_coords() 응답으로 로봇 포트임을 최종 확인해야 한다.
+    다른 환경에서는 JETCOBOT_PORT와 JETCOBOT_BAUD 환경변수로 덮어쓸 수 있다.
+    pymycobot import를 함수 안에서 수행하여 장비가 없는 개발 PC에서도 문서와
+    명령행 도움말을 확인할 수 있게 한다.
     """
-    raise NotImplementedError(
-        "robot_adapter.py의 create_robot()에 로봇 PC에서 이미 사용하는 mc 초기화 코드를 입력하세요"
-    )
+    from pymycobot import MyCobot280
+
+    port = os.environ.get("JETCOBOT_PORT", DEFAULT_ROBOT_PORT)
+    try:
+        baud = int(os.environ.get("JETCOBOT_BAUD", str(DEFAULT_ROBOT_BAUD)))
+    except ValueError as error:
+        raise ValueError("JETCOBOT_BAUD는 정수여야 합니다") from error
+    if not Path(port).exists():
+        raise FileNotFoundError(
+            f"로봇 serial 장치가 없습니다: {port}. "
+            "python3 -m serial.tools.list_ports -v로 실제 포트를 확인하세요"
+        )
+    print(f"로봇 연결 시도: MyCobot280(port={port!r}, baud={baud})")
+    return MyCobot280(port, baud)
 
 
 def validate_robot_frames(robot: Any) -> None:

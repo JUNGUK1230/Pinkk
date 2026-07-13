@@ -40,7 +40,8 @@ src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
 ## 로봇 PC에서 준비할 내용
 
 1. [config.py](config.py)의 ChArUco square/marker 실측값을 수정합니다.
-2. [robot_adapter.py](robot_adapter.py)의 `create_robot()`에 기존 mc 초기화 코드를 넣습니다.
+2. [robot_adapter.py](robot_adapter.py)의 기본 연결값(`/dev/ttyUSB0`, 1,000,000 baud)을
+   실제 로봇 PC 환경과 비교합니다.
 3. 수집 시작 시 코드가 `get_reference_frame()==0`(base)을 검사합니다.
 4. 수집 시작 시 코드가 `get_end_type()==0`(flange)을 검사합니다.
 5. 실제 로봇 pose를 읽어 값의 단위와 방향을 마지막으로 교차 확인합니다.
@@ -282,6 +283,66 @@ diff ~/mycobot_packages_before_handeye.txt ~/mycobot_packages_after_handeye.txt
 
 패키지 전체를 무조건 재설치하기 전에 OpenCV, NumPy, SciPy 차이와 오류 메시지를 먼저
 확인합니다. 카메라 확인과 로봇 연결 확인이 모두 끝난 뒤에만 sample 수집으로 넘어갑니다.
+
+## 로봇 serial 연결 설정
+
+실제 로봇 PC에서 PySerial로 발견된 유일한 serial 후보는 다음과 같습니다.
+
+```text
+후보 장치: /dev/ttyUSB0
+VID:PID: 1A86:7523
+baudrate: 1000000
+로봇 클래스: pymycobot.MyCobot280
+```
+
+VID:PID만으로 로봇과 LiDAR를 구분할 수 없으므로 `get_coords()` 응답으로 로봇 포트임을
+최종 확인해야 합니다. [robot_adapter.py](robot_adapter.py)는 우선 다음 후보 기본값을
+사용합니다.
+
+```python
+DEFAULT_ROBOT_PORT = "/dev/ttyUSB0"
+DEFAULT_ROBOT_BAUD = 1_000_000
+```
+
+다른 포트를 사용하는 환경에서는 소스 파일을 수정하지 않고 환경변수로 변경할 수
+있습니다.
+
+```bash
+export JETCOBOT_PORT=/dev/실제_장치
+export JETCOBOT_BAUD=1000000
+```
+
+현재 장치를 다시 확인하려면:
+
+```bash
+python3 -m serial.tools.list_ports -v
+```
+
+다른 프로그램이 port를 점유했는지 확인합니다.
+
+```bash
+sudo fuser -v /dev/ttyUSB0
+```
+
+아무 프로세스도 사용하지 않을 때 읽기 전용 연결을 검사합니다.
+
+```bash
+python3 -c "
+from src.robot_arm.robot_camera.handeye_calibration.robot_adapter import (
+    create_robot,
+    validate_robot_frames,
+)
+
+mc = create_robot()
+print('coords:', mc.get_coords())
+print('reference frame:', mc.get_reference_frame())
+print('end type:', mc.get_end_type())
+validate_robot_frames(mc)
+"
+```
+
+정상 목표는 `reference frame=0`(base), `end type=0`(flange)입니다. 이 검사는 pose만
+읽으며 로봇 이동 명령을 전송하지 않습니다.
 
 ## 1. Sample 수집
 
