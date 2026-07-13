@@ -1,5 +1,5 @@
 numpy
-opencv-contrib-python
+opencv-contrib-python==4.12.0.88
 PyYAML
 ultralytics
 scipy
