@@ -5,7 +5,7 @@
 
 from pathlib import Path
 
-PACKAGE_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = PACKAGE_DIR / "data"
 INTRINSICS_PATH = PACKAGE_DIR.parent / "camera_calibration" / "results" / "intrinsics.npz"
 SAMPLES_PATH = DATA_DIR / "handeye_samples.npz"

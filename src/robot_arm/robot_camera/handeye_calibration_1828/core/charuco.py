@@ -7,8 +7,8 @@ from typing import Any
 import cv2
 import numpy as np
 
-from . import config
-from .transform_utils import make_transform
+from ..config import settings as config
+from .transforms import make_transform
 
 
 @dataclass

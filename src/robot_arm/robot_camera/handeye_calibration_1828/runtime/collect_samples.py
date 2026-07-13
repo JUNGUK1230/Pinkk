@@ -7,11 +7,11 @@ import time
 import cv2
 import numpy as np
 
-from . import config
-from .charuco_utils import create_board_and_detector, estimate_charuco_pose, load_intrinsics
-from .io_utils import camera_arg, open_camera, save_samples, verify_resolution
-from .robot_adapter import create_robot, validate_robot_frames
-from .transform_utils import pose_difference, robot_coords_to_T_base_flange
+from ..config import settings as config
+from ..core.charuco import create_board_and_detector, estimate_charuco_pose, load_intrinsics
+from ..core.io import camera_arg, open_camera, save_samples, verify_resolution
+from ..core.robot_adapter import create_robot, validate_robot_frames
+from ..core.transforms import pose_difference, robot_coords_to_T_base_flange
 
 
 def parse_args() -> argparse.Namespace:

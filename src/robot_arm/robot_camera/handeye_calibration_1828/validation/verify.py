@@ -6,11 +6,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import config
-from .charuco_utils import create_board_and_detector, estimate_charuco_pose, load_intrinsics
-from .io_utils import camera_arg, open_camera, verify_resolution
-from .robot_adapter import create_robot, validate_robot_frames
-from .transform_utils import robot_coords_to_T_base_flange, validate_transform
+from ..config import settings as config
+from ..core.charuco import create_board_and_detector, estimate_charuco_pose, load_intrinsics
+from ..core.io import camera_arg, open_camera, verify_resolution
+from ..core.robot_adapter import create_robot, validate_robot_frames
+from ..core.transforms import robot_coords_to_T_base_flange, validate_transform
 
 
 def parse_args() -> argparse.Namespace:

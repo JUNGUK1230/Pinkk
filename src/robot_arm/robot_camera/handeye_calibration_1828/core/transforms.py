@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from . import config
+from ..config import settings as config
 
 
 def validate_rotation_matrix(matrix: np.ndarray, atol: float = 1e-6) -> None:
@@ -51,7 +51,7 @@ def robot_coords_to_T_base_flange(
     Elephant Robotics 공식 정의에 따라 intrinsic ZYX와 각도 [rz, ry, rx]를 사용한다.
     """
     if not config.ROBOT_EULER_CONVENTION_VERIFIED or not config.ROBOT_EULER_SEQUENCE:
-        raise RuntimeError("ROBOT EULER CONVENTION NOT VERIFIED: config.py에서 검증 후 활성화하세요")
+        raise RuntimeError("ROBOT EULER CONVENTION NOT VERIFIED: config/settings.py에서 검증 후 활성화하세요")
     values = np.asarray(coords, dtype=float).reshape(-1)
     if values.shape != (6,) or not np.isfinite(values).all():
         raise ValueError("get_coords()는 유한한 숫자 6개를 반환해야 합니다")

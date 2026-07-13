@@ -5,9 +5,9 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config
-from .handeye_utils import calibrate_all_methods, result_score
-from .io_utils import load_samples
+from ..config import settings as config
+from ..core.calibration import calibrate_all_methods, result_score
+from ..core.io import load_samples
 
 
 def parse_args() -> argparse.Namespace:
