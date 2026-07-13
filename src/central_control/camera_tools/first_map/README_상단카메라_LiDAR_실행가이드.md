@@ -1,5 +1,14 @@
 # 상단 카메라–LiDAR 정합 시스템 실행 가이드
 
+## Camera BEV 한 프레임 저장
+
+`capture_camera_bev.py`는 USB 카메라의 `1920×1080` 프레임에 왜곡 보정과 homography를 적용해 `1600×800` BEV를 표시합니다. BEV 창에서 `s`를 누르면 `camera_bev.png`로 저장하고, `q` 또는 `ESC`로 종료합니다. 기본 카메라는 스크립트 상단의 `CAMERA_ID = 2`입니다.
+
+```bash
+cd ~/PINKK/src/central_control/camera_tools/first_map
+python3 capture_camera_bev.py
+```
+
 이 문서는 새 Ubuntu/Linux 환경에서 다음 기능을 실행하기 위한 설치 및 실행 절차입니다.
 
 ```text
@@ -709,4 +718,3 @@ PROJECT_DIR = Path.home() / "project"
 7. 현재 좌표계 최종 기준은 ROS `/map`
 8. 현재 LiDAR 맵 resolution은 `0.01 m/px`
 9. 현재 저장된 정합 RMSE는 약 `1.68 cm`
-
