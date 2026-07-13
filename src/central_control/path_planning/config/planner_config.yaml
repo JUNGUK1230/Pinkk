@@ -1,0 +1,22 @@
+planner:
+  type: astar
+  resolution_cm: 1.0
+  obstacle_threshold: 50
+  allow_diagonal: true
+  prevent_corner_cutting: true
+
+hybrid_astar:
+  yaw_resolution_deg: 10.0
+  motion_step_cm: 3.0
+  steer_set_deg:
+    - -30.0
+    - 0.0
+    - 30.0
+  allow_reverse: true
+  timeout_sec: 2.0
+
+cost:
+  reverse_penalty: 1.5
+  gear_switch_penalty: 5.0
+  steer_penalty: 0.2
+  steer_change_penalty: 0.5
