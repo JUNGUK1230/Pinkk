@@ -339,9 +339,9 @@ baudrate: 1000000
 로봇 클래스: pymycobot.MyCobot280
 ```
 
-VID:PID만으로 로봇과 LiDAR를 구분할 수 없으므로 `get_coords()` 응답으로 로봇 포트임을
-최종 확인해야 합니다. [robot_adapter.py](robot_adapter.py)는 우선 다음 후보 기본값을
-사용합니다.
+VID:PID만으로 해당 장치가 로봇인지 확정할 수 없으므로 `get_coords()` 응답으로 로봇
+포트임을 최종 확인해야 합니다. [robot_adapter.py](robot_adapter.py)는 우선 다음 후보
+기본값을 사용합니다.
 
 ```python
 DEFAULT_ROBOT_PORT = "/dev/ttyUSB0"
@@ -349,7 +349,7 @@ DEFAULT_ROBOT_BAUD = 1_000_000
 ```
 
 `/dev/ttyUSB0`이나 특정 VID:PID가 보인다는 이유만으로 로봇이라고 확정하지 않습니다.
-삭제된 LiDAR 설정이나 다른 센서도 같은 장치명을 사용할 수 있습니다.
+USB 연결 순서나 시스템 상태에 따라 장치명이 달라질 수 있습니다.
 
 ### 3. port 점유 상태 확인
 
@@ -362,7 +362,7 @@ lsof /dev/ttyUSB0
 
 아무 출력도 없으면 현재 점유 프로세스가 없는 상태입니다. 프로세스가 출력되면 어떤
 프로그램인지 먼저 확인합니다. Flask 카메라 서버는 사용하지 않지만, 별도의 로봇 제어
-프로그램이나 LiDAR 노드가 같은 serial port를 사용 중일 수 있습니다.
+프로그램이 같은 serial port를 사용 중일 수 있습니다.
 
 ### 4. port 권한 확인
 
@@ -442,7 +442,7 @@ end type: 0
 | `No such file or directory` | 지정한 device가 없음 | `list_ports`로 경로 재검색 |
 | `Permission denied` | 사용자에게 serial 권한이 없음 | `dialout` group 확인 |
 | `Device or resource busy` | 다른 프로세스가 port 점유 | `fuser`로 프로세스 확인 |
-| `coords=None` 또는 timeout | 장치는 열렸지만 로봇 응답이 아님 | 센서 종류, class, baudrate 확인 |
+| `coords=None` 또는 timeout | 장치는 열렸지만 로봇 응답이 아님 | 로봇 연결, class, baudrate 확인 |
 | `reference frame=1` | tool 기준 pose | base 기준 설정 후 재확인 |
 | `end type=1` | tool 끝 기준 pose | flange 기준 설정 후 재확인 |
 | 모든 값 정상 | `T_base_flange` 수집 가능 | ChArUco 검출 단계 진행 |
