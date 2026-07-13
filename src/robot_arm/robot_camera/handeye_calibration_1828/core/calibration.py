@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from .transform_utils import make_transform, validate_transform
+from .transforms import make_transform, validate_transform
 
 METHODS = {
     "TSAI": cv2.CALIB_HAND_EYE_TSAI,

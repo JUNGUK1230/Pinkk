@@ -41,7 +41,7 @@ def validate_robot_frames(robot: Any) -> None:
     get_end_type()은 0=flange/1=tool이다. 지원되지 않는 구형 API라면 조용히
     진행하지 않고 사용자가 로봇 PC의 실제 라이브러리를 확인하도록 중단한다.
     """
-    from . import config
+    from ..config import settings as config
 
     if not callable(getattr(robot, "get_reference_frame", None)):
         raise RuntimeError("로봇 API에 get_reference_frame()이 없어 base 기준 여부를 확인할 수 없습니다")
