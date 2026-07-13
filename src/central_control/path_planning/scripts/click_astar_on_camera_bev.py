@@ -6,7 +6,6 @@ result, and q or ESC to quit.
 
 import csv
 import json
-import math
 from pathlib import Path
 import sys
 
@@ -20,6 +19,7 @@ sys.path.append(str(SCRIPT_DIR))
 
 from astar_planner import AStarPlanner  # noqa: E402
 from occupancy_grid import OccupancyGridMap  # noqa: E402
+from path_postprocess import build_path_rows, rdp_simplify  # noqa: E402
 from test_astar import find_nearest_free, resolve_map_image  # noqa: E402
 from test_astar_on_camera_bev import transform_points_affine  # noqa: E402
 from visualization import draw_visible_polyline  # noqa: E402
@@ -31,6 +31,7 @@ WINDOW_NAME = "Click A* on Camera BEV"
 INFLATION_RADIUS_CM = 7.0
 ORIGINAL_POINT_RADIUS = 4
 ADJUSTED_POINT_RADIUS = 10
+RDP_EPSILON_CM = 3.0
 
 
 class InteractiveAStarApp:
@@ -195,7 +196,14 @@ class InteractiveAStarApp:
         camera_csv_path = output_dir / "path_camera_bev.csv"
         world_csv_path = output_dir / "path_world_cm.csv"
         world_json_path = output_dir / "path_world_cm.json"
-        world_path = self._build_world_path()
+        raw_world_csv_path = output_dir / "path_world_cm_raw.csv"
+        simplified_world_csv_path = output_dir / "path_world_cm_simplified.csv"
+        simplified_world_json_path = output_dir / "path_world_cm_simplified.json"
+
+        raw_world_points = self._world_points()
+        world_path = build_path_rows(raw_world_points)
+        simplified_points = rdp_simplify(raw_world_points, RDP_EPSILON_CM)
+        simplified_world_path = build_path_rows(simplified_points)
 
         try:
             with lidar_csv_path.open("w", newline="", encoding="utf-8") as file:
@@ -210,13 +218,10 @@ class InteractiveAStarApp:
                 for index, (x_px, y_px) in enumerate(self.path_camera_px):
                     writer.writerow([index, f"{x_px:.6f}", f"{y_px:.6f}"])
 
-            world_columns = [
-                "index", "x_cm", "y_cm", "yaw_rad", "yaw_deg", "direction"
-            ]
-            with world_csv_path.open("w", newline="", encoding="utf-8") as file:
-                writer = csv.DictWriter(file, fieldnames=world_columns)
-                writer.writeheader()
-                writer.writerows(world_path)
+            self._write_world_csv(world_csv_path, world_path)
+            # Keep a clearly named raw backup while preserving the legacy filename.
+            self._write_world_csv(raw_world_csv_path, world_path)
+            self._write_world_csv(simplified_world_csv_path, simplified_world_path)
 
             payload = {
                 "frame": "lidar_map_cm",
@@ -227,6 +232,20 @@ class InteractiveAStarApp:
             with world_json_path.open("w", encoding="utf-8") as file:
                 json.dump(payload, file, indent=2, ensure_ascii=False)
                 file.write("\n")
+
+            simplified_payload = {
+                "frame": "lidar_map_cm",
+                "resolution_cm": self.resolution_cm,
+                "planner": "astar",
+                "postprocess": {
+                    "method": "rdp",
+                    "epsilon_cm": RDP_EPSILON_CM,
+                },
+                "path": simplified_world_path,
+            }
+            with simplified_world_json_path.open("w", encoding="utf-8") as file:
+                json.dump(simplified_payload, file, indent=2, ensure_ascii=False)
+                file.write("\n")
         except OSError as error:
             print(f"ERROR: Failed to save path files: {error}")
             return
@@ -236,32 +255,31 @@ class InteractiveAStarApp:
         print("Saved Camera BEV path: output/path_camera_bev.csv")
         print("Saved world cm path: output/path_world_cm.csv")
         print("Saved world cm json: output/path_world_cm.json")
+        print(f"Raw path points: {len(world_path)}")
+        print(f"Simplified path points: {len(simplified_world_path)}")
+        print("Saved raw world path: output/path_world_cm_raw.csv")
+        print("Saved simplified world path: output/path_world_cm_simplified.csv")
+        print("Saved simplified world json: output/path_world_cm_simplified.json")
 
-    def _build_world_path(self) -> list[dict[str, int | float]]:
-        """Convert the LiDAR grid path into controller-ready cm and heading rows."""
-        world_points = [
+    def _world_points(self) -> list[tuple[float, float]]:
+        """Convert the authoritative LiDAR grid path into world centimetres."""
+        return [
             (x_grid * self.resolution_cm, y_grid * self.resolution_cm)
             for x_grid, y_grid in self.path_lidar_grid
         ]
-        yaw_values: list[float] = []
-        for index in range(len(world_points) - 1):
-            x_cm, y_cm = world_points[index]
-            next_x_cm, next_y_cm = world_points[index + 1]
-            yaw_values.append(math.atan2(next_y_cm - y_cm, next_x_cm - x_cm))
-        # The terminal point has no next segment, so preserve the previous heading.
-        yaw_values.append(yaw_values[-1] if yaw_values else 0.0)
 
-        return [
-            {
-                "index": index,
-                "x_cm": x_cm,
-                "y_cm": y_cm,
-                "yaw_rad": yaw_values[index],
-                "yaw_deg": math.degrees(yaw_values[index]),
-                "direction": 1,
-            }
-            for index, (x_cm, y_cm) in enumerate(world_points)
+    @staticmethod
+    def _write_world_csv(
+        path: Path, rows: list[dict[str, int | float]]
+    ) -> None:
+        """Write controller world-path rows with a stable column order."""
+        columns = [
+            "index", "x_cm", "y_cm", "yaw_rad", "yaw_deg", "direction"
         ]
+        with path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
 
 
 def mouse_callback(

@@ -63,6 +63,9 @@ python3 scripts/click_astar_on_camera_bev.py
 - `output/path_camera_bev.csv`: 역 affine 변환된 Camera BEV pixel 경로
 - `output/path_world_cm.csv`: 제어 테스트에 사용할 기본 world cm 경로
 - `output/path_world_cm.json`: world cm 경로와 frame·resolution·planner metadata
+- `output/path_world_cm_raw.csv`: `path_world_cm.csv`와 동일한 A* raw path 백업
+- `output/path_world_cm_simplified.csv`: RDP로 단순화한 제어팀 전달용 1차 추천 경로
+- `output/path_world_cm_simplified.json`: RDP 설정 metadata와 단순화 경로
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
 
@@ -74,7 +77,9 @@ python3 scripts/click_astar_on_camera_bev.py
 
 ## 제어 경로 파일
 
-Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 이미지와 네 개의 좌표 파일을 함께 저장합니다. `output/path_world_cm.csv`가 제어 테스트용 기본 경로 파일입니다.
+Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 이미지와 좌표 파일을 함께 저장합니다. `path_world_cm.csv`는 A* raw path이고 `path_world_cm_raw.csv`는 그 내용의 백업입니다. **`output/path_world_cm_simplified.csv`를 제어팀 전달용 1차 추천 경로로 사용합니다.**
+
+단순화는 Ramer-Douglas-Peucker(RDP) 알고리즘을 사용하며 기본 epsilon은 **3 cm**입니다. simplified path의 yaw는 남은 각 경로점에서 다음 점을 향하도록 다시 계산합니다. 아직 Hybrid A*가 아니므로 차량 회전반경과 후진은 반영되지 않습니다.
 
 - 좌표 단위: cm
 - `yaw_rad`, `yaw_deg`: 각 경로점에서 다음 경로점을 향하는 진행 방향
