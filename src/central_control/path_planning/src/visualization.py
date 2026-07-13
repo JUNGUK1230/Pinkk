@@ -10,6 +10,45 @@ GridPoint = tuple[int, int]
 PixelPoint = tuple[float, float]
 
 
+def draw_visible_polyline(
+    image: np.ndarray,
+    path_px: Sequence[PixelPoint],
+    color: tuple[int, int, int] = (0, 0, 255),
+    thickness: int = 3,
+) -> int:
+    """Draw only consecutive in-bounds path segments and return skipped count."""
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError("image must be a three-channel BGR image")
+    if thickness <= 0:
+        raise ValueError("thickness must be positive")
+
+    height, width = image.shape[:2]
+    skipped_count = 0
+    current_segment: list[tuple[int, int]] = []
+    segments: list[list[tuple[int, int]]] = []
+
+    for x_float, y_float in path_px:
+        x, y = int(round(x_float)), int(round(y_float))
+        if not (0 <= x < width and 0 <= y < height):
+            skipped_count += 1
+            # Closing the segment here prevents a line from jumping across the image.
+            if current_segment:
+                segments.append(current_segment)
+                current_segment = []
+            continue
+        current_segment.append((x, y))
+    if current_segment:
+        segments.append(current_segment)
+
+    for segment in segments:
+        if len(segment) >= 2:
+            points = np.asarray(segment, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(image, [points], False, color, thickness)
+        elif segment:
+            cv2.circle(image, segment[0], max(1, thickness // 2), color, -1)
+    return skipped_count
+
+
 def draw_grid_with_path(
     grid: np.ndarray,
     path: Sequence[GridPoint],
@@ -100,28 +139,9 @@ def draw_path_on_image(
         x, y = int(round(point[0])), int(round(point[1]))
         return (x, y) if 0 <= x < width and 0 <= y < height else None
 
-    skipped_count = 0
-    current_segment: list[tuple[int, int]] = []
-    segments: list[list[tuple[int, int]]] = []
-    for point in path_px:
-        visible_point = to_visible_pixel(point)
-        if visible_point is None:
-            skipped_count += 1
-            # Do not connect across an out-of-bounds interval.
-            if current_segment:
-                segments.append(current_segment)
-                current_segment = []
-            continue
-        current_segment.append(visible_point)
-    if current_segment:
-        segments.append(current_segment)
-
-    for segment in segments:
-        if len(segment) >= 2:
-            points = np.asarray(segment, dtype=np.int32).reshape((-1, 1, 2))
-            cv2.polylines(canvas, [points], False, (0, 0, 255), line_thickness)
-        elif segment:
-            cv2.circle(canvas, segment[0], max(1, line_thickness // 2), (0, 0, 255), -1)
+    skipped_count = draw_visible_polyline(
+        canvas, path_px, color=(0, 0, 255), thickness=line_thickness
+    )
 
     start_visible = to_visible_pixel(start_px)
     goal_visible = to_visible_pixel(goal_px)
