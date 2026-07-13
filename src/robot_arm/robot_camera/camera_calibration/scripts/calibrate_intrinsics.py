@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument("--images", default="camera_calibration/images/raw", help="Input image folder.")
     parser.add_argument("--cols", type=int, default=8, help="Number of inner corners per row.")
     parser.add_argument("--rows", type=int, default=6, help="Number of inner corners per column.")
-    parser.add_argument("--square-size", type=float, default=25.0, help="Checkerboard square size in mm.")
+    parser.add_argument("--square-size", type=float, default=28.0, help="Checkerboard square size in mm.")
     parser.add_argument("--output", default="camera_calibration/results", help="Output folder.")
     parser.add_argument("--show", action="store_true", help="Show detected corners.")
     return parser.parse_args()
@@ -31,7 +31,7 @@ def build_object_points(cols, rows, square_size):
     return objp
 
 
-def save_yaml(path, camera_matrix, dist_coeffs, image_size, rms, valid_count):
+def save_yaml(path, camera_matrix, dist_coeffs, image_size, rms, valid_count, square_size_mm):
     fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
     fs.write("camera_matrix", camera_matrix)
     fs.write("dist_coeffs", dist_coeffs)
@@ -39,6 +39,7 @@ def save_yaml(path, camera_matrix, dist_coeffs, image_size, rms, valid_count):
     fs.write("image_height", int(image_size[1]))
     fs.write("rms_reprojection_error", float(rms))
     fs.write("valid_image_count", int(valid_count))
+    fs.write("square_size_mm", float(square_size_mm))
     fs.release()
 
 
@@ -115,14 +116,24 @@ def main():
         image_width=image_size[0],
         image_height=image_size[1],
         rms_reprojection_error=rms,
+        square_size_mm=args.square_size,
         rvecs=np.array(rvecs, dtype=object),
         tvecs=np.array(tvecs, dtype=object),
     )
-    save_yaml(yaml_path, camera_matrix, dist_coeffs, image_size, rms, len(accepted))
+    save_yaml(
+        yaml_path,
+        camera_matrix,
+        dist_coeffs,
+        image_size,
+        rms,
+        len(accepted),
+        args.square_size,
+    )
 
     report_lines = [
         f"RMS reprojection error: {rms:.6f}",
         f"Image size: {image_size[0]} x {image_size[1]}",
+        f"Checkerboard square size: {args.square_size:.3f} mm",
         f"Valid images: {len(accepted)}",
         f"Rejected images: {len(rejected)}",
         "",
