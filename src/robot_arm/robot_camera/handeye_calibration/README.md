@@ -286,6 +286,50 @@ diff ~/mycobot_packages_before_handeye.txt ~/mycobot_packages_after_handeye.txt
 
 ## 로봇 serial 연결 설정
 
+### 1. 기본 상수는 실제 장치와 다를 수 있음
+
+`pymycobot.PI_PORT`와 `PI_BAUD`는 라이브러리가 제공하는 기본값일 뿐입니다. 실제로
+`PI_PORT=/dev/ttyAMA0`이 반환됐더라도 해당 장치가 로봇 PC에 존재하지 않을 수 있습니다.
+
+```bash
+python3 -c "
+import pymycobot
+
+print('PI_PORT:', getattr(pymycobot, 'PI_PORT', 'not available'))
+print('PI_BAUD:', getattr(pymycobot, 'PI_BAUD', 'not available'))
+"
+```
+
+다음 오류는 설정된 포트 파일 자체가 없다는 뜻입니다.
+
+```text
+SerialException: could not open port /dev/ttyAMA0
+No such file or directory
+```
+
+이 경우 권한을 변경하는 것이 아니라 실제 존재하는 장치를 다시 찾아야 합니다.
+
+### 2. 실제 serial 장치 검색
+
+Linux device 파일을 확인합니다.
+
+```bash
+ls -l \
+  /dev/ttyAMA* \
+  /dev/ttyTHS* \
+  /dev/ttyUSB* \
+  /dev/ttyACM* \
+  /dev/serial* \
+  2>/dev/null
+```
+
+PySerial 기준 목록과 USB 정보를 함께 확인합니다.
+
+```bash
+python3 -m serial.tools.list_ports -v
+lsusb
+```
+
 실제 로봇 PC에서 PySerial로 발견된 유일한 serial 후보는 다음과 같습니다.
 
 ```text
@@ -304,6 +348,41 @@ DEFAULT_ROBOT_PORT = "/dev/ttyUSB0"
 DEFAULT_ROBOT_BAUD = 1_000_000
 ```
 
+`/dev/ttyUSB0`이나 특정 VID:PID가 보인다는 이유만으로 로봇이라고 확정하지 않습니다.
+삭제된 LiDAR 설정이나 다른 센서도 같은 장치명을 사용할 수 있습니다.
+
+### 3. port 점유 상태 확인
+
+로봇 연결 전에 다른 프로그램이 후보 port를 열고 있는지 확인합니다.
+
+```bash
+sudo fuser -v /dev/ttyUSB0
+lsof /dev/ttyUSB0
+```
+
+아무 출력도 없으면 현재 점유 프로세스가 없는 상태입니다. 프로세스가 출력되면 어떤
+프로그램인지 먼저 확인합니다. Flask 카메라 서버는 사용하지 않지만, 별도의 로봇 제어
+프로그램이나 LiDAR 노드가 같은 serial port를 사용 중일 수 있습니다.
+
+### 4. port 권한 확인
+
+```bash
+ls -l /dev/ttyUSB0
+groups
+```
+
+장치 group이 `dialout`이고 현재 사용자 group에 `dialout`이 없다면 다음과 같이
+추가합니다.
+
+```bash
+sudo usermod -aG dialout jetcobot
+```
+
+적용하려면 로그아웃 후 다시 로그인해야 합니다. `Permission denied`는 권한 문제지만,
+`No such file or directory`는 장치 경로가 잘못된 문제이므로 구분해야 합니다.
+
+### 5. adapter 기본값 또는 환경변수 설정
+
 다른 포트를 사용하는 환경에서는 소스 파일을 수정하지 않고 환경변수로 변경할 수
 있습니다.
 
@@ -312,17 +391,21 @@ export JETCOBOT_PORT=/dev/실제_장치
 export JETCOBOT_BAUD=1000000
 ```
 
-현재 장치를 다시 확인하려면:
+현재 shell에서 적용됐는지 확인합니다.
 
 ```bash
-python3 -m serial.tools.list_ports -v
+echo "$JETCOBOT_PORT"
+echo "$JETCOBOT_BAUD"
 ```
 
-다른 프로그램이 port를 점유했는지 확인합니다.
+환경변수를 설정하지 않으면 adapter의 기본 후보값을 사용합니다.
 
-```bash
-sudo fuser -v /dev/ttyUSB0
+```text
+/dev/ttyUSB0
+1000000
 ```
+
+### 6. 이동 명령 없이 읽기 전용 연결 검사
 
 아무 프로세스도 사용하지 않을 때 읽기 전용 연결을 검사합니다.
 
@@ -343,6 +426,29 @@ validate_robot_frames(mc)
 
 정상 목표는 `reference frame=0`(base), `end type=0`(flange)입니다. 이 검사는 pose만
 읽으며 로봇 이동 명령을 전송하지 않습니다.
+
+```text
+로봇 연결 시도: MyCobot280(port='/dev/ttyUSB0', baud=1000000)
+coords: [x, y, z, rx, ry, rz]
+reference frame: 0
+end type: 0
+로봇 좌표계 확인 완료: reference=base(0), end=flange(0)
+```
+
+### 7. 결과에 따른 판단
+
+| 결과 | 의미 | 조치 |
+|---|---|---|
+| `No such file or directory` | 지정한 device가 없음 | `list_ports`로 경로 재검색 |
+| `Permission denied` | 사용자에게 serial 권한이 없음 | `dialout` group 확인 |
+| `Device or resource busy` | 다른 프로세스가 port 점유 | `fuser`로 프로세스 확인 |
+| `coords=None` 또는 timeout | 장치는 열렸지만 로봇 응답이 아님 | 센서 종류, class, baudrate 확인 |
+| `reference frame=1` | tool 기준 pose | base 기준 설정 후 재확인 |
+| `end type=1` | tool 끝 기준 pose | flange 기준 설정 후 재확인 |
+| 모든 값 정상 | `T_base_flange` 수집 가능 | ChArUco 검출 단계 진행 |
+
+로봇 포트임이 확인되기 전에는 `send_angles()`, `send_coords()` 같은 이동 명령을 실행하지
+않습니다.
 
 ## 1. Sample 수집
 
