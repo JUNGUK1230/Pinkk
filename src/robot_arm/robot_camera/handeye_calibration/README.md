@@ -264,11 +264,77 @@ python3 \
   --height 480
 ```
 
-SSH에서 `cv2.imshow()` 창을 사용하려면 로봇 PC에 모니터가 연결되어 있거나 X11
-forwarding이 필요합니다.
+위 명령에서 다음 내용이 출력되면 카메라 연결과 frame 읽기는 정상입니다.
+
+```text
+OpenCV camera connected.
+resolution: 640 x 480
+fps: 30.00
+```
+
+SSH에서 `cv2.imshow()` 창까지 노트북에 표시하려면 X11 forwarding이 필요합니다.
+로봇 PC에 접속된 터미널 안이 아니라 **노트북의 로컬 터미널**에서 접속합니다.
 
 ```bash
-ssh -X jetcobot@로봇_PC_IP
+ssh -Y -C jetcobot@로봇_PC_IP
+```
+
+접속 직후 다음 값을 확인합니다.
+
+```bash
+echo "$DISPLAY"
+```
+
+정상적인 원격 값은 보통 `localhost:10.0`입니다. 노트북 로컬의 `:0` 또는 `:1`과
+혼동하지 않습니다. 다음과 같이 `DISPLAY`가 비어 있거나 Qt가 `display :1`에 연결하지
+못하면 OpenCV나 Qt를 재설치하기 전에 shell 설정을 확인합니다.
+
+```bash
+grep -n "DISPLAY" ~/.bashrc ~/.profile ~/.bash_profile /etc/environment 2>/dev/null
+```
+
+`.bashrc`에 아래처럼 원격 display를 강제로 지정하는 줄이 있다면 주석 처리하고 SSH를
+완전히 종료한 뒤 `ssh -Y -C`로 다시 접속합니다.
+
+```bash
+# export DISPLAY=:1
+```
+
+이 변경은 카메라 frame 읽기나 로봇 serial 통신에는 영향을 주지 않습니다. 특정 로봇
+로컬 화면에서만 프로그램을 실행해야 한다면 그 명령에만 `DISPLAY=:1`을 지정합니다.
+
+```bash
+DISPLAY=:1 프로그램_명령
+```
+
+서버 설정을 확인해야 할 때는 다음 결과에서 `x11forwarding yes`인지 확인합니다.
+
+```bash
+which xauth
+sudo sshd -T | grep -i x11
+```
+
+VS Code Remote-SSH는 일반 터미널의 `ssh -Y`와 별도 연결입니다. VS Code에서도 X11을
+사용하려면 **노트북의** `~/.ssh/config`에 전용 host를 등록합니다.
+
+```sshconfig
+Host pinkk-robot
+    HostName 로봇_PC_IP
+    User jetcobot
+    ForwardX11 yes
+    ForwardX11Trusted yes
+    Compression yes
+```
+
+VS Code에서 기존 원격 연결과 VS Code Server를 종료한 뒤 `pinkk-robot`으로 다시
+접속하고, 새 원격 터미널에서 `echo "$DISPLAY"`를 확인합니다. 설정을 단순하게 유지하려면
+VS Code는 코드 편집에 사용하고 카메라 실행만 노트북 일반 터미널의 `ssh -Y` 세션에서
+진행해도 됩니다.
+
+다음 오류는 카메라 연결 실패가 아니라 GUI display 전달 실패입니다.
+
+```text
+qt.qpa.xcb: could not connect to display
 ```
 
 ### 9. 환경 복구 참고
