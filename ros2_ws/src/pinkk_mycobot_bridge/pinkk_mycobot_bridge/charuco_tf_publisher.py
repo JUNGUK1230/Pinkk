@@ -86,7 +86,7 @@ def create_charuco_detector() -> tuple[Any, Any]:
 class CharucoTfPublisher(Node):
     def __init__(self) -> None:
         super().__init__("pinkk_charuco_tf_publisher")
-        self.declare_parameter("camera", "0")
+        self.declare_parameter("camera", 0)
         self.declare_parameter("intrinsics_path", "")
         self.declare_parameter("camera_frame", "camera_optical_frame")
         self.declare_parameter("target_frame", "charuco_board")
