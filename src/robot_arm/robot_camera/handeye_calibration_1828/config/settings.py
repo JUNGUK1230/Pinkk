@@ -17,13 +17,24 @@ CAMERA_DEVICE: int | str = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 
-# 반드시 실제로 제작한 ChArUco 보드의 실측값과 일치시킨다. 단위는 meter다.
-CHARUCO_SQUARES_X = 5
-CHARUCO_SQUARES_Y = 7
-SQUARE_LENGTH_M = 0.030
-MARKER_LENGTH_M = 0.022
-ARUCO_DICTIONARY_NAME = "DICT_4X4_50"
-MIN_CHARUCO_CORNERS = 12
+
+# calib.io 8x11 ChArUco 보드.
+# calib.io는 세로x가로로 표기하지만 OpenCV는 (가로 X, 세로 Y)를 사용한다.
+CHARUCO_SQUARES_X = 11
+CHARUCO_SQUARES_Y = 8
+
+# 출력물에 표기된 실측 크기. 단위는 meter다.
+SQUARE_LENGTH_M = 0.015
+MARKER_LENGTH_M = 0.011
+
+# calib.io의 "ArUco DICT_4X4" 보드.
+ARUCO_DICTIONARY_NAME = "DICT_4X4_1000"
+
+# calib.io 보드는 OpenCV legacy ChArUco 배치를 사용한다.
+CHARUCO_LEGACY_PATTERN = True
+
+# 최대 내부 코너는 (11-1) * (8-1) = 70개다.
+MIN_CHARUCO_CORNERS = 35
 MAX_REPROJECTION_ERROR_PX = 0.7
 
 TARGET_SAMPLE_COUNT = 20

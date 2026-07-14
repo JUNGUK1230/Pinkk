@@ -52,18 +52,43 @@ def load_intrinsics(path: Path) -> tuple[np.ndarray, np.ndarray, tuple[int, int]
 
 
 def create_board_and_detector() -> tuple[Any, Any]:
-    """config 값으로 OpenCV 4.x ChArUco 보드와 detector를 만든다."""
+    """config 값으로 calib.io ChArUco 보드와 detector를 만든다."""
     require_opencv_features()
-    dictionary_id = getattr(cv2.aruco, config.ARUCO_DICTIONARY_NAME)
+
+    try:
+        dictionary_id = getattr(
+            cv2.aruco,
+            config.ARUCO_DICTIONARY_NAME,
+        )
+    except AttributeError as error:
+        raise RuntimeError(
+            f"지원하지 않는 ArUco dictionary: "
+            f"{config.ARUCO_DICTIONARY_NAME}"
+        ) from error
+
     dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
+
     board = cv2.aruco.CharucoBoard(
-        (config.CHARUCO_SQUARES_X, config.CHARUCO_SQUARES_Y),
+        (
+            config.CHARUCO_SQUARES_X,
+            config.CHARUCO_SQUARES_Y,
+        ),
         config.SQUARE_LENGTH_M,
         config.MARKER_LENGTH_M,
         dictionary,
     )
-    return board, cv2.aruco.CharucoDetector(board)
 
+    # calib.io에서 생성한 짝수 행 보드는 OpenCV의 legacy 배치를 사용한다.
+    if config.CHARUCO_LEGACY_PATTERN:
+        if not hasattr(board, "setLegacyPattern"):
+            raise RuntimeError(
+                "현재 OpenCV가 CharucoBoard.setLegacyPattern()을 "
+                "지원하지 않습니다"
+            )
+        board.setLegacyPattern(True)
+
+    detector = cv2.aruco.CharucoDetector(board)
+    return board, detector
 
 def estimate_charuco_pose(
     frame: np.ndarray,
