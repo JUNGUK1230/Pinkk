@@ -269,6 +269,10 @@ class InteractiveHybridAStarApp:
                 "frame": "lidar_map_cm",
                 "resolution_cm": self.resolution_cm,
                 "planner": "hybrid_astar",
+                "path_sampling": {
+                    "method": "kinematic_bicycle",
+                    "output_step_cm": self.planner.path_output_step_cm,
+                },
                 "path": rows,
             }
             with json_path.open("w", encoding="utf-8") as file:
@@ -331,6 +335,7 @@ def main() -> int:
             vehicle_width_cm=float(vehicle["width_cm"]),
             rear_overhang_cm=float(vehicle["rear_overhang_cm"]),
             motion_step_cm=float(hybrid["motion_step_cm"]),
+            path_output_step_cm=float(hybrid["path_output_step_cm"]),
             yaw_resolution_deg=float(hybrid["yaw_resolution_deg"]),
             steer_set_deg=tuple(float(value) for value in hybrid["steer_set_deg"]),
             allow_reverse=bool(hybrid["allow_reverse"]),
@@ -352,6 +357,7 @@ def main() -> int:
         f"Vehicle footprint: {planner.vehicle_length_cm:.1f} x "
         f"{planner.vehicle_width_cm:.1f} cm, safety margin={safety_margin_cm:.1f} cm"
     )
+    print(f"Control path output step: {planner.path_output_step_cm:.2f} cm")
     print("Click order: start position -> start heading -> goal position -> goal heading")
     print("r: reset | s: save | q/ESC: quit")
     app = InteractiveHybridAStarApp(

@@ -23,6 +23,7 @@ def make_planner(grid: np.ndarray) -> HybridAStarPlanner:
         vehicle_width_cm=11.0,
         rear_overhang_cm=2.0,
         motion_step_cm=3.0,
+        path_output_step_cm=0.5,
         timeout_sec=2.0,
     )
 
@@ -58,11 +59,18 @@ def main() -> int:
         not free_planner.is_pose_collision(state.x_cm, state.y_cm, state.yaw_rad)
         for state in result.path
     )
+    segment_lengths = [
+        math.hypot(second.x_cm - first.x_cm, second.y_cm - first.y_cm)
+        for first, second in zip(result.path, result.path[1:])
+    ]
+    assert segment_lengths
+    assert max(segment_lengths) <= free_planner.path_output_step_cm + 1e-6
 
     print("Hybrid A* footprint regression passed")
     print(f"Path poses: {len(result.path)}")
     print(f"Expanded nodes: {result.expanded_nodes}")
     print(f"Total cost: {result.total_cost:.3f}")
+    print(f"Maximum output spacing: {max(segment_lengths):.3f} cm")
     return 0
 
 

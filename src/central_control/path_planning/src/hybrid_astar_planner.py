@@ -44,6 +44,7 @@ class HybridAStarPlanner:
         vehicle_width_cm: float = 11.0,
         rear_overhang_cm: float | None = None,
         motion_step_cm: float = 3.0,
+        path_output_step_cm: float = 0.5,
         yaw_resolution_deg: float = 10.0,
         steer_set_deg: tuple[float, ...] = (-30.0, 0.0, 30.0),
         allow_reverse: bool = True,
@@ -64,10 +65,11 @@ class HybridAStarPlanner:
             or vehicle_length_cm <= 0
             or vehicle_width_cm <= 0
             or motion_step_cm <= 0
+            or path_output_step_cm <= 0
         ):
             raise ValueError(
-                "resolution, vehicle dimensions, wheelbase, and motion step "
-                "must be positive"
+                "resolution, vehicle dimensions, wheelbase, motion step, and "
+                "path output step must be positive"
             )
         if vehicle_length_cm < wheelbase_cm:
             raise ValueError("vehicle length must not be shorter than wheelbase")
@@ -93,6 +95,7 @@ class HybridAStarPlanner:
             )
         self.front_extent_cm = self.vehicle_length_cm - self.rear_overhang_cm
         self.motion_step_cm = motion_step_cm
+        self.path_output_step_cm = path_output_step_cm
         self.yaw_resolution_rad = math.radians(yaw_resolution_deg)
         self.steer_set_rad = tuple(math.radians(value) for value in steer_set_deg)
         self.allow_reverse = allow_reverse
@@ -148,8 +151,9 @@ class HybridAStarPlanner:
                 continue
             current = states[current_key]
             if self._is_goal(current, goal[0], goal[1], goal_yaw):
+                sparse_path = self._reconstruct(states, parents, current_key)
                 return HybridAStarResult(
-                    self._reconstruct(states, parents, current_key),
+                    self._densify_path(sparse_path),
                     g_score[current_key],
                     True,
                     expanded_nodes,
@@ -340,6 +344,62 @@ class HybridAStarPlanner:
             caches.append((offset_array[:, 0], offset_array[:, 1]))
 
         return tuple(caches)
+
+    def _densify_path(self, sparse_path: list[HybridState]) -> list[HybridState]:
+        """Resample each motion primitive with the same bicycle-model integration.
+
+        Search nodes remain spaced by ``motion_step_cm`` to keep Hybrid A* fast.
+        Only the successful output is expanded, so controllers receive gradual
+        position and heading changes without increasing the search state count.
+        """
+        if len(sparse_path) < 2:
+            return sparse_path.copy()
+
+        # Match the collision-check integration steps. Selecting points from this
+        # exact trajectory avoids straight-line interpolation across curved motion.
+        integration_step_cm = max(0.25, self.resolution_cm * 0.5)
+        sample_count = max(1, math.ceil(self.motion_step_cm / integration_step_cm))
+        dense_path = [sparse_path[0]]
+
+        for parent, child in zip(sparse_path, sparse_path[1:]):
+            signed_step = child.direction * self.motion_step_cm / sample_count
+            x_cm = parent.x_cm
+            y_cm = parent.y_cm
+            yaw_rad = parent.yaw_rad
+            next_output_distance = self.path_output_step_cm
+
+            for sample_index in range(1, sample_count + 1):
+                next_yaw = (
+                    yaw_rad
+                    + signed_step / self.wheelbase_cm * math.tan(child.steer_rad)
+                )
+                midpoint_yaw = yaw_rad + 0.5 * (next_yaw - yaw_rad)
+                x_cm += signed_step * math.cos(midpoint_yaw)
+                y_cm += signed_step * math.sin(midpoint_yaw)
+                yaw_rad = self._normalize_yaw(next_yaw)
+                traveled_cm = sample_index * abs(signed_step)
+                is_endpoint = sample_index == sample_count
+
+                if traveled_cm + 1e-9 < next_output_distance and not is_endpoint:
+                    continue
+
+                # Use the stored endpoint exactly to prevent numerical drift between
+                # consecutive primitives after repeated floating-point integration.
+                if is_endpoint:
+                    output_state = child
+                else:
+                    output_state = HybridState(
+                        x_cm,
+                        y_cm,
+                        yaw_rad,
+                        child.direction,
+                        child.steer_rad,
+                    )
+                dense_path.append(output_state)
+                while next_output_distance <= traveled_cm + 1e-9:
+                    next_output_distance += self.path_output_step_cm
+
+        return dense_path
 
     def _yaw_bin(self, yaw_rad: float) -> int:
         return (
