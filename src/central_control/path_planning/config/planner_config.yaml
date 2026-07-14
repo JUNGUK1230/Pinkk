@@ -1,5 +1,5 @@
 planner:
-  type: astar
+  type: hybrid_astar
   resolution_cm: 1.0
   obstacle_threshold: 50
   allow_diagonal: true
@@ -13,7 +13,9 @@ hybrid_astar:
     - 0.0
     - 30.0
   allow_reverse: true
-  timeout_sec: 2.0
+  timeout_sec: 5.0
+  goal_tolerance_cm: 4.0
+  goal_yaw_tolerance_deg: 15.0
 
 cost:
   reverse_penalty: 1.5

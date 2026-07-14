@@ -10,6 +10,7 @@ Python 기반 자율주행 주차 경로계획 모듈의 기본 구현입니다.
 - `src/occupancy_grid.py`: ROS map_server 형식 PGM/YAML 로더
 - `src/coordinate_transform.py`: BEV pixel, world cm, grid 좌표 변환
 - `src/astar_planner.py`: 4/8방향 2D A* 탐색
+- `src/hybrid_astar_planner.py`: 차량 yaw·조향·전후진을 고려한 Hybrid A*
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
 - `output/`: 실행 결과 이미지
@@ -48,6 +49,7 @@ python3 scripts/test_astar.py
 python3 scripts/test_astar_overlay.py
 python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
+python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
 
 생성되는 파일은 다음과 같습니다.
@@ -66,6 +68,10 @@ python3 scripts/click_astar_on_camera_bev.py
 - `output/path_world_cm_raw.csv`: `path_world_cm.csv`와 동일한 A* raw path 백업
 - `output/path_world_cm_simplified.csv`: RDP로 단순화한 제어팀 전달용 1차 추천 경로
 - `output/path_world_cm_simplified.json`: RDP 설정 metadata와 단순화 경로
+- `output/click_hybrid_astar_on_camera_bev.png`: 클릭한 start/goal pose로 생성한 Hybrid A* 결과
+- `output/hybrid_path_world_cm.csv`: Hybrid A*의 yaw·direction·steer를 포함한 제어용 pose 경로
+- `output/hybrid_path_camera_bev.csv`: Hybrid pose를 Camera BEV pixel로 변환한 경로
+- `output/hybrid_path_world_cm.json`: Hybrid pose 경로와 frame·planner metadata
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
 
@@ -86,10 +92,29 @@ Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 �
 - `direction`: 현재 2D A*에서는 모두 전진 `1`
 - Hybrid A* 적용 후 `yaw`와 `direction`은 차량 기구학을 반영한 값으로 변경 예정
 
+## Hybrid A* 및 헤딩 지정
+
+Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각은 기본 `-30°, 0°, 30°`이며 전진과 후진을 모두 탐색합니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/click_hybrid_astar_on_camera_bev.py
+```
+
+마우스 클릭 순서는 다음과 같습니다.
+
+1. 시작 위치
+2. 시작 차량이 바라볼 방향의 점
+3. 목표 위치
+4. 목표 차량이 바라볼 방향의 점
+
+`r`로 클릭과 경로를 초기화하고, `s`로 Hybrid 결과 이미지와 CSV/JSON을 저장하며, `q` 또는 `ESC`로 종료합니다. `hybrid_path_world_cm.csv`의 yaw는 단순화 후 재계산한 값이 아니라 planner가 자동차 모델로 전개한 각 pose의 헤딩입니다. `direction` 값은 전진 `1`, 후진 `-1`입니다.
+
+현재 collision check는 7 cm inflated grid에서 차량 기준점을 검사합니다. 헤딩과 회전반경은 운동 생성에 반영되지만 회전된 rectangle footprint 충돌 검사는 다음 단계입니다.
+
 ## 다음 단계
 
-- Hybrid A* 구현
-- 상태에 차량 yaw 추가
-- 전진/후진 direction 추가
 - 차량 footprint collision check 추가
+- Reeds-Shepp analytic expansion 추가
+- Hybrid 경로 smoothing과 속도 profile 생성
 - 생성 경로를 PID/MPC 제어기에 전달
