@@ -42,8 +42,10 @@ REGISTRATION_FILE = (
     / "camera_to_lidar_rigid_registration.npz"
 )
 
-MODEL_FILE = Path(
-    "/home/junguk/charging_station_vision/yolo11s.pt"
+MODEL_FILE = (
+    PROJECT_DIR.parents[1]
+    / "models"
+    / "yolo11l.pt"
 )
 
 LIDAR_MAP_FILE = (

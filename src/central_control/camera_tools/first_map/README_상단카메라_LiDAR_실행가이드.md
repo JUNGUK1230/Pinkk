@@ -9,6 +9,76 @@ cd ~/PINKK/src/central_control/camera_tools/first_map
 python3 capture_camera_bev.py
 ```
 
+## YOLO 학습용 Camera BEV 영상 녹화
+
+`capture_bev_image.py`는 PINKK 내부의 `camera_calibration.npz`와
+`bev_homography.npz`를 사용합니다. 코드와 입력·출력 파일은 모두
+`src/central_control/camera_tools/first_map`을 기준으로 찾으며
+`/home/junguk/project`를 사용하지 않습니다.
+원본과 왜곡 보정 프레임은 메모리에서만 처리하고 파일로 저장하지 않으며,
+YOLO에 실제로 입력할 BEV 프레임만 MP4 영상으로 녹화합니다.
+
+```bash
+cd ~/PINKK/src/central_control/camera_tools/first_map
+/usr/bin/python3 capture_bev_image.py
+```
+
+- `SPACE`: BEV 영상 녹화 시작
+- `SPACE` 재입력: 녹화 종료및 `bev_recordings/bev_<timestamp>.mp4` 저장
+- `q` 또는 `ESC`: 녹화 중이면 안전하게 저장하고 종료
+
+기본 카메라는 `CAMERA_ID = 2`이며, 장치 번호가 다르면 스크립트 상단의
+설정값만 변경하면 됩니다. 요청 해상도는 MJPG `1920×1080`, `30 FPS`이고
+BEV 크기는 NPZ에 저장된 `1600×800`을 사용합니다.
+
+### 녹화 영상에서 CVAT용 200장 추출
+
+다음 명령은 `bev_recordings/`의 가장 최근 MP4 영상 전체에서 최대
+200장을 균등한 시간 간격으로 선택합니다. 인접 프레임만 연속으로 뽑는
+방식보다 장면 다양성을 확보하기 좋습니다.
+
+```bash
+cd ~/PINKK/src/central_control/camera_tools/first_map
+/usr/bin/python3 extract_bev_frames.py --count 200
+```
+
+특정 영상을 선택하려면:
+
+```bash
+/usr/bin/python3 extract_bev_frames.py \
+  --video bev_recordings/bev_YYYYMMDD_HHMMSS.mp4 \
+  --count 200
+```
+
+추출 결과는 기본적으로 다음에 생성됩니다.
+
+```text
+bev_dataset/cvat_images/<video_name>/
+├── bev_<timestamp>_0000.jpg
+├── ...
+└── frames_manifest.csv
+```
+
+`frames_manifest.csv`에는 각 이미지의 원본 영상 프레임 번호와 시간이 들어있어
+나중에 촬영 구간을 추적할 수 있습니다.
+
+### CVAT 라벨링 절차
+
+현재 PC에는 Docker와 CVAT이 설치되어 있지 않으므로, 로컬 CVAT을 쓰려면
+[CVAT 공식 설치 가이드](https://docs.cvat.ai/docs/administration/basics/installation/)에 따라
+Docker Engine과 Docker Compose를 먼저 설치합니다. 설치 후 CVAT에서는:
+
+1. Detection Task를 만들고 검출할 클래스를 먼저 등록합니다.
+2. `bev_dataset/cvat_images/<video_name>/`의 JPG 200장만 업로드합니다.
+3. 객체를 Rectangle Bounding Box로 라벨링합니다.
+4. 라벨 누락이나 잘못된 클래스가 없는지 검수합니다.
+5. `Ultralytics YOLO Detection 1.0`으로 이미지를 포함해 내보냅니다.
+
+내보낸 ZIP에는 YOLO 라벨 TXT와 `data.yaml`이 포함됩니다. 자세한 구조는
+[CVAT Ultralytics YOLO 공식 문서](https://docs.cvat.ai/docs/dataset_management/formats/format-yolo-ultralytics/)를
+참고합니다. 학습 전에는 유사한 연속 프레임이 train과 validation에 같이
+들어가지 않도록 촬영 구간 단위로 나누는 것이 좋습니다.
+
 이 문서는 새 Ubuntu/Linux 환경에서 다음 기능을 실행하기 위한 설치 및 실행 절차입니다.
 
 ```text
