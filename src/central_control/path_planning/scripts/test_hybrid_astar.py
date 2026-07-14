@@ -20,7 +20,7 @@ def make_planner(grid: np.ndarray) -> HybridAStarPlanner:
         resolution_cm=1.0,
         wheelbase_cm=8.0,
         vehicle_length_cm=12.0,
-        vehicle_width_cm=11.0,
+        vehicle_width_cm=8.0,
         rear_overhang_cm=2.0,
         motion_step_cm=3.0,
         path_output_step_cm=0.5,

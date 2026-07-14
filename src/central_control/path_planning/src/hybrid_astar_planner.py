@@ -41,7 +41,7 @@ class HybridAStarPlanner:
         resolution_cm: float = 1.0,
         wheelbase_cm: float = 8.0,
         vehicle_length_cm: float = 12.0,
-        vehicle_width_cm: float = 11.0,
+        vehicle_width_cm: float = 8.0,
         rear_overhang_cm: float | None = None,
         motion_step_cm: float = 3.0,
         path_output_step_cm: float = 0.5,
