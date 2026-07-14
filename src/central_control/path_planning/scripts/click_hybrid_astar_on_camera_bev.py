@@ -17,7 +17,7 @@ sys.path.append(str(SCRIPT_DIR))
 
 from hybrid_astar_planner import HybridAStarPlanner, HybridState  # noqa: E402
 from occupancy_grid import OccupancyGridMap  # noqa: E402
-from test_astar import find_nearest_free, resolve_map_image  # noqa: E402
+from test_astar import resolve_map_image  # noqa: E402
 from test_astar_on_camera_bev import transform_points_affine  # noqa: E402
 from click_astar_on_camera_bev import load_registration  # noqa: E402
 from visualization import draw_visible_polyline  # noqa: E402
@@ -26,7 +26,7 @@ GridPoint = tuple[int, int]
 PixelPoint = tuple[float, float]
 
 WINDOW_NAME = "Click Hybrid A* on Camera BEV"
-INFLATION_RADIUS_CM = 7.0
+POSE_ADJUSTMENT_RADIUS_CM = 30.0
 POSE_ARROW_LENGTH_CM = 12.0
 CLICK_LABELS = (
     "start position",
@@ -88,8 +88,20 @@ class InteractiveHybridAStarApp:
         try:
             start_yaw = self._heading(start_float, start_heading, "start")
             goal_yaw = self._heading(goal_float, goal_heading, "goal")
-            start = find_nearest_free(self.planning_grid, start_before)
-            goal = find_nearest_free(self.planning_grid, goal_before)
+            start_cm = self.planner.find_nearest_valid_pose(
+                start_before[0] * self.resolution_cm,
+                start_before[1] * self.resolution_cm,
+                start_yaw,
+                POSE_ADJUSTMENT_RADIUS_CM,
+            )
+            goal_cm = self.planner.find_nearest_valid_pose(
+                goal_before[0] * self.resolution_cm,
+                goal_before[1] * self.resolution_cm,
+                goal_yaw,
+                POSE_ADJUSTMENT_RADIUS_CM,
+            )
+            start = tuple(round(value / self.resolution_cm) for value in start_cm)
+            goal = tuple(round(value / self.resolution_cm) for value in goal_cm)
         except ValueError as error:
             print(f"Hybrid A* input error: {error}")
             self._clear_path()
@@ -305,15 +317,19 @@ def main() -> int:
         grid_map = OccupancyGridMap(
             str(resolve_map_image(pgm_path, yaml_path)), str(yaml_path), True
         )
-        planning_grid = grid_map.inflate_obstacles(
-            INFLATION_RADIUS_CM, grid_map.resolution_cm
-        )
         hybrid = config["hybrid_astar"]
         cost = config["cost"]
+        safety_margin_cm = float(hybrid["footprint_safety_margin_cm"])
+        planning_grid = grid_map.inflate_obstacles(
+            safety_margin_cm, grid_map.resolution_cm
+        )
         planner = HybridAStarPlanner(
             planning_grid,
             resolution_cm=grid_map.resolution_cm,
             wheelbase_cm=float(vehicle["wheelbase_cm"]),
+            vehicle_length_cm=float(vehicle["length_cm"]),
+            vehicle_width_cm=float(vehicle["width_cm"]),
+            rear_overhang_cm=float(vehicle["rear_overhang_cm"]),
             motion_step_cm=float(hybrid["motion_step_cm"]),
             yaw_resolution_deg=float(hybrid["yaw_resolution_deg"]),
             steer_set_deg=tuple(float(value) for value in hybrid["steer_set_deg"]),
@@ -332,6 +348,10 @@ def main() -> int:
 
     print(f"Loaded Camera BEV: {camera_path}")
     print(f"Planner: Hybrid A*, reverse={planner.allow_reverse}")
+    print(
+        f"Vehicle footprint: {planner.vehicle_length_cm:.1f} x "
+        f"{planner.vehicle_width_cm:.1f} cm, safety margin={safety_margin_cm:.1f} cm"
+    )
     print("Click order: start position -> start heading -> goal position -> goal heading")
     print("r: reset | s: save | q/ESC: quit")
     app = InteractiveHybridAStarApp(

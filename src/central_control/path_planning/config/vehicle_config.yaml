@@ -2,6 +2,8 @@ vehicle:
   length_cm: 12.0
   width_cm: 11.0
   wheelbase_cm: 8.0
+  # Hybrid A* pose는 뒷바퀴 축 중심이며, rear overhang부터 차체 전체를 검사한다.
+  rear_overhang_cm: 2.0
   max_steer_deg: 30.0
   min_turning_radius_cm: 14.0
   allow_reverse: true

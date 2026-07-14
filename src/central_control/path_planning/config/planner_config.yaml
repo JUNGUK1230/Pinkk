@@ -6,6 +6,8 @@ planner:
   prevent_corner_cutting: true
 
 hybrid_astar:
+  # 차량 rectangle footprint 외부에 추가로 확보할 장애물 안전거리
+  footprint_safety_margin_cm: 1.0
   yaw_resolution_deg: 10.0
   motion_step_cm: 3.0
   steer_set_deg:

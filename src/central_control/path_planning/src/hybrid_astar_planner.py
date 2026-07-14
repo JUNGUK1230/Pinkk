@@ -40,6 +40,9 @@ class HybridAStarPlanner:
         grid: np.ndarray,
         resolution_cm: float = 1.0,
         wheelbase_cm: float = 8.0,
+        vehicle_length_cm: float = 12.0,
+        vehicle_width_cm: float = 11.0,
+        rear_overhang_cm: float | None = None,
         motion_step_cm: float = 3.0,
         yaw_resolution_deg: float = 10.0,
         steer_set_deg: tuple[float, ...] = (-30.0, 0.0, 30.0),
@@ -55,8 +58,19 @@ class HybridAStarPlanner:
     ) -> None:
         if grid.ndim != 2:
             raise ValueError("grid must be a two-dimensional array")
-        if resolution_cm <= 0 or wheelbase_cm <= 0 or motion_step_cm <= 0:
-            raise ValueError("resolution, wheelbase, and motion step must be positive")
+        if (
+            resolution_cm <= 0
+            or wheelbase_cm <= 0
+            or vehicle_length_cm <= 0
+            or vehicle_width_cm <= 0
+            or motion_step_cm <= 0
+        ):
+            raise ValueError(
+                "resolution, vehicle dimensions, wheelbase, and motion step "
+                "must be positive"
+            )
+        if vehicle_length_cm < wheelbase_cm:
+            raise ValueError("vehicle length must not be shorter than wheelbase")
         if yaw_resolution_deg <= 0 or timeout_sec <= 0:
             raise ValueError("yaw resolution and timeout must be positive")
         if not steer_set_deg:
@@ -66,6 +80,18 @@ class HybridAStarPlanner:
         self.height, self.width = grid.shape
         self.resolution_cm = resolution_cm
         self.wheelbase_cm = wheelbase_cm
+        self.vehicle_length_cm = vehicle_length_cm
+        self.vehicle_width_cm = vehicle_width_cm
+        self.rear_overhang_cm = (
+            (vehicle_length_cm - wheelbase_cm) * 0.5
+            if rear_overhang_cm is None
+            else rear_overhang_cm
+        )
+        if not 0.0 <= self.rear_overhang_cm < self.vehicle_length_cm:
+            raise ValueError(
+                "rear_overhang_cm must be zero or positive and shorter than the vehicle"
+            )
+        self.front_extent_cm = self.vehicle_length_cm - self.rear_overhang_cm
         self.motion_step_cm = motion_step_cm
         self.yaw_resolution_rad = math.radians(yaw_resolution_deg)
         self.steer_set_rad = tuple(math.radians(value) for value in steer_set_deg)
@@ -79,6 +105,10 @@ class HybridAStarPlanner:
         self.steer_penalty = steer_penalty
         self.steer_change_penalty = steer_change_penalty
         self.yaw_bin_count = max(1, round(2.0 * math.pi / self.yaw_resolution_rad))
+        # Cache occupied grid offsets for each discrete heading. Collision checks
+        # then use NumPy indexing instead of rebuilding a rotated polygon for every
+        # motion sample expanded by the search.
+        self._footprint_offsets = self._build_footprint_offsets()
 
     def plan(
         self,
@@ -88,8 +118,10 @@ class HybridAStarPlanner:
         """Plan from a continuous start pose to a position-and-heading goal pose."""
         start_state = HybridState(start[0], start[1], self._normalize_yaw(start[2]), 1)
         goal_yaw = self._normalize_yaw(goal[2])
-        self._validate_pose("start", start_state.x_cm, start_state.y_cm)
-        self._validate_pose("goal", goal[0], goal[1])
+        self._validate_pose(
+            "start", start_state.x_cm, start_state.y_cm, start_state.yaw_rad
+        )
+        self._validate_pose("goal", goal[0], goal[1], goal_yaw)
 
         start_key = self._state_key(start_state)
         counter = itertools.count()
@@ -172,14 +204,14 @@ class HybridAStarPlanner:
             x_cm += signed_distance * math.cos(midpoint_yaw)
             y_cm += signed_distance * math.sin(midpoint_yaw)
             yaw_rad = self._normalize_yaw(next_yaw)
-            if self._is_collision(x_cm, y_cm):
+            if self._is_collision(x_cm, y_cm, yaw_rad):
                 return None
         return HybridState(x_cm, y_cm, yaw_rad, direction, steer_rad)
 
     def _state_key(self, state: HybridState) -> tuple[int, int, int, int, int]:
         x_bin = round(state.x_cm / self.resolution_cm)
         y_bin = round(state.y_cm / self.resolution_cm)
-        yaw_bin = round((state.yaw_rad + math.pi) / self.yaw_resolution_rad) % self.yaw_bin_count
+        yaw_bin = self._yaw_bin(state.yaw_rad)
         steer_bin = min(
             range(len(self.steer_set_rad)),
             key=lambda index: abs(self.steer_set_rad[index] - state.steer_rad),
@@ -204,16 +236,116 @@ class HybridAStarPlanner:
             <= self.goal_yaw_tolerance_rad
         )
 
-    def _validate_pose(self, label: str, x_cm: float, y_cm: float) -> None:
-        if self._is_collision(x_cm, y_cm):
-            raise ValueError(f"{label} pose ({x_cm:.2f}, {y_cm:.2f}) is invalid or occupied")
+    def _validate_pose(
+        self, label: str, x_cm: float, y_cm: float, yaw_rad: float
+    ) -> None:
+        if self._is_collision(x_cm, y_cm, yaw_rad):
+            raise ValueError(
+                f"{label} pose ({x_cm:.2f}, {y_cm:.2f}, "
+                f"{math.degrees(yaw_rad):.1f} deg) has an invalid vehicle footprint"
+            )
 
-    def _is_collision(self, x_cm: float, y_cm: float) -> bool:
+    def is_pose_collision(self, x_cm: float, y_cm: float, yaw_rad: float) -> bool:
+        """Return whether the rotated rectangular vehicle footprint collides."""
+        return self._is_collision(x_cm, y_cm, self._normalize_yaw(yaw_rad))
+
+    def find_nearest_valid_pose(
+        self,
+        x_cm: float,
+        y_cm: float,
+        yaw_rad: float,
+        max_radius_cm: float = 30.0,
+    ) -> tuple[float, float]:
+        """Find the closest grid-aligned position valid for a fixed heading."""
+        if max_radius_cm < 0:
+            raise ValueError("max_radius_cm must be zero or positive")
+
+        origin_x = min(max(round(x_cm / self.resolution_cm), 0), self.width - 1)
+        origin_y = min(max(round(y_cm / self.resolution_cm), 0), self.height - 1)
+        max_radius_cells = math.ceil(max_radius_cm / self.resolution_cm)
+        offsets = [
+            (dx * dx + dy * dy, dy, dx)
+            for dy in range(-max_radius_cells, max_radius_cells + 1)
+            for dx in range(-max_radius_cells, max_radius_cells + 1)
+            if dx * dx + dy * dy <= max_radius_cells * max_radius_cells
+        ]
+        offsets.sort()
+
+        for _, dy, dx in offsets:
+            candidate_x = origin_x + dx
+            candidate_y = origin_y + dy
+            if not (0 <= candidate_x < self.width and 0 <= candidate_y < self.height):
+                continue
+            candidate_x_cm = candidate_x * self.resolution_cm
+            candidate_y_cm = candidate_y * self.resolution_cm
+            if not self._is_collision(candidate_x_cm, candidate_y_cm, yaw_rad):
+                return candidate_x_cm, candidate_y_cm
+
+        raise ValueError(
+            f"No footprint-valid pose found within {max_radius_cm:.1f} cm of "
+            f"({x_cm:.2f}, {y_cm:.2f})"
+        )
+
+    def _is_collision(self, x_cm: float, y_cm: float, yaw_rad: float) -> bool:
+        """Check every grid cell covered by the rotated vehicle rectangle."""
         gx = round(x_cm / self.resolution_cm)
         gy = round(y_cm / self.resolution_cm)
         if not (0 <= gx < self.width and 0 <= gy < self.height):
             return True
-        return bool(self.grid[gy, gx] >= self.obstacle_threshold)
+
+        offset_y, offset_x = self._footprint_offsets[self._yaw_bin(yaw_rad)]
+        footprint_x = gx + offset_x
+        footprint_y = gy + offset_y
+        if (
+            np.any(footprint_x < 0)
+            or np.any(footprint_x >= self.width)
+            or np.any(footprint_y < 0)
+            or np.any(footprint_y >= self.height)
+        ):
+            return True
+        return bool(
+            np.any(self.grid[footprint_y, footprint_x] >= self.obstacle_threshold)
+        )
+
+    def _build_footprint_offsets(self) -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+        """Precompute conservative footprint cells for every heading bin."""
+        # Half a cell of padding includes cells touched by the rectangle boundary,
+        # preventing a narrow obstacle from disappearing due to center sampling.
+        padding_cm = 0.5 * self.resolution_cm
+        rear_limit = -self.rear_overhang_cm - padding_cm
+        front_limit = self.front_extent_cm + padding_cm
+        half_width = 0.5 * self.vehicle_width_cm + padding_cm
+        bound_cells = math.ceil(
+            max(abs(rear_limit), abs(front_limit), half_width) / self.resolution_cm
+        )
+        caches: list[tuple[np.ndarray, np.ndarray]] = []
+
+        for yaw_bin in range(self.yaw_bin_count):
+            yaw_rad = yaw_bin * self.yaw_resolution_rad - math.pi
+            cos_yaw = math.cos(yaw_rad)
+            sin_yaw = math.sin(yaw_rad)
+            offsets: list[tuple[int, int]] = []
+            for dy in range(-bound_cells, bound_cells + 1):
+                for dx in range(-bound_cells, bound_cells + 1):
+                    world_x = dx * self.resolution_cm
+                    world_y = dy * self.resolution_cm
+                    longitudinal = world_x * cos_yaw + world_y * sin_yaw
+                    lateral = -world_x * sin_yaw + world_y * cos_yaw
+                    if (
+                        rear_limit <= longitudinal <= front_limit
+                        and abs(lateral) <= half_width
+                    ):
+                        offsets.append((dy, dx))
+            offset_array = np.asarray(offsets, dtype=np.int32)
+            caches.append((offset_array[:, 0], offset_array[:, 1]))
+
+        return tuple(caches)
+
+    def _yaw_bin(self, yaw_rad: float) -> int:
+        return (
+            round((self._normalize_yaw(yaw_rad) + math.pi) / self.yaw_resolution_rad)
+            % self.yaw_bin_count
+        )
 
     @staticmethod
     def _reconstruct(

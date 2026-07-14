@@ -1,6 +1,6 @@
 # Path Planning
 
-Python 기반 자율주행 주차 경로계획 모듈의 기본 구현입니다. 현재 단계는 Hybrid A* 구현 전의 **Occupancy Grid + 2D A*** 검증 단계로, LiDAR 지도를 읽고 좌표를 변환하며 장애물을 피해 최단 경로를 생성하는 흐름을 확인합니다.
+Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy grid의 2D A* 비교 기능과 함께, 차량 yaw·조향·전후진·회전 직사각형 footprint 충돌을 고려하는 **Hybrid A***를 구현합니다.
 
 ## 구성
 
@@ -23,7 +23,7 @@ Python 기반 자율주행 주차 경로계획 모듈의 기본 구현입니다.
 
 2D A*는 차량을 크기가 없는 하나의 점으로 보므로, 원본 occupancy grid만 사용하면 벽과 주차선 바로 옆으로 경로가 생성될 수 있습니다. 이를 방지하기 위해 차량 반폭과 안전 마진을 고려한 obstacle inflation을 적용합니다.
 
-현재 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. 향후 Hybrid A*에서는 차량의 회전된 rectangle footprint를 이용한 collision check로 개선할 예정입니다.
+현재 2D A* 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. Hybrid A*는 차량 크기를 inflation으로 대신하지 않고, 실제 회전된 rectangle footprint와 **1 cm** 추가 안전마진을 사용합니다.
 
 ## 요구 환경
 
@@ -49,6 +49,7 @@ python3 scripts/test_astar.py
 python3 scripts/test_astar_overlay.py
 python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
+python3 scripts/test_hybrid_astar.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
 
@@ -96,6 +97,8 @@ Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 �
 
 Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각은 기본 `-30°, 0°, 30°`이며 전진과 후진을 모두 탐색합니다.
 
+차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 기본 차량 `12×11 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
+
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/click_hybrid_astar_on_camera_bev.py
@@ -110,11 +113,8 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 `r`로 클릭과 경로를 초기화하고, `s`로 Hybrid 결과 이미지와 CSV/JSON을 저장하며, `q` 또는 `ESC`로 종료합니다. `hybrid_path_world_cm.csv`의 yaw는 단순화 후 재계산한 값이 아니라 planner가 자동차 모델로 전개한 각 pose의 헤딩입니다. `direction` 값은 전진 `1`, 후진 `-1`입니다.
 
-현재 collision check는 7 cm inflated grid에서 차량 기준점을 검사합니다. 헤딩과 회전반경은 운동 생성에 반영되지만 회전된 rectangle footprint 충돌 검사는 다음 단계입니다.
-
 ## 다음 단계
 
-- 차량 footprint collision check 추가
 - Reeds-Shepp analytic expansion 추가
 - Hybrid 경로 smoothing과 속도 profile 생성
 - 생성 경로를 PID/MPC 제어기에 전달
