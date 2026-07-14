@@ -1,5 +1,8 @@
 # Pinkk MyCobot ROS2 bridge
 
+For the current setup status and the exact next-session procedure, see
+[`HAND_EYE_HANDOFF_KO.md`](HAND_EYE_HANDOFF_KO.md).
+
 The first integration stage is deliberately read-only. The robot PC reads
 `MyCobot280.get_angles()` and publishes `/joint_states`; it never calls a motion
 API. MoveIt and RViz run on the laptop without fake ros2_control hardware.
