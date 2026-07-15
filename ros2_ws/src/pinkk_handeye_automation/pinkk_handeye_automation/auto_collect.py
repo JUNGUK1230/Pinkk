@@ -97,6 +97,7 @@ class AutoHandeyeCollector(Node):
         self.declare_parameter("detection_timeout_seconds", 8.0)
         self.declare_parameter("max_tf_age_seconds", 0.4)
         self.declare_parameter("motion_seconds", 4.0)
+        self.declare_parameter("motion_retry_count", 2)
         self.declare_parameter("return_home", True)
 
         self.execute_enabled = bool(self.get_parameter("execute").value)
@@ -106,6 +107,7 @@ class AutoHandeyeCollector(Node):
         )
         self.max_tf_age = float(self.get_parameter("max_tf_age_seconds").value)
         self.motion_seconds = float(self.get_parameter("motion_seconds").value)
+        self.motion_retry_count = int(self.get_parameter("motion_retry_count").value)
         self.return_home = bool(self.get_parameter("return_home").value)
 
         self._state_lock = threading.Lock()
@@ -232,20 +234,52 @@ class AutoHandeyeCollector(Node):
                 return solution, adjusted
         return None, tuple(float(value) for value in rotation)
 
+    @staticmethod
+    def _scaled_rotations(
+        rotation: Sequence[float],
+    ) -> tuple[tuple[float, float, float], ...]:
+        """검출이나 이동이 실패할 때 같은 방향의 더 작은 관측각을 만든다."""
+        candidates: list[tuple[float, float, float]] = []
+        for scale in (1.0, 0.75, 0.5, 0.35):
+            adjusted = tuple(round(float(value) * scale, 3) for value in rotation)
+            if adjusted not in candidates:
+                candidates.append(adjusted)
+        return tuple(candidates)
+
+    def _current_joint_seed(self, fallback: Sequence[float]) -> list[float]:
+        with self._state_lock:
+            current = list(self._latest_joints or [])
+        return current if len(current) == 6 else list(fallback)
+
     def _move(self, target: Sequence[float]) -> bool:
-        goal = FollowJointTrajectory.Goal()
-        goal.trajectory.joint_names = list(JOINT_NAMES)
-        point = JointTrajectoryPoint()
-        point.positions = list(target)
-        point.time_from_start = Duration(seconds=self.motion_seconds).to_msg()
-        goal.trajectory.points = [point]
-        handle = self._wait_future(self._action.send_goal_async(goal), 5.0)
-        if not handle.accepted:
-            return False
-        wrapped_result = self._wait_future(
-            handle.get_result_async(), self.motion_seconds + 15.0
-        )
-        return wrapped_result.result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
+        for attempt in range(1, max(1, self.motion_retry_count) + 1):
+            goal = FollowJointTrajectory.Goal()
+            goal.trajectory.joint_names = list(JOINT_NAMES)
+            point = JointTrajectoryPoint()
+            point.positions = list(target)
+            point.time_from_start = Duration(seconds=self.motion_seconds).to_msg()
+            goal.trajectory.points = [point]
+            try:
+                handle = self._wait_future(self._action.send_goal_async(goal), 5.0)
+                if handle.accepted:
+                    wrapped_result = self._wait_future(
+                        handle.get_result_async(), self.motion_seconds + 15.0
+                    )
+                    if (
+                        wrapped_result.result.error_code
+                        == FollowJointTrajectory.Result.SUCCESSFUL
+                    ):
+                        return True
+            except (RuntimeError, TimeoutError) as error:
+                self.get_logger().warning(
+                    f"이동 시도 {attempt} 응답 실패: {error}"
+                )
+            if attempt < max(1, self.motion_retry_count):
+                self.get_logger().warning(
+                    f"동일 목표 이동 재시도: {attempt + 1}/{self.motion_retry_count}"
+                )
+                time.sleep(0.5)
+        return False
 
     def _wait_valid_detection(self) -> bool:
         deadline = time.monotonic() + self.detection_timeout
@@ -310,31 +344,50 @@ class AutoHandeyeCollector(Node):
                 self.get_logger().info(
                     f"[{index}/{len(OBSERVATION_ROTATIONS_DEG)}] 목표 회전 [deg]: {rotation}"
                 )
-                solution, adjusted = self._solve_observation_ik(
-                    home_pose, rotation, seed
-                )
-                if solution is None:
-                    self.get_logger().warning("IK 실패: 이 자세는 건너뜁니다")
-                    continue
-                if adjusted != tuple(rotation):
-                    self.get_logger().info(f"IK 재시도 적용 회전 [deg]: {adjusted}")
-                if not self._move(solution):
-                    self.get_logger().warning("이동 실패: 이 자세는 건너뜁니다")
-                    continue
-                seed = solution
-                time.sleep(self.settle_seconds)
-                if not self._wait_valid_detection():
-                    self.get_logger().warning("유효 ChArUco 검출 없음: 샘플을 건너뜁니다")
-                    continue
-                response = self._wait_future(
-                    self._take_sample.call_async(TakeSample.Request()), 5.0
-                )
-                new_count = len(response.samples.samples)
-                if new_count <= collected:
-                    self.get_logger().warning("Easy Handeye 샘플 추가 실패")
-                    continue
-                collected = new_count
-                self.get_logger().info(f"샘플 저장 완료: {collected}개")
+                pose_collected = False
+                for adjusted in self._scaled_rotations(rotation):
+                    seed = self._current_joint_seed(seed)
+                    solution = self._solve_ik(
+                        self._target_pose(home_pose, adjusted), seed
+                    )
+                    if solution is None:
+                        self.get_logger().warning(
+                            f"IK 실패, 관측각 축소 재시도: {adjusted}"
+                        )
+                        continue
+                    if adjusted != tuple(rotation):
+                        self.get_logger().info(
+                            f"축소 관측 회전으로 재시도 [deg]: {adjusted}"
+                        )
+                    if not self._move(solution):
+                        self.get_logger().warning(
+                            f"이동 실패, 관측각 축소 재시도: {adjusted}"
+                        )
+                        continue
+                    seed = solution
+                    time.sleep(self.settle_seconds)
+                    if not self._wait_valid_detection():
+                        self.get_logger().warning(
+                            f"ChArUco 검출 실패, 관측각 축소 재시도: {adjusted}"
+                        )
+                        continue
+                    response = self._wait_future(
+                        self._take_sample.call_async(TakeSample.Request()), 5.0
+                    )
+                    new_count = len(response.samples.samples)
+                    if new_count <= collected:
+                        self.get_logger().warning(
+                            f"Easy Handeye 샘플 추가 실패, 재시도: {adjusted}"
+                        )
+                        continue
+                    collected = new_count
+                    pose_collected = True
+                    self.get_logger().info(f"샘플 저장 완료: {collected}개")
+                    break
+                if not pose_collected:
+                    self.get_logger().warning(
+                        f"자세 {index:02d}의 모든 축소 관측 시도가 실패했습니다"
+                    )
         finally:
             if self.return_home:
                 self.get_logger().info("초기 홈 자세로 복귀합니다")
