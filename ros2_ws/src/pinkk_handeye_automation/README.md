@@ -28,6 +28,17 @@ Easy Handeye2는 로봇과 카메라 TF의 전송 시각이 조금만 달라도 
 요청하므로 `easy_handeye2/handeye_sampler.py`의 기본 샘플 시각을 `Time()`으로
 설정해 각 TF 버퍼의 최신 값을 사용합니다.
 
+노트북의 사용자 site-packages에 설치된 비공식 `opencv-python 5.x`가 시스템
+OpenCV를 가릴 수 있습니다. Easy Handeye2 실행 터미널에서는 다음 설정으로
+ROS Jazzy의 시스템 OpenCV를 사용합니다.
+
+```bash
+export PYTHONNOUSERSITE=1
+python3 -c "import cv2; print(cv2.__version__, hasattr(cv2, 'calibrateHandEye'))"
+```
+
+두 번째 값이 반드시 `True`여야 합니다.
+
 먼저 이동 없는 IK 점검을 실행합니다.
 
 ```bash

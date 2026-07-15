@@ -431,7 +431,7 @@ class AutoHandeyeCollector(Node):
             )
         self._wait_future(self._save_samples.call_async(SaveSamples.Request()), 5.0)
         computed = self._wait_future(
-            self._compute.call_async(ComputeCalibration.Request()), 20.0
+            self._compute.call_async(ComputeCalibration.Request()), 60.0
         )
         if not computed.valid:
             raise RuntimeError("Easy Handeye 캘리브레이션 계산에 실패했습니다")
