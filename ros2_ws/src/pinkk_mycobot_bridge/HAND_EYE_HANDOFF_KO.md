@@ -1,27 +1,34 @@
 # MyCobot Hand-eye 캘리브레이션 작업 인수인계
 
-기준일: 2026-07-14  
+기준일: 2026-07-15
+
 구성: Eye-in-hand (카메라가 로봇 플랜지에 고정됨)
 
-## 1. 오늘 완료된 범위
+## 1. 현재 완료된 범위
 
 - 노트북의 ROS 2 Jazzy + MoveIt 2에서 MyCobot280 모델 로드 완료
-- MoveIt `Plan` 동작 확인
-- 로봇 PC의 실제 관절각을 `/joint_states`로 발행 완료
+- MoveIt `Plan` 및 실제 `Execute` 브리지 동작 확인
+- 로봇 PC의 실제 관절각 `/joint_states` 발행과 궤적 실행 완료
 - 노트북에서 실제 관절각과 `g_base -> joint6_flange` TF 수신 확인
-- 로봇 PC에서 ChArUco 보드 검출 완료
-- `camera_optical_frame -> charuco_board` TF 발행 준비 완료
-- 실제 검출 결과: 41 corners, reprojection error 0.381 px
+- 로봇 PC에서 ChArUco 보드 검출 및 TF 발행 완료
+- 자동 관측 자세 생성, 이동, 유효 검출 확인 및 샘플 수집 완료
+- Easy Handeye2로 Eye-in-hand 계산 및 결과 저장 완료
+- 최종 `joint6_flange -> camera_optical_frame` static TF 검증 완료
+- Flask MJPEG 영상에서 USB 포트 네 점 클릭 및 solvePnP 완료
+- `camera_optical_frame -> usb_port` TF 발행과 `g_base -> usb_port` 조회 완료
+- 로봇 PC Jupyter에서 TF 기반 PRE 위치 이동 시험 진행
 
-아직 구현하지 않은 범위:
+남은 범위:
 
-- MoveIt 궤적을 실제 MyCobot에 전달하는 실행 브리지
-- Easy Handeye2 설치 및 캘리브레이션 GUI 설정
-- 자동 포즈 이동 및 자동 샘플 수집
-- 최종 `T_flange_camera` 저장 및 별도 검증
+- 그리퍼와 USB 충전기의 실제 TCP 변환 측정
+- 가까운 거리에서 USB 포트 재검출 및 PBVS/IBVS 미세 보정
+- 힘/접촉 조건을 포함한 실제 USB 삽입
+- 반복 실험을 통한 최종 위치·각도 오차 통계
 
-현재 로봇 브리지는 **읽기 전용**이다. `get_angles()`만 호출하며 로봇에
-이동 명령을 보내지 않는다. MoveIt의 실제 Execute도 비활성화되어 있다.
+`trajectory_bridge`는 `/joint_states`를 발행하면서 MoveIt의 마지막 관절 목표를
+실제 MyCobot에 전달한다. 로봇 PC Jupyter에서 `pymycobot`을 직접 사용할 때는
+반드시 이 브리지를 먼저 종료해야 한다. `/dev/ttyUSB0`의 소유자는 항상 하나여야
+한다.
 
 ## 2. 사용 프레임과 데이터 흐름
 
@@ -73,7 +80,7 @@ Easy Handeye2의 Eye-in-hand 설정값:
 ~/Pinkk-robot-arm/src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
 ```
 
-## 4. 내일 시작 전 물리 고정 확인
+## 4. 작업 시작 전 물리 고정 확인
 
 1. ChArUco 보드를 로봇 베이스와 같은 작업대에 단단히 고정한다.
 2. 수집이 끝날 때까지 보드를 움직이거나 회전하지 않는다.
@@ -200,7 +207,11 @@ date +%s.%N
 가능하면 차이를 0.1초 이하로 유지한다. 시간 차이가 크면 TF lookup의 extrapolation
 오류와 잘못된 자세 쌍이 발생할 수 있으므로 캘리브레이션 전에 NTP/chrony를 맞춘다.
 
-## 8. 내일 구현 순서
+## 8. 2026-07-14 작성 계획 기록
+
+아래 단계는 최초 연동 시 작성한 계획이다. 2026-07-15 기준으로 실제 실행 브리지,
+Easy Handeye2, 자동 수집과 최종 Hand-eye 저장까지 완료했다. 현재 최신 실행 절차는
+11절부터 따른다.
 
 ### 단계 1: 안전한 실제 실행 브리지
 
@@ -304,3 +315,339 @@ ros2 topic info /joint_states -v       # publisher 중복 확인
 
 `ROS_LOCALHOST_ONLY is deprecated` 경고는 현재 실행 실패 원인이 아니며, 양쪽에서
 `ROS_LOCALHOST_ONLY=0`이면 네트워크 discovery는 계속 동작한다.
+
+## 11. 최종 Hand-eye 결과
+
+Easy Handeye2 자동 수집은 유효 샘플 20개로 완료했다. 최종 변환 방향은 다음과
+같다.
+
+```text
+joint6_flange -> camera_optical_frame
+= T_flange_camera
+```
+
+저장된 Easy Handeye2 결과:
+
+```text
+~/.ros2/easy_handeye2/calibrations/pinkk_eye_in_hand.calib
+```
+
+프로젝트 NumPy 파일:
+
+```text
+~/Pinkk-robot-arm/src/robot_arm/robot_camera/handeye_calibration_1828/data/T_flange_camera.npy
+```
+
+최종 translation과 quaternion:
+
+```text
+translation [m]
+[-0.032326655, -0.040054972, 0.030691236]
+
+quaternion xyzw
+[-0.008700106, 0.002006141, -0.374364741, 0.927238548]
+```
+
+노트북에서 실제 Hand-eye TF를 발행하는 명령:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=36
+export ROS_LOCALHOST_ONLY=0
+
+ros2 run tf2_ros static_transform_publisher \
+  --x -0.032326655 \
+  --y -0.040054972 \
+  --z 0.030691236 \
+  --qx -0.008700106 \
+  --qy 0.002006141 \
+  --qz -0.374364741 \
+  --qw 0.927238548 \
+  --frame-id joint6_flange \
+  --child-frame-id camera_optical_frame
+```
+
+Easy Handeye2를 동시에 실행하면 같은 부모·자식 TF가 중복될 수 있으므로 종료한다.
+
+## 12. USB 포트 수동 검출 및 TF 실행 절차
+
+현재 단계의 전체 계산은 다음과 같다.
+
+```text
+T_base_usb
+= T_base_flange @ T_flange_camera @ T_camera_usb
+```
+
+`T_camera_usb`는 USB-A 포트의 네 모서리를 클릭한 뒤 `solvePnP`로 구한다. 클릭
+순서는 반드시 다음과 같다.
+
+```text
+좌상단 -> 우상단 -> 우하단 -> 좌하단
+```
+
+### 12.1 로봇 PC 터미널 A: 실제 로봇 브리지
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/venv/mycobot/bin/activate
+source ~/mycobot_moveit_ws/install/setup.bash
+source ~/mycobot_moveit_ws/install_bridge/setup.bash
+
+export PYTHONPATH="$HOME/venv/mycobot/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export ROS_DOMAIN_ID=36
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py speed:=10
+```
+
+### 12.2 로봇 PC 터미널 B: Flask 카메라
+
+기존 Flask MJPEG 서버를 실행한다. 노트북에서 다음 주소가 열려야 한다.
+
+```text
+http://192.168.6.1:5000/stream
+```
+
+`charuco_tf_bridge`와 Flask를 동시에 실행하면 `/dev/video0`가 충돌할 수 있으므로
+ChArUco 노드는 종료한다.
+
+### 12.3 노트북 터미널 A: MoveIt과 RViz
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+source ~/mycobot_moveit_ws/install_bridge/setup.bash
+
+export ROS_DOMAIN_ID=36
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch pinkk_mycobot_bridge real_execution.launch.py
+```
+
+### 12.4 노트북 터미널 B: Hand-eye static TF
+
+11절의 `static_transform_publisher` 명령을 실행하고 계속 켜 둔다.
+
+### 12.5 노트북 터미널 C: USB 클릭 TF
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+
+export ROS_DOMAIN_ID=36
+export ROS_LOCALHOST_ONLY=0
+
+cd ~/Desktop/Pinkk-robot-arm
+
+python3 -m \
+  src.robot_arm.robot_camera.handeye_calibration_1828.applications.manual_usb_tf \
+  --url http://192.168.6.1:5000/stream
+```
+
+OpenCV 창에서 `f`로 화면을 고정하고 네 점을 클릭한다. `r`은 이전 결과 초기화,
+`q`는 종료다. 로봇을 이동한 뒤에는 반드시 `r`을 누르고 새 영상에서 다시
+클릭한다.
+
+### 12.6 노트북 터미널 D: 최종 base 좌표 확인
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=36
+export ROS_LOCALHOST_ONLY=0
+
+ros2 run tf2_ros tf2_echo g_base usb_port
+```
+
+2026-07-15 시험 측정값:
+
+```text
+Translation [m]: [0.242, -0.008, -0.070]
+Quaternion xyzw: [0.911, -0.341, -0.090, 0.215]
+RPY [degree]: [153.088, 0.988, -41.309]
+```
+
+USB 포트는 작업대에 평평하게 고정되어 있으므로 현재 시험에서는 solvePnP의
+roll/pitch를 로봇 목표 자세로 사용하지 않는다. 다음 규칙을 사용한다.
+
+```text
+RX = -180 deg
+RY = 0 deg
+RZ = USB Yaw + GRIPPER_YAW_OFFSET
+```
+
+현재 육안 정렬로 구한 방향 차이는 다음과 같다.
+
+```text
+GRIPPER_YAW_OFFSET = -37.961 deg
+현재 USB Yaw       = -41.309 deg
+현재 목표 RZ        = -79.270 deg
+```
+
+이 값은 위치/TCP 오프셋이 아니라 USB 좌표축과 그리퍼 방향 사이의 시험용 각도
+차이다. 그리퍼 장착 방향이 바뀌면 다시 측정한다.
+
+## 13. 로봇 PC Jupyter 직접 이동 절차
+
+이 절차는 MoveIt이 아니라 로봇 PC Jupyter의 `pymycobot`으로 직접 이동하는
+현재 시험 방식이다. 시작 전에 `trajectory_bridge`를 `Ctrl+C`로 종료하고 다음
+명령에서 출력이 없는지 확인한다.
+
+```bash
+sudo lsof /dev/ttyUSB0
+```
+
+Jupyter kernel만 `/dev/ttyUSB0`를 열어야 한다. Flask는 `/dev/video0`를 사용하므로
+계속 실행할 수 있다.
+
+### 13.1 현재 TF를 입력한 PRE 이동 코드
+
+아래 값은 12.6절의 현재 USB 측정에만 대응한다. USB를 다시 검출하면
+`USB_X_M`, `USB_Y_M`, `USB_Z_M`, `USB_YAW_DEG`를 새 TF 값으로 교체한다.
+
+```python
+import time
+
+USB_X_M = 0.242
+USB_Y_M = -0.008
+USB_Z_M = -0.070
+USB_YAW_DEG = -41.309
+
+FIXED_RX = -180.0
+FIXED_RY = 0.0
+GRIPPER_YAW_OFFSET_DEG = -37.961
+
+TEST_STANDOFF_MM = 220.0
+XY_CLEARANCE_MM = 30.0
+
+XY_SPEED = 10
+YAW_SPEED = 5
+Z_SPEED = 5
+
+
+def get_valid_coords(mc, attempts=15):
+    for _ in range(attempts):
+        coords = mc.get_coords()
+        if isinstance(coords, list) and len(coords) == 6:
+            return [float(value) for value in coords]
+        time.sleep(0.2)
+    raise RuntimeError("로봇 좌표 읽기 실패")
+
+
+usb_x_mm = USB_X_M * 1000.0
+usb_y_mm = USB_Y_M * 1000.0
+usb_z_mm = USB_Z_M * 1000.0
+target_rz = (
+    USB_YAW_DEG + GRIPPER_YAW_OFFSET_DEG + 180.0
+) % 360.0 - 180.0
+
+pre_target = [
+    usb_x_mm,
+    usb_y_mm,
+    usb_z_mm + TEST_STANDOFF_MM,
+    FIXED_RX,
+    FIXED_RY,
+    target_rz,
+]
+xy_approach_z = pre_target[2] + XY_CLEARANCE_MM
+
+current = get_valid_coords(mc)
+xy_target = [
+    pre_target[0], pre_target[1], xy_approach_z,
+    FIXED_RX, FIXED_RY, current[5],
+]
+
+print("1. XY 목표:", xy_target)
+mc.send_coords(xy_target, XY_SPEED, 0)
+time.sleep(4.0)
+
+current = get_valid_coords(mc)
+yaw_target = [
+    current[0], current[1], current[2],
+    FIXED_RX, FIXED_RY, target_rz,
+]
+
+print("2. Yaw 목표:", yaw_target)
+mc.send_coords(yaw_target, YAW_SPEED, 0)
+time.sleep(4.0)
+
+z_target = [
+    pre_target[0], pre_target[1], pre_target[2],
+    FIXED_RX, FIXED_RY, target_rz,
+]
+
+print("3. PRE Z 목표:", z_target)
+mc.send_coords(z_target, Z_SPEED, 1)
+time.sleep(4.0)
+print("최종 pose:", get_valid_coords(mc))
+```
+
+현재 입력의 계산 결과:
+
+```text
+PRE target   = [242.0, -8.0, 150.0, -180.0, 0.0, -79.27]
+XY approach Z = 180.0 mm
+```
+
+`XY_CLEARANCE_MM`는 PRE보다 높은 곳에서 먼저 XY를 맞추기 위한 값이므로
+`pre_target[2] + XY_CLEARANCE_MM`으로 계산한다.
+
+### 13.2 PRE에서 천천히 수직 하강
+
+공구 TCP를 아직 측정하지 않았으므로 아래 기본값은 동작 확인용으로 20 mm만
+하강한다. USB 표면 좌표까지 직접 내려가지 않는다.
+
+```python
+import math
+import time
+
+
+def descend_z_slowly(mc, distance_mm=20.0, step_mm=2.0, speed=3):
+    if distance_mm <= 0.0 or step_mm <= 0.0:
+        raise ValueError("거리와 step은 0보다 커야 합니다")
+
+    start = get_valid_coords(mc)
+    start_z = start[2]
+    steps = math.ceil(distance_mm / step_mm)
+
+    try:
+        for index in range(1, steps + 1):
+            moved = min(index * step_mm, distance_mm)
+            target_z = start_z - moved
+            target = [
+                pre_target[0], pre_target[1], target_z,
+                FIXED_RX, FIXED_RY, target_rz,
+            ]
+            print(f"[{index}/{steps}] 목표 Z={target_z:.2f} mm")
+            mc.send_coords(target, speed, 1)
+            time.sleep(1.0)
+            print("실제 pose:", get_valid_coords(mc))
+    except KeyboardInterrupt:
+        if hasattr(mc, "stop"):
+            mc.stop()
+        print("사용자 중지 pose:", get_valid_coords(mc))
+        return None
+
+    return get_valid_coords(mc)
+
+
+descend_z_slowly(mc, distance_mm=20.0, step_mm=2.0)
+```
+
+## 14. 직접 Jupyter 제어 후 TF를 다시 사용할 때
+
+Jupyter가 `/dev/ttyUSB0`를 직접 소유하는 동안에는 `trajectory_bridge`가 꺼져 있어
+실제 `/joint_states`와 `g_base -> joint6_flange`가 갱신되지 않는다. 따라서 직접
+이동한 뒤 화면에 남아 있는 `g_base -> usb_port`를 새 측정값으로 믿으면 안 된다.
+
+다시 검출하려면 다음 순서를 따른다.
+
+1. Jupyter의 로봇 명령 실행을 끝내고 kernel의 시리얼 연결을 종료한다.
+2. `sudo lsof /dev/ttyUSB0`로 포트가 비었는지 확인한다.
+3. 로봇 PC에서 `trajectory_bridge.launch.py`를 다시 실행한다.
+4. 노트북에서 `/joint_states`와 `g_base -> joint6_flange` 갱신을 확인한다.
+5. USB 클릭 창에서 `r`을 누른 후 새 영상의 네 모서리를 다시 클릭한다.
+6. 새 `g_base -> usb_port`를 읽고 Jupyter 입력값을 갱신한다.
+
+반복 PBVS/IBVS 단계에서는 이 재시작 과정이 비효율적이므로 최종 구현은 Jupyter가
+시리얼을 직접 열지 않고 ROS의 `/compute_ik`와
+`/arm_group_controller/follow_joint_trajectory`를 호출하는 구조로 전환한다.
