@@ -217,6 +217,21 @@ class AutoHandeyeCollector(Node):
             return None
         return [float(values[name]) for name in JOINT_NAMES]
 
+    def _solve_observation_ik(
+        self,
+        home: PoseStamped,
+        rotation: Sequence[float],
+        seed: Sequence[float],
+    ) -> tuple[list[float] | None, tuple[float, float, float]]:
+        """원래 회전이 불가능하면 각도를 줄여 같은 방향으로 IK를 재시도한다."""
+        for scale in (1.0, 0.75, 0.5, 0.35):
+            adjusted = tuple(round(float(value) * scale, 3) for value in rotation)
+            target = self._target_pose(home, adjusted)
+            solution = self._solve_ik(target, seed)
+            if solution is not None:
+                return solution, adjusted
+        return None, tuple(float(value) for value in rotation)
+
     def _move(self, target: Sequence[float]) -> bool:
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = list(JOINT_NAMES)
@@ -273,11 +288,14 @@ class AutoHandeyeCollector(Node):
             )
             ik_successes = 0
             for index, rotation in enumerate(OBSERVATION_ROTATIONS_DEG, start=1):
-                target = self._target_pose(home_pose, rotation)
-                solution = self._solve_ik(target, home_joints)
+                solution, adjusted = self._solve_observation_ik(
+                    home_pose, rotation, home_joints
+                )
                 status = "IK OK" if solution is not None else "IK 실패"
                 ik_successes += int(solution is not None)
-                self.get_logger().info(f"자세 {index:02d} {rotation}: {status}")
+                self.get_logger().info(
+                    f"자세 {index:02d} 요청={rotation}, 적용={adjusted}: {status}"
+                )
             self.get_logger().info(
                 f"DRY RUN 완료: IK 성공 {ik_successes}/{len(OBSERVATION_ROTATIONS_DEG)}"
             )
@@ -292,11 +310,14 @@ class AutoHandeyeCollector(Node):
                 self.get_logger().info(
                     f"[{index}/{len(OBSERVATION_ROTATIONS_DEG)}] 목표 회전 [deg]: {rotation}"
                 )
-                target_pose = self._target_pose(home_pose, rotation)
-                solution = self._solve_ik(target_pose, seed)
+                solution, adjusted = self._solve_observation_ik(
+                    home_pose, rotation, seed
+                )
                 if solution is None:
                     self.get_logger().warning("IK 실패: 이 자세는 건너뜁니다")
                     continue
+                if adjusted != tuple(rotation):
+                    self.get_logger().info(f"IK 재시도 적용 회전 [deg]: {adjusted}")
                 if not self._move(solution):
                     self.get_logger().warning("이동 실패: 이 자세는 건너뜁니다")
                     continue
