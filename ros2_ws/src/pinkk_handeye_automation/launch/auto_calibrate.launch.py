@@ -10,6 +10,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("execute", default_value="false"),
             DeclareLaunchArgument("settle_seconds", default_value="1.5"),
             DeclareLaunchArgument("detection_timeout_seconds", default_value="8.0"),
+            DeclareLaunchArgument("target_samples", default_value="15"),
+            DeclareLaunchArgument("minimum_samples", default_value="12"),
             Node(
                 package="pinkk_handeye_automation",
                 executable="auto_collect",
@@ -22,6 +24,8 @@ def generate_launch_description() -> LaunchDescription:
                         "detection_timeout_seconds": LaunchConfiguration(
                             "detection_timeout_seconds"
                         ),
+                        "target_samples": LaunchConfiguration("target_samples"),
+                        "minimum_samples": LaunchConfiguration("minimum_samples"),
                     }
                 ],
             ),

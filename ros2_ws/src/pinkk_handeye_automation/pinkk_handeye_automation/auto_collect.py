@@ -62,6 +62,21 @@ OBSERVATION_ROTATIONS_DEG = (
     (-10.0, 0.0, -12.0),
     (0.0, 10.0, -12.0),
     (0.0, -10.0, 12.0),
+    (8.0, 8.0, 8.0),
+    (-8.0, -8.0, -8.0),
+    (8.0, -8.0, 8.0),
+    (-8.0, 8.0, -8.0),
+    (12.0, 6.0, 0.0),
+    (-12.0, -6.0, 0.0),
+    (12.0, -6.0, 0.0),
+    (-12.0, 6.0, 0.0),
+    (6.0, 0.0, 12.0),
+    (-6.0, 0.0, -12.0),
+    (6.0, 0.0, -12.0),
+    (-6.0, 0.0, 12.0),
+    (0.0, 6.0, 12.0),
+    (0.0, -6.0, -12.0),
+    (0.0, 6.0, -12.0),
 )
 
 
@@ -98,6 +113,8 @@ class AutoHandeyeCollector(Node):
         self.declare_parameter("max_tf_age_seconds", 0.4)
         self.declare_parameter("motion_seconds", 4.0)
         self.declare_parameter("motion_retry_count", 2)
+        self.declare_parameter("target_samples", 15)
+        self.declare_parameter("minimum_samples", 12)
         self.declare_parameter("return_home", True)
 
         self.execute_enabled = bool(self.get_parameter("execute").value)
@@ -108,7 +125,11 @@ class AutoHandeyeCollector(Node):
         self.max_tf_age = float(self.get_parameter("max_tf_age_seconds").value)
         self.motion_seconds = float(self.get_parameter("motion_seconds").value)
         self.motion_retry_count = int(self.get_parameter("motion_retry_count").value)
+        self.target_samples = int(self.get_parameter("target_samples").value)
+        self.minimum_samples = int(self.get_parameter("minimum_samples").value)
         self.return_home = bool(self.get_parameter("return_home").value)
+        if self.target_samples < self.minimum_samples:
+            raise ValueError("target_samples는 minimum_samples 이상이어야 합니다")
 
         self._state_lock = threading.Lock()
         self._latest_joints: list[float] | None = None
@@ -341,6 +362,11 @@ class AutoHandeyeCollector(Node):
         seed = home_joints
         try:
             for index, rotation in enumerate(OBSERVATION_ROTATIONS_DEG, start=1):
+                if collected >= self.target_samples:
+                    self.get_logger().info(
+                        f"목표 유효 샘플 {self.target_samples}개를 확보했습니다"
+                    )
+                    break
                 self.get_logger().info(
                     f"[{index}/{len(OBSERVATION_ROTATIONS_DEG)}] 목표 회전 [deg]: {rotation}"
                 )
@@ -393,8 +419,16 @@ class AutoHandeyeCollector(Node):
                 self.get_logger().info("초기 홈 자세로 복귀합니다")
                 self._move(home_joints)
 
-        if collected < 10:
-            raise RuntimeError(f"유효 샘플이 {collected}개뿐이라 계산하지 않습니다")
+        if collected < self.minimum_samples:
+            raise RuntimeError(
+                f"유효 샘플이 {collected}개뿐입니다. "
+                f"최소 {self.minimum_samples}개 미만이라 계산하지 않습니다"
+            )
+        if collected < self.target_samples:
+            self.get_logger().warning(
+                f"목표 {self.target_samples}개에는 못 미치지만 "
+                f"최소 조건 {self.minimum_samples}개를 만족해 계산합니다"
+            )
         self._wait_future(self._save_samples.call_async(SaveSamples.Request()), 5.0)
         computed = self._wait_future(
             self._compute.call_async(ComputeCalibration.Request()), 20.0
