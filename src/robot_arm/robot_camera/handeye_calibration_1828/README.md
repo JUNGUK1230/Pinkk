@@ -41,7 +41,9 @@ handeye_calibration_1828/
    validation/README.md의 읽기 전용 연결 검사로 get_coords(), reference frame, end type을 확인합니다.
 
 6. sample 수집
-   runtime.collect_samples를 실행하고, 로봇을 다양한 위치와 회전 자세로 움직이며 15~30개 sample을 저장합니다.
+   SSH 사용 시 [runtime/README.md](runtime/README.md)의 X11 forwarding 안내에 따라 노트북
+   터미널에서 `ssh -Y -C`로 접속한 뒤 runtime.collect_samples를 실행하고, 로봇을 다양한
+   위치와 회전 자세로 움직이며 15~30개 sample을 저장합니다.
 
 7. Hand-Eye 계산
    runtime.calibrate를 실행해 여러 방법의 결과를 비교하고 T_flange_camera를 저장합니다.
