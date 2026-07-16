@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "auto_collect = pinkk_handeye_automation.auto_collect:main",
+            "usb_pre_approach = pinkk_handeye_automation.usb_pre_approach:main",
         ],
     },
 )

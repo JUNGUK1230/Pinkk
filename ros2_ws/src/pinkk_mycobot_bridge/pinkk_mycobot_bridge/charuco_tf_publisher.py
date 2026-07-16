@@ -1,5 +1,4 @@
-"""Detect the project ChArUco board and publish camera-optical-to-board TF."""
-
+"""charuco 보드 감지와 camera-board TF 발행"""
 from __future__ import annotations
 
 import math

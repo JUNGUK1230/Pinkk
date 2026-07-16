@@ -19,7 +19,12 @@ from ..config import settings as config
 from ..core.charuco import load_intrinsics
 
 
-POINT_LABELS = ("좌상단", "우상단", "우하단", "좌하단")
+POINT_LABELS = (
+    "긴 변 시작점",
+    "긴 변 끝점",
+    "인접한 짧은 변 끝점",
+    "마지막 점",
+)
 
 
 class MjpegStream:
@@ -85,6 +90,16 @@ def estimate_usb_pose(
     """네 모서리로 USB-to-camera rvec/tvec와 재투영 오차를 구한다."""
     if len(points_px) != 4:
         raise ValueError("USB 모서리 네 점이 필요합니다")
+    image_points = np.asarray(points_px, dtype=np.float64)
+    first_edge_px = float(np.linalg.norm(image_points[1] - image_points[0]))
+    second_edge_px = float(np.linalg.norm(image_points[2] - image_points[1]))
+    if first_edge_px <= second_edge_px:
+        raise ValueError(
+            "클릭 순서가 규격 축과 맞지 않습니다: 1→2는 USB의 긴 변 "
+            f"({width_mm:.1f}mm), 2→3은 짧은 변 ({height_mm:.1f}mm)이어야 "
+            f"합니다. 현재 영상 길이는 1→2={first_edge_px:.1f}px, "
+            f"2→3={second_edge_px:.1f}px입니다"
+        )
     half_width = width_mm / 2.0
     half_height = height_mm / 2.0
     object_points = np.array(
@@ -96,7 +111,6 @@ def estimate_usb_pose(
         ],
         dtype=np.float64,
     )
-    image_points = np.asarray(points_px, dtype=np.float64)
     success, rvec, tvec = cv2.solvePnP(
         object_points,
         image_points,
@@ -155,13 +169,19 @@ class ManualUsbTf:
         self.points.append((float(x), float(y)))
         print(f"{len(self.points)}번 {POINT_LABELS[len(self.points)-1]}: ({x}, {y})")
         if len(self.points) == 4:
-            self.pose = estimate_usb_pose(
-                self.points,
-                self.camera_matrix,
-                self.dist_coeffs,
-                self.width_mm,
-                self.height_mm,
-            )
+            try:
+                self.pose = estimate_usb_pose(
+                    self.points,
+                    self.camera_matrix,
+                    self.dist_coeffs,
+                    self.width_mm,
+                    self.height_mm,
+                )
+            except (ValueError, RuntimeError) as error:
+                self.pose = None
+                print(f"USB pose 계산 거부: {error}")
+                print("r을 누른 뒤 1→2를 USB의 긴 변 방향으로 다시 클릭하세요")
+                return
             _rvec, tvec, error, _projected = self.pose
             xyz = tvec.reshape(3)
             print(
@@ -300,7 +320,10 @@ def main() -> None:
                 if app.frozen is None:
                     app.frozen = frame.copy()
                     app.reset()
-                    print("화면 고정: 좌상단부터 네 모서리를 클릭하세요")
+                    print(
+                        "화면 고정: 1→2는 USB 긴 변(11.5mm), "
+                        "2→3은 인접한 짧은 변(4.5mm)이 되게 둘레 순서로 클릭하세요"
+                    )
                 else:
                     app.frozen = None
                     app.reset()
@@ -316,4 +339,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

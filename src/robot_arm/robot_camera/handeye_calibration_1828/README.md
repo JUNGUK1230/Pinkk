@@ -1,5 +1,9 @@
 # 로봇 PC용 Eye-in-Hand Hand-Eye 캘리브레이션
 
+이 폴더는 현재 권장 ROS2 Easy Handeye2 경로가 아니라 **수동 비교·독립 검증·복구
+경로**입니다. 어떤 결과를 활성 파일로 사용하는지는
+[`../CALIBRATION_GUIDE_KO.md`](../CALIBRATION_GUIDE_KO.md)를 먼저 확인합니다.
+
 이 패키지는 로봇 팔 끝단에 고정된 카메라의 `T_flange_camera`를 계산합니다.
 모든 실행은 로봇 PC의 Linux 환경을 기준으로 하며, 카메라는 Flask 서버가 아니라
 `cv2.VideoCapture()`로 직접 열고 로봇 pose는 `pymycobot`의 `mc.get_coords()`에서 읽습니다.
