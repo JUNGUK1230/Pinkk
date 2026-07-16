@@ -46,7 +46,16 @@ class HybridAStarPlanner:
         motion_step_cm: float = 3.0,
         path_output_step_cm: float = 0.5,
         yaw_resolution_deg: float = 10.0,
-        steer_set_deg: tuple[float, ...] = (-30.0, 0.0, 30.0),
+        steer_set_deg: tuple[float, ...] = (
+            -30.0,
+            -20.0,
+            -10.0,
+            0.0,
+            10.0,
+            20.0,
+            30.0,
+        ),
+        max_steer_change_deg: float = 10.0,
         allow_reverse: bool = True,
         obstacle_threshold: int = 50,
         timeout_sec: float = 5.0,
@@ -73,8 +82,10 @@ class HybridAStarPlanner:
             )
         if vehicle_length_cm < wheelbase_cm:
             raise ValueError("vehicle length must not be shorter than wheelbase")
-        if yaw_resolution_deg <= 0 or timeout_sec <= 0:
-            raise ValueError("yaw resolution and timeout must be positive")
+        if yaw_resolution_deg <= 0 or max_steer_change_deg <= 0 or timeout_sec <= 0:
+            raise ValueError(
+                "yaw resolution, maximum steering change, and timeout must be positive"
+            )
         if not steer_set_deg:
             raise ValueError("steer_set_deg must contain at least one steering angle")
 
@@ -98,6 +109,7 @@ class HybridAStarPlanner:
         self.path_output_step_cm = path_output_step_cm
         self.yaw_resolution_rad = math.radians(yaw_resolution_deg)
         self.steer_set_rad = tuple(math.radians(value) for value in steer_set_deg)
+        self.max_steer_change_rad = math.radians(max_steer_change_deg)
         self.allow_reverse = allow_reverse
         self.obstacle_threshold = obstacle_threshold
         self.timeout_sec = timeout_sec
@@ -179,6 +191,14 @@ class HybridAStarPlanner:
         directions = (1, -1) if self.allow_reverse else (1,)
         for direction in directions:
             for steer_rad in self.steer_set_rad:
+                # A hard steering-rate constraint prevents an instantaneous jump
+                # such as -30 to +30 degrees at a primitive boundary. This is
+                # separate from the soft steer-change cost below.
+                if (
+                    abs(steer_rad - state.steer_rad)
+                    > self.max_steer_change_rad + 1e-12
+                ):
+                    continue
                 neighbor = self._simulate_motion(state, steer_rad, direction)
                 if neighbor is None:
                     continue

@@ -45,7 +45,7 @@ REGISTRATION_FILE = (
 MODEL_FILE = (
     PROJECT_DIR.parents[1]
     / "models"
-    / "yolo11l.pt"
+    / "best.pt"
 )
 
 LIDAR_MAP_FILE = (
@@ -453,6 +453,41 @@ while True:
 
 
     vehicle_count = 0
+
+
+    # --------------------------------------------------------
+    # Segmentation mask overlay
+    # --------------------------------------------------------
+
+    if result.masks is not None:
+
+        mask_overlay = annotated_bev.copy()
+
+        for polygon in result.masks.xy:
+
+            polygon_i = np.round(
+                polygon
+            ).astype(np.int32)
+
+            if len(polygon_i) >= 3:
+
+                cv2.fillPoly(
+                    mask_overlay,
+                    [polygon_i],
+                    (
+                        255,
+                        0,
+                        255
+                    )
+                )
+
+        annotated_bev = cv2.addWeighted(
+            mask_overlay,
+            0.35,
+            annotated_bev,
+            0.65,
+            0.0
+        )
 
 
     # --------------------------------------------------------

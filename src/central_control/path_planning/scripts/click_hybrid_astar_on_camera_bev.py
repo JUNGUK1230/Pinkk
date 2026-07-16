@@ -273,6 +273,15 @@ class InteractiveHybridAStarApp:
                     "method": "kinematic_bicycle",
                     "output_step_cm": self.planner.path_output_step_cm,
                 },
+                "steering_constraints": {
+                    "candidates_deg": [
+                        math.degrees(value)
+                        for value in self.planner.steer_set_rad
+                    ],
+                    "max_change_deg_per_primitive": math.degrees(
+                        self.planner.max_steer_change_rad
+                    ),
+                },
                 "path": rows,
             }
             with json_path.open("w", encoding="utf-8") as file:
@@ -338,6 +347,7 @@ def main() -> int:
             path_output_step_cm=float(hybrid["path_output_step_cm"]),
             yaw_resolution_deg=float(hybrid["yaw_resolution_deg"]),
             steer_set_deg=tuple(float(value) for value in hybrid["steer_set_deg"]),
+            max_steer_change_deg=float(hybrid["max_steer_change_deg"]),
             allow_reverse=bool(hybrid["allow_reverse"]),
             timeout_sec=float(hybrid["timeout_sec"]),
             goal_tolerance_cm=float(hybrid["goal_tolerance_cm"]),
@@ -358,6 +368,16 @@ def main() -> int:
         f"{planner.vehicle_width_cm:.1f} cm, safety margin={safety_margin_cm:.1f} cm"
     )
     print(f"Control path output step: {planner.path_output_step_cm:.2f} cm")
+    print(
+        "Steering candidates: "
+        + ", ".join(
+            f"{math.degrees(value):.0f} deg" for value in planner.steer_set_rad
+        )
+    )
+    print(
+        "Maximum steering change per primitive: "
+        f"{math.degrees(planner.max_steer_change_rad):.1f} deg"
+    )
     print("Click order: start position -> start heading -> goal position -> goal heading")
     print("r: reset | s: save | q/ESC: quit")
     app = InteractiveHybridAStarApp(

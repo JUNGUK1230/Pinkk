@@ -95,7 +95,7 @@ Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 �
 
 ## Hybrid A* 및 헤딩 지정
 
-Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각은 기본 `-30°, 0°, 30°`이며 전진과 후진을 모두 탐색합니다.
+Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각 후보는 기본 `-30°`부터 `30°`까지 10° 간격이고, 전진과 후진을 모두 탐색합니다. 인접 primitive 사이의 조향 변화는 최대 10°로 제한하여 `-30°`에서 `+30°`로 즉시 바뀌는 경로를 생성하지 않습니다.
 
 탐색 성능을 위한 3 cm motion primitive와 제어기에 전달하는 경로 간격을 분리합니다. 경로를 찾은 후에 각 primitive의 조향각과 `direction`을 유지한 채 bicycle model로 다시 적분하여 **0.5 cm 간격**의 고밀도 pose를 생성합니다. 따라서 단순 직선 보간과 달리 곡선을 따라 `x`, `y`, `yaw`가 점진적으로 변합니다. 간격은 `config/planner_config.yaml`의 `path_output_step_cm`으로 조정합니다.
 
@@ -119,4 +119,4 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 - Reeds-Shepp analytic expansion 추가
 - Hybrid 경로 smoothing과 속도 profile 생성
-- 생성 경로를 PID/MPC 제어기에 전달
+- 생성 경로를 PID/MPC 제어기에 전달1

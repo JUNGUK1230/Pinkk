@@ -1,4 +1,4 @@
 yolo:
-  model_path: src/central_control/models/yolo11l.pt
+  model_path: src/central_control/models/best.pt
   confidence: 0.5
   iou: 0.45

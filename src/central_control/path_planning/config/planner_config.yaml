@@ -14,10 +14,17 @@ hybrid_astar:
   motion_step_cm: 3.0
   steer_set_deg:
     - -30.0
+    - -20.0
+    - -10.0
     - 0.0
+    - 10.0
+    - 20.0
     - 30.0
+  # 3 cm primitive 경계에서 한 번에 변할 수 있는 최대 가상 조향각
+  max_steer_change_deg: 10.0
   allow_reverse: true
-  timeout_sec: 5.0
+  # 7개 조향 상태 탐색이 실제 지도에서 안정적으로 완료되도록 여유를 둔다.
+  timeout_sec: 10.0
   goal_tolerance_cm: 4.0
   goal_yaw_tolerance_deg: 15.0
 

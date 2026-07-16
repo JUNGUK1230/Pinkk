@@ -10,7 +10,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.append(str(PROJECT_ROOT / "src"))
 
-from hybrid_astar_planner import HybridAStarPlanner  # noqa: E402
+from hybrid_astar_planner import HybridAStarPlanner, HybridState  # noqa: E402
 
 
 def make_planner(grid: np.ndarray) -> HybridAStarPlanner:
@@ -24,6 +24,8 @@ def make_planner(grid: np.ndarray) -> HybridAStarPlanner:
         rear_overhang_cm=2.0,
         motion_step_cm=3.0,
         path_output_step_cm=0.5,
+        steer_set_deg=(-30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0),
+        max_steer_change_deg=10.0,
         timeout_sec=2.0,
     )
 
@@ -32,6 +34,14 @@ def main() -> int:
     """Verify heading-dependent collision and a collision-free planned path."""
     free_grid = np.zeros((100, 100), dtype=np.uint8)
     free_planner = make_planner(free_grid)
+
+    # From zero steering, only -10/0/+10-degree primitives may be expanded.
+    initial_state = HybridState(50.0, 50.0, 0.0, 1, 0.0)
+    initial_neighbor_steers = {
+        round(math.degrees(neighbor.steer_rad))
+        for neighbor, _ in free_planner._neighbors(initial_state)
+    }
+    assert initial_neighbor_steers == {-10, 0, 10}
 
     # At yaw=0, the rectangle nose covers the obstacle 10 cm ahead.
     front_obstacle_grid = free_grid.copy()
