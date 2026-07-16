@@ -222,8 +222,16 @@ model = YOLO(
 )
 
 
+if model.task != "segment":
+
+    raise RuntimeError(
+        "Segmentation 모델이 아닙니다: "
+        f"task={model.task}"
+    )
+
+
 print(
-    "YOLO Model Loaded"
+    "YOLO11 Segmentation Model Loaded"
 )
 
 
@@ -492,12 +500,12 @@ while True:
 
     # --------------------------------------------------------
     # STEP 6
-    # Detection loop
+    # Segmentation loop
     # --------------------------------------------------------
 
     if result.boxes is not None:
 
-        for box in result.boxes:
+        for index, box in enumerate(result.boxes):
 
             # -----------------------------------------------
             # class ID
@@ -549,17 +557,39 @@ while True:
 
 
             # -----------------------------------------------
-            # bbox center
+            # segmentation mask와 중심점
             # -----------------------------------------------
 
-            cx = (
-                x1 + x2
-            ) / 2.0
+            polygon_i = None
+
+            if (
+                result.masks is not None
+                and index < len(result.masks.xy)
+            ):
+
+                polygon_i = np.round(
+                    result.masks.xy[index]
+                ).astype(np.int32)
 
 
-            cy = (
-                y1 + y2
-            ) / 2.0
+            if polygon_i is not None and len(polygon_i) >= 3:
+
+                moments = cv2.moments(polygon_i)
+
+                if moments["m00"] != 0:
+
+                    cx = moments["m10"] / moments["m00"]
+                    cy = moments["m01"] / moments["m00"]
+
+                else:
+
+                    cx = (x1 + x2) / 2.0
+                    cy = (y1 + y2) / 2.0
+
+            else:
+
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
 
 
             # -----------------------------------------------
@@ -621,24 +651,20 @@ while True:
             )
 
 
-            # bbox
-            cv2.rectangle(
-                annotated_bev,
-                (
-                    x1_i,
-                    y1_i
-                ),
-                (
-                    x2_i,
-                    y2_i
-                ),
-                (
-                    0,
-                    255,
-                    0
-                ),
-                3
-            )
+            # segmentation 윤곽선
+            if polygon_i is not None and len(polygon_i) >= 3:
+
+                cv2.polylines(
+                    annotated_bev,
+                    [polygon_i],
+                    True,
+                    (
+                        0,
+                        255,
+                        0
+                    ),
+                    3
+                )
 
 
             # 중심점
@@ -861,7 +887,7 @@ while True:
     # --------------------------------------------------------
 
     cv2.imshow(
-        "YOLO BEV Detection",
+        "YOLO11 BEV Segmentation",
         bev_display
     )
 
