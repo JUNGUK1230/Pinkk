@@ -1,3 +1,5 @@
+import json
+
 import cv2
 import numpy as np
 from pathlib import Path
@@ -48,6 +50,13 @@ MODEL_FILE = (
     / "best.pt"
 )
 
+PARKING_SLOTS_FILE = (
+    PROJECT_DIR.parents[1]
+    / "config"
+    / "map"
+    / "parking_slots_bev.json"
+)
+
 LIDAR_MAP_FILE = (
     PROJECT_DIR
     / "my_test_map0710.png"
@@ -63,6 +72,7 @@ required_files = [
     BEV_FILE,
     REGISTRATION_FILE,
     MODEL_FILE,
+    PARKING_SLOTS_FILE,
     LIDAR_MAP_FILE
 ]
 
@@ -120,7 +130,32 @@ bev_height = int(
 
 
 # ============================================================
-# 6. Coordinate Transformer
+# 6. 주차면 polygon 로드
+# ============================================================
+
+with PARKING_SLOTS_FILE.open(encoding="utf-8") as file:
+
+    parking_slot_points = {
+        name: np.asarray(points, dtype=np.int32)
+        for name, points in json.load(file).items()
+    }
+
+
+parking_slot_masks = {}
+
+for name, points in parking_slot_points.items():
+
+    slot_mask = np.zeros(
+        (bev_height, bev_width),
+        dtype=np.uint8
+    )
+
+    cv2.fillPoly(slot_mask, [points], 255)
+    parking_slot_masks[name] = slot_mask
+
+
+# ============================================================
+# 7. Coordinate Transformer
 # ============================================================
 
 transformer = CoordinateTransformer(
@@ -241,6 +276,7 @@ print(
 
 # 처음 테스트는 조금 낮게
 CONF_THRESHOLD = 0.05
+OCCUPANCY_THRESHOLD = 0.1
 
 
 # ============================================================
@@ -467,6 +503,11 @@ while True:
     # Segmentation mask overlay
     # --------------------------------------------------------
 
+    vehicle_mask = np.zeros(
+        (bev_height, bev_width),
+        dtype=np.uint8
+    )
+
     if result.masks is not None:
 
         mask_overlay = annotated_bev.copy()
@@ -478,6 +519,12 @@ while True:
             ).astype(np.int32)
 
             if len(polygon_i) >= 3:
+
+                cv2.fillPoly(
+                    vehicle_mask,
+                    [polygon_i],
+                    255
+                )
 
                 cv2.fillPoly(
                     mask_overlay,
@@ -496,6 +543,77 @@ while True:
             0.65,
             0.0
         )
+
+
+    # --------------------------------------------------------
+    # 주차면별 차량 마스크 점유율
+    # --------------------------------------------------------
+
+    parking_overlay = annotated_bev.copy()
+
+    for slot_name, slot_mask in parking_slot_masks.items():
+
+        overlap = cv2.bitwise_and(
+            slot_mask,
+            vehicle_mask
+        )
+
+        slot_area = cv2.countNonZero(slot_mask)
+        occupied_area = cv2.countNonZero(overlap)
+        occupancy_ratio = occupied_area / max(slot_area, 1)
+        occupied = occupancy_ratio >= OCCUPANCY_THRESHOLD
+        points = parking_slot_points[slot_name]
+
+        color = (
+            (0, 0, 255)
+            if occupied
+            else (0, 200, 0)
+        )
+
+        cv2.fillPoly(
+            parking_overlay,
+            [points],
+            color
+        )
+
+        cv2.polylines(
+            annotated_bev,
+            [points],
+            True,
+            color,
+            3,
+            cv2.LINE_AA
+        )
+
+        center = np.mean(
+            points,
+            axis=0
+        ).astype(int)
+
+        status = "OCCUPIED" if occupied else "EMPTY"
+        label = (
+            f"{slot_name} {status} "
+            f"{occupancy_ratio:.0%}"
+        )
+
+        cv2.putText(
+            annotated_bev,
+            label,
+            (center[0] - 65, center[1]),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA
+        )
+
+    annotated_bev = cv2.addWeighted(
+        parking_overlay,
+        0.16,
+        annotated_bev,
+        0.84,
+        0.0
+    )
 
 
     # --------------------------------------------------------
