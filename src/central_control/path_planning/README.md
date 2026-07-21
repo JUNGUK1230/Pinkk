@@ -11,6 +11,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 - `src/coordinate_transform.py`: BEV pixel, world cm, grid 좌표 변환
 - `src/astar_planner.py`: 4/8방향 2D A* 탐색
 - `src/hybrid_astar_planner.py`: 차량 yaw·조향·전후진을 고려한 Hybrid A*
+- `src/trajectory_profile.py`: Hybrid pose의 곡률·목표속도·각속도·정지점 생성
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
 - `output/`: 실행 결과 이미지
@@ -50,6 +51,7 @@ python3 scripts/test_astar_overlay.py
 python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
 python3 scripts/test_hybrid_astar.py
+python3 scripts/test_trajectory_profile.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
 
@@ -70,7 +72,7 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 - `output/path_world_cm_simplified.csv`: RDP로 단순화한 제어팀 전달용 1차 추천 경로
 - `output/path_world_cm_simplified.json`: RDP 설정 metadata와 단순화 경로
 - `output/click_hybrid_astar_on_camera_bev.png`: 클릭한 start/goal pose로 생성한 Hybrid A* 결과
-- `output/hybrid_path_world_cm.csv`: Hybrid A*의 yaw·direction·steer를 포함한 제어용 pose 경로
+- `output/hybrid_path_world_cm.csv`: Hybrid A*의 pose·곡률·목표속도·각속도·정지 플래그를 포함한 제어용 trajectory
 - `output/hybrid_path_camera_bev.csv`: Hybrid pose를 Camera BEV pixel로 변환한 경로
 - `output/hybrid_path_world_cm.json`: Hybrid pose 경로와 frame·planner metadata
 
@@ -99,6 +101,39 @@ Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확�
 
 탐색 성능을 위한 3 cm motion primitive와 제어기에 전달하는 경로 간격을 분리합니다. 경로를 찾은 후에 각 primitive의 조향각과 `direction`을 유지한 채 bicycle model로 다시 적분하여 **0.5 cm 간격**의 고밀도 pose를 생성합니다. 따라서 단순 직선 보간과 달리 곡선을 따라 `x`, `y`, `yaw`가 점진적으로 변합니다. 간격은 `config/planner_config.yaml`의 `path_output_step_cm`으로 조정합니다.
 
+## 제어용 trajectory 속도 프로파일
+
+Hybrid A*가 생성한 고밀도 pose의 가상 조향각을 다음 식으로 곡률로 변환합니다.
+
+```text
+curvature_1pm = tan(steer_rad) / wheelbase_m
+target_angular_z_radps = target_speed_mps * curvature_1pm
+```
+
+`target_speed_mps`는 signed 속도이므로 전진은 양수, 후진은 음수입니다. 직선에서는 빠르고 차량의 최대 가상 조향각 `30°`를 기준으로 곡률이 커질수록 감속합니다. 0.5 cm 경로 간격을 사용한 전방·후방 패스로 가속도와 감속도를 제한합니다. 시작, 도착, 전진↔후진 전환 직전 pose는 `stop_required=1`, `target_speed_mps=0` 조건을 가집니다.
+
+초기 실차 시험은 다음 보수적 제한을 사용합니다.
+
+```yaml
+trajectory_profile:
+  max_forward_speed_mps: 0.05
+  max_reverse_speed_mps: 0.03
+  min_curve_forward_speed_mps: 0.02
+  min_curve_reverse_speed_mps: 0.015
+  max_angular_speed_radps: 0.5
+  max_acceleration_mps2: 0.05
+  max_deceleration_mps2: 0.05
+```
+
+`hybrid_path_world_cm.csv` 및 JSON 경로 항목에는 다음 컬럼이 추가됩니다.
+
+```text
+curvature_1pm
+target_speed_mps
+target_angular_z_radps
+stop_required
+```
+
 차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×8 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 차량 반폭 4 cm와 안전마진 1 cm를 합해 직선 벽에서 경로 중심선까지 명목상 5 cm를 확보합니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
 
 ```bash
@@ -117,6 +152,6 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 ## 다음 단계
 
-- Reeds-Shepp analytic expansion 추가
-- Hybrid 경로 smoothing과 속도 profile 생성
-- 생성 경로를 PID/MPC 제어기에 전달1
+- Reeds-Shepp analytic goal connection 추가
+- 곡률 연속 smoothing 후 footprint 재검증
+- 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달

@@ -33,3 +33,13 @@ cost:
   gear_switch_penalty: 5.0
   steer_penalty: 0.2
   steer_change_penalty: 0.5
+
+trajectory_profile:
+  # PinkyPro 실차 초기 시험용 보수적 저속 설정
+  max_forward_speed_mps: 0.05
+  max_reverse_speed_mps: 0.03
+  min_curve_forward_speed_mps: 0.02
+  min_curve_reverse_speed_mps: 0.015
+  max_angular_speed_radps: 0.5
+  max_acceleration_mps2: 0.05
+  max_deceleration_mps2: 0.05

@@ -3,6 +3,7 @@
 from .astar_planner import AStarPlanner, AStarResult
 from .coordinate_transform import BevConfig, CoordinateTransform
 from .hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
+from .trajectory_profile import TrajectoryPoint, build_trajectory_profile
 from .occupancy_grid import OccupancyGridMap
 
 __all__ = [
@@ -13,5 +14,7 @@ __all__ = [
     "HybridAStarPlanner",
     "HybridAStarResult",
     "HybridState",
+    "TrajectoryPoint",
+    "build_trajectory_profile",
     "OccupancyGridMap",
 ]

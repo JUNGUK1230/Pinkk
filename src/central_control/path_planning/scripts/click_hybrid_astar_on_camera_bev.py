@@ -20,6 +20,10 @@ from occupancy_grid import OccupancyGridMap  # noqa: E402
 from test_astar import resolve_map_image  # noqa: E402
 from test_astar_on_camera_bev import transform_points_affine  # noqa: E402
 from click_astar_on_camera_bev import load_registration  # noqa: E402
+from trajectory_profile import (  # noqa: E402
+    TrajectoryPoint,
+    build_trajectory_profile,
+)
 from visualization import draw_visible_polyline  # noqa: E402
 
 GridPoint = tuple[int, int]
@@ -46,6 +50,7 @@ class InteractiveHybridAStarApp:
         lidar_from_camera: np.ndarray,
         camera_from_lidar: np.ndarray,
         planner: HybridAStarPlanner,
+        trajectory_profile_config: dict[str, float],
         resolution_cm: float,
         output_dir: Path,
     ) -> None:
@@ -54,12 +59,14 @@ class InteractiveHybridAStarApp:
         self.lidar_from_camera = lidar_from_camera
         self.camera_from_lidar = camera_from_lidar
         self.planner = planner
+        self.trajectory_profile_config = trajectory_profile_config
         self.resolution_cm = resolution_cm
         self.output_dir = output_dir
         self.camera_clicks: list[GridPoint] = []
         self.adjusted_positions: list[GridPoint] = []
         self.requested_yaws: list[float] = []
         self.path_states: list[HybridState] = []
+        self.trajectory_points: list[TrajectoryPoint] = []
         self.path_camera_px: list[PixelPoint] = []
         self.total_cost = math.inf
         self.display_image = camera_bev.copy()
@@ -134,7 +141,21 @@ class InteractiveHybridAStarApp:
             )
             return
 
+        try:
+            trajectory_points = build_trajectory_profile(
+                result.path,
+                wheelbase_cm=self.planner.wheelbase_cm,
+                max_steer_rad=max(abs(value) for value in self.planner.steer_set_rad),
+                **self.trajectory_profile_config,
+            )
+        except (TypeError, ValueError) as error:
+            self._clear_path()
+            self._render()
+            print(f"Trajectory profile failed: {error}")
+            return
+
         self.path_states = result.path
+        self.trajectory_points = trajectory_points
         self.total_cost = result.total_cost
         lidar_path_px = [
             (state.x_cm / self.resolution_cm, state.y_cm / self.resolution_cm)
@@ -145,11 +166,23 @@ class InteractiveHybridAStarApp:
         )
         skipped = self._render()
         reverse_count = sum(state.direction < 0 for state in result.path)
+        stop_count = sum(point.stop_required for point in trajectory_points)
+        nonzero_speeds = [
+            abs(point.target_speed_mps)
+            for point in trajectory_points
+            if abs(point.target_speed_mps) > 1e-12
+        ]
         print("Hybrid A* path found")
         print(f"Path poses: {len(result.path)}")
         print(f"Total cost: {result.total_cost:.3f}")
         print(f"Expanded nodes: {result.expanded_nodes}")
         print(f"Reverse poses: {reverse_count}")
+        print(f"Required stops: {stop_count}")
+        if nonzero_speeds:
+            print(
+                "Target speed range: "
+                f"{min(nonzero_speeds):.3f} to {max(nonzero_speeds):.3f} m/s"
+            )
         print(f"Out-of-bounds path points: {skipped}/{len(result.path)}")
 
     @staticmethod
@@ -216,6 +249,7 @@ class InteractiveHybridAStarApp:
         self.adjusted_positions.clear()
         self.requested_yaws.clear()
         self.path_states.clear()
+        self.trajectory_points.clear()
         self.path_camera_px.clear()
         self.total_cost = math.inf
 
@@ -228,7 +262,7 @@ class InteractiveHybridAStarApp:
 
     def save(self) -> None:
         """Save the Hybrid path with planner-generated yaw and direction."""
-        if not self.path_states:
+        if not self.path_states or not self.trajectory_points:
             print("No Hybrid A* path to save.")
             return
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -241,19 +275,33 @@ class InteractiveHybridAStarApp:
             return
 
         columns = [
-            "index", "x_cm", "y_cm", "yaw_rad", "yaw_deg", "direction", "steer_deg"
+            "index",
+            "x_cm",
+            "y_cm",
+            "yaw_rad",
+            "yaw_deg",
+            "direction",
+            "steer_deg",
+            "curvature_1pm",
+            "target_speed_mps",
+            "target_angular_z_radps",
+            "stop_required",
         ]
         rows = [
             {
                 "index": index,
-                "x_cm": state.x_cm,
-                "y_cm": state.y_cm,
-                "yaw_rad": state.yaw_rad,
-                "yaw_deg": math.degrees(state.yaw_rad),
-                "direction": state.direction,
-                "steer_deg": math.degrees(state.steer_rad),
+                "x_cm": point.x_cm,
+                "y_cm": point.y_cm,
+                "yaw_rad": point.yaw_rad,
+                "yaw_deg": math.degrees(point.yaw_rad),
+                "direction": point.direction,
+                "steer_deg": math.degrees(point.steer_rad),
+                "curvature_1pm": point.curvature_1pm,
+                "target_speed_mps": point.target_speed_mps,
+                "target_angular_z_radps": point.target_angular_z_radps,
+                "stop_required": int(point.stop_required),
             }
-            for index, state in enumerate(self.path_states)
+            for index, point in enumerate(self.trajectory_points)
         ]
         try:
             with world_csv_path.open("w", newline="", encoding="utf-8") as file:
@@ -280,6 +328,12 @@ class InteractiveHybridAStarApp:
                     ],
                     "max_change_deg_per_primitive": math.degrees(
                         self.planner.max_steer_change_rad
+                    ),
+                },
+                "trajectory_profile": {
+                    **self.trajectory_profile_config,
+                    "reference_max_steer_deg": math.degrees(
+                        max(abs(value) for value in self.planner.steer_set_rad)
                     ),
                 },
                 "path": rows,
@@ -332,6 +386,10 @@ def main() -> int:
         )
         hybrid = config["hybrid_astar"]
         cost = config["cost"]
+        trajectory_profile_config = {
+            key: float(value)
+            for key, value in config["trajectory_profile"].items()
+        }
         safety_margin_cm = float(hybrid["footprint_safety_margin_cm"])
         planning_grid = grid_map.inflate_obstacles(
             safety_margin_cm, grid_map.resolution_cm
@@ -378,6 +436,12 @@ def main() -> int:
         "Maximum steering change per primitive: "
         f"{math.degrees(planner.max_steer_change_rad):.1f} deg"
     )
+    print(
+        "Trajectory speed limits: forward="
+        f"{trajectory_profile_config['max_forward_speed_mps']:.3f} m/s, "
+        "reverse="
+        f"{trajectory_profile_config['max_reverse_speed_mps']:.3f} m/s"
+    )
     print("Click order: start position -> start heading -> goal position -> goal heading")
     print("r: reset | s: save | q/ESC: quit")
     app = InteractiveHybridAStarApp(
@@ -386,6 +450,7 @@ def main() -> int:
         lidar_from_camera,
         camera_from_lidar,
         planner,
+        trajectory_profile_config,
         grid_map.resolution_cm,
         PROJECT_ROOT / "output",
     )
