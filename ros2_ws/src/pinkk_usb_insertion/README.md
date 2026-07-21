@@ -9,7 +9,8 @@
 
 ## 현재 상태
 
-현재 버전은 전체 구조의 첫 단계입니다.
+현재 버전은 인지 인터페이스, solvePnP, PBVS 계산과 승인형 Cartesian 실행 기반까지
+구현한 상태입니다. 실제 로봇 브리지와 이후 단계는 아래 상태를 구분해 확인합니다.
 
 | 영역 | 현재 상태 |
 |---|---|
@@ -22,13 +23,15 @@
 | 고정-Z PBVS XY 정렬 | 계산 노드와 승인형 최대 10 mm Cartesian 단발 실행기 구현 |
 | IBVS | 초기 XY P 제어 계산 함수 구현 |
 | 상태 머신 | DRY RUN 경로 구현 |
-| MoveIt 실제 실행 | 미연결 |
+| PBVS Cartesian 실제 실행 | `send_coords()` 연결, 노트북 테스트 완료, 실기 미검증 |
+| MoveIt 일반 trajectory 실행 | 마지막 관절 목표 방식이며 Cartesian 경로 추종용이 아님 |
 | Plug TCP | 미보정 |
 | YOLO 추론 모델 | 외부 노드 연결 필요 |
 | 실제 삽입 및 접촉 감지 | 미구현 |
 
-현재 기본 실행 모드는 `DRY RUN`입니다. 포트 자세 계산과 상태 전이는 수행하지만
-MoveIt 또는 로봇 bridge에 이동 목표를 보내지 않습니다.
+현재 기본 실행 모드는 `DRY RUN`입니다. PBVS Cartesian 경로는 소프트웨어로
+연결됐지만 launch에서 명시적으로 실행을 허용하지 않으면 로봇 bridge에 목표를
+보내지 않습니다. 새 브리지는 실제 로봇에서 아직 검증되지 않았습니다.
 
 ## 전체 처리 흐름
 
@@ -41,14 +44,14 @@ MoveIt 또는 로봇 bridge에 이동 목표를 보내지 않습니다.
 → T_base_port
 → PBVS 사전 접근 자세
 → 근거리 재검출
-→ IBVS 미세 정렬
+→ 필요 시 IBVS 미세 정렬
 → 저속 삽입
 → 성공 확인 또는 후퇴
 ```
 
 현재 구현 범위는 수동 또는 YOLO 검출 메시지 수신, `solvePnP`, 좌표 계산,
-고정-Z PBVS 목표 발행과 DRY RUN 상태 머신까지입니다. YOLO 모델 추론 자체는
-별도 노드가 담당합니다.
+고정-Z PBVS 목표 발행, 승인형 Cartesian 실행 경로와 DRY RUN 상태 머신까지입니다.
+YOLO 모델 추론 자체는 별도 노드가 담당합니다.
 
 ## 패키지 구성
 
@@ -77,7 +80,7 @@ pinkk_usb_insertion/
 2. [좌표계와 행렬 방향](docs/02_COORDINATE_FRAMES_KO.md)
 3. [노드와 토픽](docs/03_NODES_AND_TOPICS_KO.md)
 4. [실행 안전 조건](docs/04_SAFETY_KO.md)
-5. [단계별 개발 순서](docs/05_DEVELOPMENT_ROADMAP_KO.md)
+5. [진행 현황과 전체 개발 체크리스트](docs/05_DEVELOPMENT_ROADMAP_KO.md)
 6. [설정 파일 관리](config/README_KO.md)
 
 ## 빌드
