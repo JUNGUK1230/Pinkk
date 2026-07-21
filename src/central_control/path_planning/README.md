@@ -11,6 +11,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 - `src/coordinate_transform.py`: BEV pixel, world cm, grid 좌표 변환
 - `src/astar_planner.py`: 4/8방향 2D A* 탐색
 - `src/hybrid_astar_planner.py`: 차량 yaw·조향·전후진을 고려한 Hybrid A*
+- `src/reeds_shepp.py`: Hybrid A* 목표 연결에 사용할 Reeds–Shepp 경로 생성기
 - `src/trajectory_profile.py`: Hybrid pose의 곡률·목표속도·각속도·정지점 생성
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
@@ -51,6 +52,7 @@ python3 scripts/test_astar_overlay.py
 python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
 python3 scripts/test_hybrid_astar.py
+python3 scripts/test_reeds_shepp.py
 python3 scripts/test_trajectory_profile.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
@@ -150,8 +152,20 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 `r`로 클릭과 경로를 초기화하고, `s`로 Hybrid 결과 이미지와 CSV/JSON을 저장하며, `q` 또는 `ESC`로 종료합니다. `hybrid_path_world_cm.csv`의 yaw는 단순화 후 재계산한 값이 아니라 planner가 자동차 모델로 전개한 각 pose의 헤딩입니다. `direction` 값은 전진 `1`, 후진 `-1`입니다.
 
+## Reeds–Shepp 목표 연결기
+
+기존 Hybrid A*를 교체하지 않고 목표 pose 부근의 탐색을 보조하기 위한 독립 Reeds–Shepp 생성기를 추가했습니다. 차량 wheelbase `8 cm`와 최대 가상 조향각 `30°`를 기준으로 최소 회전반경은 약 **13.86 cm**이며, 전진·후진을 포함한 `L`(좌회전), `R`(우회전), `S`(직진) 후보 중 가장 짧은 경로를 **0.5 cm 간격**으로 출력합니다.
+
+현재 단계에서는 수학적인 경로 생성과 끝 pose·샘플 간격·전후진 전환을 독립 테스트합니다. 아직 Hybrid A* 탐색이나 occupancy grid에 연결하지 않았으므로 기존 경로 생성 결과에는 영향을 주지 않으며, 생성된 Reeds–Shepp 경로의 차량 footprint 충돌 검사도 다음 통합 단계에서 수행합니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/test_reeds_shepp.py
+```
+
 ## 다음 단계
 
-- Reeds-Shepp analytic goal connection 추가
+- Hybrid A*가 목표 근처에서 Reeds–Shepp 후보를 생성하도록 analytic expansion 연결
+- Reeds–Shepp의 모든 0.5 cm pose에 차량 rectangle footprint 충돌 검사 적용
 - 곡률 연속 smoothing 후 footprint 재검증
 - 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달
