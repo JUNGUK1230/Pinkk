@@ -1,0 +1,15 @@
+tool:
+  parent_frame: joint6_flange
+  child_frame: plug_tip
+  translation_m:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+  quaternion_xyzw:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0
+  calibrated: false
+  note: 충전기 고정 후 실제 T_flange_plug 값으로 교체한다.
+

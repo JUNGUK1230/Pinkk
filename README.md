@@ -7,6 +7,12 @@ Python 기반 스마트 주차 및 자동 충전 프로젝트 기본 구조입�
 - `src/robot_arm`: 로봇팔 카메라, 동작 제어 및 설정
 - `src/central_control`: 상단 카메라, BEV, 지도, 경로 계획, 모델, 시스템 통합 및 설정
 - `src/vehicle_control`: 차량 제어 코드 및 설정
+- `ros2_ws/src/pinkk_usb_insertion`: USB-A 포트 인식, 접근, 정렬 및 삽입 제어
+- `ros2_ws/src/pinkk_usb_insertion_interfaces`: YOLO keypoint와 포트 관측 ROS 메시지
+
+로봇팔 USB 삽입 제어의 구조, 좌표계, ROS 2 인터페이스와 개발 순서는
+[`pinkk_usb_insertion/README.md`](ros2_ws/src/pinkk_usb_insertion/README.md)를
+참고하세요. 캘리브레이션 패키지와 실제 운용 제어 패키지는 분리해서 관리합니다.
 
 프로젝트 루트에는 안내 문서인 `README.md`와 라이브러리 의존성 파일인
 `requirements.txt`만 두고, 실행 코드와 데이터는 위 세 영역 안에서 관리합니다.

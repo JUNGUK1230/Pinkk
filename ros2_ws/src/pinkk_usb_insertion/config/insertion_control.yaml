@@ -1,0 +1,50 @@
+execution:
+  execution_enabled: false
+  insertion_enabled: false
+  require_calibrated_tool: true
+
+frames:
+  base: g_base
+  flange: joint6_flange
+  camera: camera_optical_frame
+  port: usb_port
+  plug_tip: plug_tip
+
+port_model:
+  width_m: 0.0115
+  height_m: 0.0045
+
+pose_estimation:
+  input_mode: yolo_topic
+  target_class_name: usb_port
+  target_detection_id: ''
+  minimum_object_confidence: 0.70
+  minimum_keypoint_confidence: 0.60
+  minimum_depth_m: 0.05
+  maximum_depth_m: 0.60
+  maximum_reprojection_error_px: 2.0
+  stable_sample_count: 10
+
+approach:
+  standoff_m: 0.10
+  maximum_translation_step_m: 0.005
+  settle_seconds: 0.5
+
+ibvs:
+  enabled: false
+  pixel_tolerance: 3.0
+  maximum_step_m: 0.0005
+  proportional_gain_x: 0.00001
+  proportional_gain_y: 0.00001
+
+insertion:
+  speed_m_per_s: 0.001
+  maximum_distance_m: 0.015
+  timeout_seconds: 20.0
+  maximum_retry_count: 0
+
+safety:
+  command_timeout_seconds: 2.0
+  require_fresh_detection: true
+  maximum_detection_age_seconds: 0.5
+  retreat_distance_m: 0.03
