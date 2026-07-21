@@ -420,6 +420,13 @@ def main() -> int:
             analytic_expansion_distance_cm=float(
                 hybrid["analytic_expansion_distance_cm"]
             ),
+            analytic_turning_radius_margin_cm=float(
+                hybrid["analytic_turning_radius_margin_cm"]
+            ),
+            path_smoothing_enabled=bool(hybrid["path_smoothing_enabled"]),
+            smoothing_knot_spacing_cm=float(
+                hybrid["smoothing_knot_spacing_cm"]
+            ),
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError, OSError) as error:
         print(f"ERROR: Failed to initialize Hybrid A*: {error}")
@@ -437,6 +444,11 @@ def main() -> int:
         f"enabled={planner.analytic_expansion_enabled}, "
         f"distance={planner.analytic_expansion_distance_cm:.1f} cm, "
         f"turning radius={planner.analytic_turning_radius_cm:.2f} cm"
+    )
+    print(
+        "Curvature smoothing: "
+        f"enabled={planner.path_smoothing_enabled}, "
+        f"knot spacing={planner.smoothing_knot_spacing_cm:.1f} cm"
     )
     print(
         "Steering candidates: "

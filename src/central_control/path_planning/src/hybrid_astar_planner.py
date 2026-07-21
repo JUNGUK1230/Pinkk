@@ -10,8 +10,10 @@ from typing import Iterable, Protocol
 import numpy as np
 
 if __package__:
+    from .path_smoothing import smooth_hybrid_path
     from .reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
 else:
+    from path_smoothing import smooth_hybrid_path
     from reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
 
 
@@ -81,6 +83,9 @@ class HybridAStarPlanner:
         steer_change_penalty: float = 0.5,
         analytic_expansion_enabled: bool = True,
         analytic_expansion_distance_cm: float = 30.0,
+        analytic_turning_radius_margin_cm: float = 4.0,
+        path_smoothing_enabled: bool = True,
+        smoothing_knot_spacing_cm: float = 3.0,
     ) -> None:
         if grid.ndim != 2:
             raise ValueError("grid must be a two-dimensional array")
@@ -108,6 +113,10 @@ class HybridAStarPlanner:
             raise ValueError("steer_set_deg must contain at least one steering angle")
         if analytic_expansion_distance_cm <= 0:
             raise ValueError("analytic expansion distance must be positive")
+        if analytic_turning_radius_margin_cm < 0:
+            raise ValueError("analytic turning radius margin must not be negative")
+        if smoothing_knot_spacing_cm <= 0:
+            raise ValueError("smoothing knot spacing must be positive")
 
         self.grid = grid
         self.height, self.width = grid.shape
@@ -141,6 +150,9 @@ class HybridAStarPlanner:
         self.steer_change_penalty = steer_change_penalty
         self.analytic_expansion_enabled = analytic_expansion_enabled
         self.analytic_expansion_distance_cm = analytic_expansion_distance_cm
+        self.analytic_turning_radius_margin_cm = analytic_turning_radius_margin_cm
+        self.path_smoothing_enabled = path_smoothing_enabled
+        self.smoothing_knot_spacing_cm = smoothing_knot_spacing_cm
         self.max_abs_steer_rad = max(abs(value) for value in self.steer_set_rad)
         if self.analytic_expansion_enabled and self.max_abs_steer_rad <= 1e-12:
             raise ValueError(
@@ -151,9 +163,13 @@ class HybridAStarPlanner:
             if self.max_abs_steer_rad > 1e-12
             else math.inf
         )
-        self.analytic_turning_radius_cm = max(
+        self.minimum_turning_radius_cm = max(
             kinematic_turning_radius_cm,
             minimum_turning_radius_cm or 0.0,
+        )
+        self.analytic_turning_radius_cm = (
+            self.minimum_turning_radius_cm
+            + self.analytic_turning_radius_margin_cm
         )
         self.analytic_steer_rad = math.atan(
             self.wheelbase_cm / self.analytic_turning_radius_cm
@@ -213,14 +229,18 @@ class HybridAStarPlanner:
             analytic_path = self.try_analytic_expansion(current, goal)
             if analytic_path is not None:
                 sparse_path = self._reconstruct(states, parents, current_key)
-                hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
+                raw_hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
+                hybrid_path, smoothing_status = self.smooth_path_with_fallback(
+                    raw_hybrid_path
+                )
                 return HybridAStarResult(
                     hybrid_path,
                     g_score[current_key]
                     + self._analytic_path_cost(current, analytic_path),
                     True,
                     expanded_nodes,
-                    "goal reached by Reeds-Shepp analytic expansion",
+                    "goal reached by Reeds-Shepp analytic expansion; "
+                    + smoothing_status,
                 )
 
             if self._is_goal(current, goal[0], goal[1], goal_yaw):
@@ -442,6 +462,85 @@ class HybridAStarPlanner:
             previous_direction = direction
             previous_steer = steer_rad
         return cost
+
+    def smooth_path_with_fallback(
+        self,
+        raw_path: list[HybridState],
+    ) -> tuple[list[HybridState], str]:
+        """Use smoothing only when every kinematic and collision check passes."""
+        if not self.path_smoothing_enabled or len(raw_path) < 3:
+            return raw_path, "raw path retained (smoothing disabled)"
+        try:
+            smoothed_poses = smooth_hybrid_path(
+                raw_path,
+                wheelbase_cm=self.wheelbase_cm,
+                output_step_cm=self.path_output_step_cm,
+                knot_spacing_cm=self.smoothing_knot_spacing_cm,
+            )
+        except ValueError as error:
+            return raw_path, f"raw path retained (smoothing error: {error})"
+
+        smoothed_path = [
+            HybridState(
+                pose.x_cm,
+                pose.y_cm,
+                pose.yaw_rad,
+                pose.direction,
+                pose.steer_rad,
+            )
+            for pose in smoothed_poses
+        ]
+        if not smoothed_path:
+            return raw_path, "raw path retained (empty smoothing result)"
+
+        start_error = math.hypot(
+            smoothed_path[0].x_cm - raw_path[0].x_cm,
+            smoothed_path[0].y_cm - raw_path[0].y_cm,
+        )
+        goal_error = math.hypot(
+            smoothed_path[-1].x_cm - raw_path[-1].x_cm,
+            smoothed_path[-1].y_cm - raw_path[-1].y_cm,
+        )
+        start_yaw_error = abs(
+            self._angle_difference(smoothed_path[0].yaw_rad, raw_path[0].yaw_rad)
+        )
+        goal_yaw_error = abs(
+            self._angle_difference(smoothed_path[-1].yaw_rad, raw_path[-1].yaw_rad)
+        )
+        if max(start_error, goal_error, start_yaw_error, goal_yaw_error) > 1e-6:
+            return raw_path, "raw path retained (endpoint changed by smoothing)"
+
+        if any(
+            abs(state.steer_rad) > self.max_abs_steer_rad + 1e-6
+            for state in smoothed_path
+        ):
+            return raw_path, "raw path retained (steering limit exceeded)"
+
+        for first, second in zip(smoothed_path, smoothed_path[1:]):
+            distance_cm = math.hypot(
+                second.x_cm - first.x_cm,
+                second.y_cm - first.y_cm,
+            )
+            if distance_cm > self.path_output_step_cm + 1e-6:
+                return raw_path, "raw path retained (output spacing exceeded)"
+            if first.direction != second.direction:
+                continue
+            allowed_change = (
+                self.max_steer_change_rad
+                * distance_cm
+                / self.motion_step_cm
+                + math.radians(0.1)
+            )
+            if abs(second.steer_rad - first.steer_rad) > allowed_change:
+                return raw_path, "raw path retained (steering rate exceeded)"
+
+        collision_index = self.first_path_collision_index(smoothed_path)
+        if collision_index is not None:
+            return (
+                raw_path,
+                f"raw path retained (smoothed collision at pose {collision_index})",
+            )
+        return smoothed_path, "curvature-smoothed path accepted"
 
     def find_nearest_valid_pose(
         self,

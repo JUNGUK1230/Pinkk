@@ -16,6 +16,7 @@ from hybrid_astar_planner import HybridAStarPlanner, HybridState  # noqa: E402
 def make_planner(
     grid: np.ndarray,
     expansion_distance_cm: float = 80.0,
+    smoothing_enabled: bool = True,
 ) -> HybridAStarPlanner:
     """실차 제원과 analytic expansion을 사용하는 테스트 planner를 만든다."""
     return HybridAStarPlanner(
@@ -31,6 +32,7 @@ def make_planner(
         timeout_sec=5.0,
         analytic_expansion_enabled=True,
         analytic_expansion_distance_cm=expansion_distance_cm,
+        path_smoothing_enabled=smoothing_enabled,
     )
 
 
@@ -68,12 +70,39 @@ def main() -> int:
     assert direct_result.success, direct_result.message
     assert "Reeds-Shepp" in direct_result.message
     assert direct_result.expanded_nodes == 0
+    assert "curvature-smoothed path accepted" in direct_result.message
     assert_continuous_safe_path(direct_planner, direct_result.path, direct_goal)
+
+    curved_goal = (70.0, 75.0, math.pi / 2.0)
+    curved_result = direct_planner.plan((40.0, 40.0, 0.0), curved_goal)
+    assert curved_result.success, curved_result.message
+    assert "curvature-smoothed path accepted" in curved_result.message
+    assert_continuous_safe_path(direct_planner, curved_result.path, curved_goal)
+    assert max(abs(state.steer_rad) for state in curved_result.path) <= math.radians(
+        30.0
+    ) + 1e-6
+
+    # Spline이 raw swept area 밖으로 약간 이동하는 위치에 장애물을 둔다.
+    # raw 경로는 안전하지만 smoothing 결과만 충돌하므로 raw fallback이어야 한다.
+    raw_planner = make_planner(free_grid, smoothing_enabled=False)
+    raw_curved_result = raw_planner.plan((40.0, 40.0, 0.0), curved_goal)
+    assert raw_curved_result.success
+    smoothing_blocked_grid = free_grid.copy()
+    smoothing_blocked_grid[39, 56] = 100
+    smoothing_blocked_planner = make_planner(smoothing_blocked_grid)
+    assert smoothing_blocked_planner.is_path_collision_free(raw_curved_result.path)
+    fallback_path, smoothing_status = (
+        smoothing_blocked_planner.smooth_path_with_fallback(
+            raw_curved_result.path
+        )
+    )
+    assert fallback_path == raw_curved_result.path
+    assert "smoothed collision" in smoothing_status
 
     # 현재 pose와 goal 사이의 수직 벽은 모든 직접 analytic 후보를 막는다.
     # Hybrid A*가 먼저 벽을 우회한 뒤 새 pose에서 안전한 연결을 찾아야 한다.
     blocked_grid = free_grid.copy()
-    blocked_grid[35:66, 60] = 100
+    blocked_grid[25:76, 60] = 100
     fallback_planner = make_planner(blocked_grid)
     start_state = HybridState(30.0, 60.0, 0.0, 1, 0.0)
     assert fallback_planner.try_analytic_expansion(start_state, direct_goal) is None
@@ -90,6 +119,11 @@ def main() -> int:
     print("Hybrid A* analytic expansion regression passed")
     print(f"Direct connection poses: {len(direct_result.path)}")
     print(f"Direct expanded nodes: {direct_result.expanded_nodes}")
+    print(f"Smoothed curve poses: {len(curved_result.path)}")
+    print(
+        "Smoothed curve maximum steer: "
+        f"{max(abs(math.degrees(state.steer_rad)) for state in curved_result.path):.3f} deg"
+    )
     print(f"Fallback connection poses: {len(fallback_result.path)}")
     print(f"Fallback expanded nodes: {fallback_result.expanded_nodes}")
     print(f"Fallback total cost: {fallback_result.total_cost:.3f}")

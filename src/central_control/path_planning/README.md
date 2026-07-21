@@ -12,6 +12,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 - `src/astar_planner.py`: 4/8방향 2D A* 탐색
 - `src/hybrid_astar_planner.py`: 차량 yaw·조향·전후진을 고려한 Hybrid A*
 - `src/reeds_shepp.py`: Hybrid A* 목표 연결에 사용할 Reeds–Shepp 경로 생성기
+- `src/path_smoothing.py`: 기어 전환을 보존하는 cubic spline 경로 smoothing
 - `src/trajectory_profile.py`: Hybrid pose의 곡률·목표속도·각속도·정지점 생성
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
@@ -162,7 +163,21 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 Hybrid A*는 목표와의 직선거리가 기본 **30 cm** 이내가 되면 Reeds–Shepp analytic expansion을 시도합니다. 후보를 길이순으로 검사하여 footprint 충돌이 없는 첫 경로만 기존 탐색 경로 뒤에 붙입니다. 모든 후보가 막히면 경로계획을 실패시키지 않고 기존 motion primitive 탐색을 계속합니다. 연결 성공 시 허용 오차 부근에서 끝내지 않고 요청한 goal의 `x`, `y`, `yaw`에 정확히 도달합니다.
 
-analytic 경로의 최소 회전반경은 wheelbase와 최대 조향각으로 계산한 값보다 작아지지 않으며, 실차 설정 `min_turning_radius_cm: 14.0`도 함께 적용합니다. 활성화 여부와 시도 거리는 `config/planner_config.yaml`의 `analytic_expansion_enabled`, `analytic_expansion_distance_cm`으로 조정합니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
+analytic 경로의 물리적 최소 회전반경은 wheelbase와 최대 조향각으로 계산한 값보다 작아지지 않으며, 실차 설정은 `min_turning_radius_cm: 14.0`입니다. 실제 analytic 후보는 smoothing에 필요한 곡률 여유 `4 cm`를 더한 **18 cm** 회전반경을 사용합니다. 활성화 여부와 시도 거리, 곡률 여유는 `config/planner_config.yaml`의 `analytic_expansion_enabled`, `analytic_expansion_distance_cm`, `analytic_turning_radius_margin_cm`으로 조정합니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
+
+## 곡률 및 조향 변화 smoothing
+
+충돌 안전 analytic 경로를 기어가 같은 구간별로 나눈 뒤 clamped cubic spline으로 다시 생성합니다. spline은 위치뿐 아니라 시작·목표 접선도 고정하므로 요청한 start/goal의 `x`, `y`, `yaw`를 유지합니다. 전진↔후진 cusp는 두 spline 구간이 공유하는 고정점으로 남기며, 해당 위치에서는 trajectory profile이 정지를 요구하므로 정지 후 조향 방향을 바꿀 수 있습니다.
+
+기본 control knot 간격은 **3 cm**이고 최종 경로는 **0.5 cm 이하** 간격으로 다시 샘플링합니다. 각 spline 미분값으로 yaw, 곡률 및 가상 조향각을 재계산한 후 다음 조건을 모두 검사합니다.
+
+- 최대 가상 조향각 `30°` 이하
+- 조향 변화율 `10° / 3 cm` 이하
+- 시작·목표 위치와 yaw 유지
+- 모든 pose의 회전 직사각형 footprint 충돌 없음
+- 출력 pose 간격 `0.5 cm` 이하
+
+검사에 실패하면 spline 결과를 폐기하고 이미 충돌 검사를 통과한 raw Hybrid A* + Reeds–Shepp 경로를 그대로 사용합니다. `click_hybrid_astar_on_camera_bev.py` 실행 결과의 `Goal connection` 항목에서 `curvature-smoothed path accepted` 또는 raw fallback 사유를 확인할 수 있습니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
@@ -173,6 +188,6 @@ python3 scripts/test_hybrid_astar_analytic.py
 
 ## 다음 단계
 
-- Hybrid A*와 Reeds–Shepp 접합부 및 L/R/S 전환부의 조향 변화 smoothing
-- smoothing된 경로를 0.5 cm 간격으로 재샘플링하고 footprint 재검증
+- 실제 Camera BEV 클릭 경로에서 smoothing 적용률과 조향 변화량 기록
+- trajectory의 선속도·각속도 변화율 제한을 실차 응답에 맞게 튜닝
 - 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달

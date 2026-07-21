@@ -30,6 +30,10 @@ hybrid_astar:
   # 목표 30 cm 이내에서 충돌 없는 Reeds-Shepp 경로로 정확한 goal pose 연결을 시도한다.
   analytic_expansion_enabled: true
   analytic_expansion_distance_cm: 30.0
+  # 14 cm 물리 한계보다 완만한 18 cm analytic 곡선을 만들기 위한 여유값
+  analytic_turning_radius_margin_cm: 4.0
+  path_smoothing_enabled: true
+  smoothing_knot_spacing_cm: 3.0
 
 cost:
   reverse_penalty: 1.5
