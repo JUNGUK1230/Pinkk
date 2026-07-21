@@ -1,8 +1,10 @@
 """Hybrid A*와 충돌 안전 Reeds-Shepp 목표 연결의 회귀 테스트."""
 
+import json
 import math
 from pathlib import Path
 import sys
+import tempfile
 
 import numpy as np
 
@@ -11,6 +13,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.append(str(PROJECT_ROOT / "src"))
 
 from hybrid_astar_planner import HybridAStarPlanner, HybridState  # noqa: E402
+from path_smoothing import save_path_smoothing_stats  # noqa: E402
 
 
 def make_planner(
@@ -77,6 +80,26 @@ def main() -> int:
     curved_result = direct_planner.plan((40.0, 40.0, 0.0), curved_goal)
     assert curved_result.success, curved_result.message
     assert "curvature-smoothed path accepted" in curved_result.message
+    assert curved_result.smoothing_stats is not None
+    assert curved_result.smoothing_stats.attempted
+    assert curved_result.smoothing_stats.accepted
+    assert curved_result.smoothing_stats.candidate is not None
+    assert curved_result.smoothing_stats.raw.pose_count != (
+        curved_result.smoothing_stats.final.pose_count
+    )
+    with tempfile.TemporaryDirectory() as temporary_dir:
+        stats_path = Path(temporary_dir) / "hybrid_smoothing_stats.json"
+        save_path_smoothing_stats(
+            curved_result.smoothing_stats,
+            stats_path,
+            curved_result.message,
+        )
+        saved_stats = json.loads(stats_path.read_text(encoding="utf-8"))
+        assert saved_stats["smoothing"]["accepted"] is True
+        assert saved_stats["smoothing"]["raw"]["pose_count"] == (
+            curved_result.smoothing_stats.raw.pose_count
+        )
+        assert saved_stats["smoothing"]["final"]["max_spacing_cm"] <= 0.5
     assert_continuous_safe_path(direct_planner, curved_result.path, curved_goal)
     assert max(abs(state.steer_rad) for state in curved_result.path) <= math.radians(
         30.0
@@ -91,13 +114,17 @@ def main() -> int:
     smoothing_blocked_grid[39, 56] = 100
     smoothing_blocked_planner = make_planner(smoothing_blocked_grid)
     assert smoothing_blocked_planner.is_path_collision_free(raw_curved_result.path)
-    fallback_path, smoothing_status = (
+    fallback_path, smoothing_stats = (
         smoothing_blocked_planner.smooth_path_with_fallback(
             raw_curved_result.path
         )
     )
     assert fallback_path == raw_curved_result.path
-    assert "smoothed collision" in smoothing_status
+    assert smoothing_stats.attempted
+    assert not smoothing_stats.accepted
+    assert "smoothed collision" in smoothing_stats.status
+    assert smoothing_stats.candidate is not None
+    assert smoothing_stats.raw == smoothing_stats.final
 
     # 현재 pose와 goal 사이의 수직 벽은 모든 직접 analytic 후보를 막는다.
     # Hybrid A*가 먼저 벽을 우회한 뒤 새 pose에서 안전한 연결을 찾아야 한다.

@@ -1,7 +1,9 @@
 """기어 전환 pose를 보존하는 clamped cubic path smoothing."""
 
 from dataclasses import dataclass
+import json
 import math
+from pathlib import Path
 from typing import Protocol, Sequence
 
 
@@ -24,6 +26,121 @@ class SmoothedPathPose:
     yaw_rad: float
     direction: int
     steer_rad: float
+
+
+@dataclass(frozen=True)
+class PathSmoothingMetrics:
+    """한 경로에서 계산한 제어 관련 요약 수치."""
+
+    pose_count: int
+    path_length_cm: float
+    max_spacing_cm: float
+    max_abs_steer_deg: float
+    max_same_direction_steer_change_deg: float
+    gear_switch_count: int
+
+    def to_dict(self) -> dict[str, int | float]:
+        return {
+            "pose_count": self.pose_count,
+            "path_length_cm": self.path_length_cm,
+            "max_spacing_cm": self.max_spacing_cm,
+            "max_abs_steer_deg": self.max_abs_steer_deg,
+            "max_same_direction_steer_change_deg": (
+                self.max_same_direction_steer_change_deg
+            ),
+            "gear_switch_count": self.gear_switch_count,
+        }
+
+
+@dataclass(frozen=True)
+class PathSmoothingStats:
+    """Raw 경로와 최종 경로를 비교하는 smoothing 진단 결과."""
+
+    attempted: bool
+    accepted: bool
+    status: str
+    knot_spacing_cm: float
+    turning_radius_cm: float
+    raw: PathSmoothingMetrics
+    candidate: PathSmoothingMetrics | None
+    final: PathSmoothingMetrics
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "attempted": self.attempted,
+            "accepted": self.accepted,
+            "status": self.status,
+            "settings": {
+                "method": "clamped_cubic_spline",
+                "knot_spacing_cm": self.knot_spacing_cm,
+                "turning_radius_cm": self.turning_radius_cm,
+            },
+            "raw": self.raw.to_dict(),
+            "candidate": (
+                self.candidate.to_dict()
+                if self.candidate is not None
+                else None
+            ),
+            "final": self.final.to_dict(),
+        }
+
+
+def calculate_path_smoothing_metrics(
+    poses: Sequence[PathPose],
+) -> PathSmoothingMetrics:
+    """경로 저장과 회귀 테스트에 사용할 공통 통계를 계산한다."""
+    spacings = [
+        math.hypot(second.x_cm - first.x_cm, second.y_cm - first.y_cm)
+        for first, second in zip(poses, poses[1:])
+    ]
+    same_direction_changes = [
+        abs(math.degrees(second.steer_rad - first.steer_rad))
+        for first, second in zip(poses, poses[1:])
+        if first.direction == second.direction
+    ]
+    return PathSmoothingMetrics(
+        pose_count=len(poses),
+        path_length_cm=sum(spacings),
+        max_spacing_cm=max(spacings, default=0.0),
+        max_abs_steer_deg=max(
+            (abs(math.degrees(pose.steer_rad)) for pose in poses),
+            default=0.0,
+        ),
+        max_same_direction_steer_change_deg=max(
+            same_direction_changes,
+            default=0.0,
+        ),
+        gear_switch_count=sum(
+            first.direction != second.direction
+            for first, second in zip(poses, poses[1:])
+        ),
+    )
+
+
+def save_path_smoothing_stats(
+    stats: PathSmoothingStats | None,
+    save_path: str | Path,
+    goal_connection: str = "",
+) -> None:
+    """클릭·자동 경로 생성 양쪽에서 재사용할 통계 JSON을 저장한다."""
+    payload = {
+        "planner": "hybrid_astar",
+        "goal_connection": goal_connection,
+        "smoothing": (
+            stats.to_dict()
+            if stats is not None
+            else {
+                "attempted": False,
+                "accepted": False,
+                "status": "no analytic smoothing statistics available",
+            }
+        ),
+    }
+    path = Path(save_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2, ensure_ascii=False)
+        file.write("\n")
 
 
 @dataclass(frozen=True)

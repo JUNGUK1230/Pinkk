@@ -80,6 +80,7 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 - `output/hybrid_path_world_cm.csv`: Hybrid A*의 pose·곡률·목표속도·각속도·정지 플래그를 포함한 제어용 trajectory
 - `output/hybrid_path_camera_bev.csv`: Hybrid pose를 Camera BEV pixel로 변환한 경로
 - `output/hybrid_path_world_cm.json`: Hybrid pose 경로와 frame·planner metadata
+- `output/hybrid_smoothing_stats.json`: raw·최종 경로의 smoothing 비교 통계와 fallback 사유
 
 `test_astar.py`는 기본 시작점 `(20, 20)`과 목표점 `(200, 180)`을 사용합니다. 점이 장애물이면 반경 30셀 안에서 가장 가까운 자유 셀을 찾고, 목표가 지도 밖이면 지도 크기에 맞춰 안쪽으로 보정합니다. 연결 가능한 경로가 없으면 이미지 대신 명확한 실패 메시지를 출력합니다.
 
@@ -179,6 +180,17 @@ analytic 경로의 물리적 최소 회전반경은 wheelbase와 최대 조향�
 
 검사에 실패하면 spline 결과를 폐기하고 이미 충돌 검사를 통과한 raw Hybrid A* + Reeds–Shepp 경로를 그대로 사용합니다. `click_hybrid_astar_on_camera_bev.py` 실행 결과의 `Goal connection` 항목에서 `curvature-smoothed path accepted` 또는 raw fallback 사유를 확인할 수 있습니다.
 
+현재 Camera BEV 클릭은 경로계획 기능을 확인하기 위한 테스트 입력으로만 유지합니다. 테스트 경로 확인 후 `s`를 누르면 기존 이미지·CSV·JSON과 함께 `output/hybrid_smoothing_stats.json`을 저장합니다. 통계 저장 함수는 클릭 스크립트와 분리되어 있어 추후 차량 위치 인식 기반 자동 경로 생성에서도 그대로 사용할 수 있습니다.
+
+통계 JSON은 다음 항목을 포함합니다.
+
+- smoothing 시도 및 채택 여부, raw fallback 사유
+- raw/candidate/final pose 개수와 경로 길이
+- 최대 경로점 간격과 최대 절대 조향각
+- 같은 기어 구간의 최대 조향 변화량
+- 전진↔후진 기어 전환 횟수
+- spline knot 간격과 analytic 회전반경
+
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_reeds_shepp.py
@@ -188,6 +200,6 @@ python3 scripts/test_hybrid_astar_analytic.py
 
 ## 다음 단계
 
-- 실제 Camera BEV 클릭 경로에서 smoothing 적용률과 조향 변화량 기록
+- 여러 테스트 경로의 smoothing 통계를 누적 비교하는 리포트 도구 추가
 - trajectory의 선속도·각속도 변화율 제한을 실차 응답에 맞게 튜닝
 - 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달

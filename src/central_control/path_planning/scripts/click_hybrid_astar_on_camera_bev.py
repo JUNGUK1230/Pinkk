@@ -17,6 +17,10 @@ sys.path.append(str(SCRIPT_DIR))
 
 from hybrid_astar_planner import HybridAStarPlanner, HybridState  # noqa: E402
 from occupancy_grid import OccupancyGridMap  # noqa: E402
+from path_smoothing import (  # noqa: E402
+    PathSmoothingStats,
+    save_path_smoothing_stats,
+)
 from test_astar import resolve_map_image  # noqa: E402
 from test_astar_on_camera_bev import transform_points_affine  # noqa: E402
 from click_astar_on_camera_bev import load_registration  # noqa: E402
@@ -69,6 +73,8 @@ class InteractiveHybridAStarApp:
         self.trajectory_points: list[TrajectoryPoint] = []
         self.path_camera_px: list[PixelPoint] = []
         self.total_cost = math.inf
+        self.goal_connection_message = ""
+        self.smoothing_stats: PathSmoothingStats | None = None
         self.display_image = camera_bev.copy()
 
     def handle_click(self, point: GridPoint) -> None:
@@ -157,6 +163,8 @@ class InteractiveHybridAStarApp:
         self.path_states = result.path
         self.trajectory_points = trajectory_points
         self.total_cost = result.total_cost
+        self.goal_connection_message = result.message
+        self.smoothing_stats = result.smoothing_stats
         lidar_path_px = [
             (state.x_cm / self.resolution_cm, state.y_cm / self.resolution_cm)
             for state in result.path
@@ -174,6 +182,16 @@ class InteractiveHybridAStarApp:
         ]
         print("Hybrid A* path found")
         print(f"Goal connection: {result.message}")
+        if result.smoothing_stats is not None:
+            stats = result.smoothing_stats
+            print(
+                "Smoothing stats: "
+                f"accepted={stats.accepted}, "
+                f"poses={stats.raw.pose_count}->{stats.final.pose_count}, "
+                "max steer change="
+                f"{stats.raw.max_same_direction_steer_change_deg:.2f}->"
+                f"{stats.final.max_same_direction_steer_change_deg:.2f} deg"
+            )
         print(f"Path poses: {len(result.path)}")
         print(f"Total cost: {result.total_cost:.3f}")
         print(f"Expanded nodes: {result.expanded_nodes}")
@@ -253,6 +271,8 @@ class InteractiveHybridAStarApp:
         self.trajectory_points.clear()
         self.path_camera_px.clear()
         self.total_cost = math.inf
+        self.goal_connection_message = ""
+        self.smoothing_stats = None
 
     def reset(self) -> None:
         self.camera_clicks.clear()
@@ -271,6 +291,7 @@ class InteractiveHybridAStarApp:
         world_csv_path = self.output_dir / "hybrid_path_world_cm.csv"
         camera_csv_path = self.output_dir / "hybrid_path_camera_bev.csv"
         json_path = self.output_dir / "hybrid_path_world_cm.json"
+        smoothing_stats_path = self.output_dir / "hybrid_smoothing_stats.json"
         if not cv2.imwrite(str(image_path), self.display_image):
             print(f"ERROR: Failed to save image: {image_path}")
             return
@@ -342,6 +363,11 @@ class InteractiveHybridAStarApp:
             with json_path.open("w", encoding="utf-8") as file:
                 json.dump(payload, file, indent=2, ensure_ascii=False)
                 file.write("\n")
+            save_path_smoothing_stats(
+                self.smoothing_stats,
+                smoothing_stats_path,
+                self.goal_connection_message,
+            )
         except OSError as error:
             print(f"ERROR: Failed to save Hybrid path: {error}")
             return
@@ -349,6 +375,7 @@ class InteractiveHybridAStarApp:
         print("Saved Hybrid world path: output/hybrid_path_world_cm.csv")
         print("Saved Hybrid Camera path: output/hybrid_path_camera_bev.csv")
         print("Saved Hybrid world JSON: output/hybrid_path_world_cm.json")
+        print("Saved smoothing stats: output/hybrid_smoothing_stats.json")
 
 
 def mouse_callback(

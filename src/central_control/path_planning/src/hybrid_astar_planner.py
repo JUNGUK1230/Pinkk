@@ -10,10 +10,18 @@ from typing import Iterable, Protocol
 import numpy as np
 
 if __package__:
-    from .path_smoothing import smooth_hybrid_path
+    from .path_smoothing import (
+        PathSmoothingStats,
+        calculate_path_smoothing_metrics,
+        smooth_hybrid_path,
+    )
     from .reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
 else:
-    from path_smoothing import smooth_hybrid_path
+    from path_smoothing import (
+        PathSmoothingStats,
+        calculate_path_smoothing_metrics,
+        smooth_hybrid_path,
+    )
     from reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
 
 
@@ -45,6 +53,7 @@ class HybridAStarResult:
     success: bool
     expanded_nodes: int
     message: str
+    smoothing_stats: PathSmoothingStats | None = None
 
 
 class HybridAStarPlanner:
@@ -230,7 +239,7 @@ class HybridAStarPlanner:
             if analytic_path is not None:
                 sparse_path = self._reconstruct(states, parents, current_key)
                 raw_hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
-                hybrid_path, smoothing_status = self.smooth_path_with_fallback(
+                hybrid_path, smoothing_stats = self.smooth_path_with_fallback(
                     raw_hybrid_path
                 )
                 return HybridAStarResult(
@@ -240,7 +249,8 @@ class HybridAStarPlanner:
                     True,
                     expanded_nodes,
                     "goal reached by Reeds-Shepp analytic expansion; "
-                    + smoothing_status,
+                    + smoothing_stats.status,
+                    smoothing_stats,
                 )
 
             if self._is_goal(current, goal[0], goal[1], goal_yaw):
@@ -466,10 +476,16 @@ class HybridAStarPlanner:
     def smooth_path_with_fallback(
         self,
         raw_path: list[HybridState],
-    ) -> tuple[list[HybridState], str]:
+    ) -> tuple[list[HybridState], PathSmoothingStats]:
         """Use smoothing only when every kinematic and collision check passes."""
         if not self.path_smoothing_enabled or len(raw_path) < 3:
-            return raw_path, "raw path retained (smoothing disabled)"
+            return raw_path, self._make_smoothing_stats(
+                raw_path,
+                raw_path,
+                attempted=False,
+                accepted=False,
+                status="raw path retained (smoothing disabled)",
+            )
         try:
             smoothed_poses = smooth_hybrid_path(
                 raw_path,
@@ -478,7 +494,13 @@ class HybridAStarPlanner:
                 knot_spacing_cm=self.smoothing_knot_spacing_cm,
             )
         except ValueError as error:
-            return raw_path, f"raw path retained (smoothing error: {error})"
+            return raw_path, self._make_smoothing_stats(
+                raw_path,
+                raw_path,
+                attempted=True,
+                accepted=False,
+                status=f"raw path retained (smoothing error: {error})",
+            )
 
         smoothed_path = [
             HybridState(
@@ -491,7 +513,13 @@ class HybridAStarPlanner:
             for pose in smoothed_poses
         ]
         if not smoothed_path:
-            return raw_path, "raw path retained (empty smoothing result)"
+            return raw_path, self._make_smoothing_stats(
+                raw_path,
+                raw_path,
+                attempted=True,
+                accepted=False,
+                status="raw path retained (empty smoothing result)",
+            )
 
         start_error = math.hypot(
             smoothed_path[0].x_cm - raw_path[0].x_cm,
@@ -508,13 +536,27 @@ class HybridAStarPlanner:
             self._angle_difference(smoothed_path[-1].yaw_rad, raw_path[-1].yaw_rad)
         )
         if max(start_error, goal_error, start_yaw_error, goal_yaw_error) > 1e-6:
-            return raw_path, "raw path retained (endpoint changed by smoothing)"
+            return raw_path, self._make_smoothing_stats(
+                raw_path,
+                raw_path,
+                attempted=True,
+                accepted=False,
+                status="raw path retained (endpoint changed by smoothing)",
+                candidate_path=smoothed_path,
+            )
 
         if any(
             abs(state.steer_rad) > self.max_abs_steer_rad + 1e-6
             for state in smoothed_path
         ):
-            return raw_path, "raw path retained (steering limit exceeded)"
+            return raw_path, self._make_smoothing_stats(
+                raw_path,
+                raw_path,
+                attempted=True,
+                accepted=False,
+                status="raw path retained (steering limit exceeded)",
+                candidate_path=smoothed_path,
+            )
 
         for first, second in zip(smoothed_path, smoothed_path[1:]):
             distance_cm = math.hypot(
@@ -522,7 +564,14 @@ class HybridAStarPlanner:
                 second.y_cm - first.y_cm,
             )
             if distance_cm > self.path_output_step_cm + 1e-6:
-                return raw_path, "raw path retained (output spacing exceeded)"
+                return raw_path, self._make_smoothing_stats(
+                    raw_path,
+                    raw_path,
+                    attempted=True,
+                    accepted=False,
+                    status="raw path retained (output spacing exceeded)",
+                    candidate_path=smoothed_path,
+                )
             if first.direction != second.direction:
                 continue
             allowed_change = (
@@ -532,15 +581,63 @@ class HybridAStarPlanner:
                 + math.radians(0.1)
             )
             if abs(second.steer_rad - first.steer_rad) > allowed_change:
-                return raw_path, "raw path retained (steering rate exceeded)"
+                return raw_path, self._make_smoothing_stats(
+                    raw_path,
+                    raw_path,
+                    attempted=True,
+                    accepted=False,
+                    status="raw path retained (steering rate exceeded)",
+                    candidate_path=smoothed_path,
+                )
 
         collision_index = self.first_path_collision_index(smoothed_path)
         if collision_index is not None:
             return (
                 raw_path,
-                f"raw path retained (smoothed collision at pose {collision_index})",
+                self._make_smoothing_stats(
+                    raw_path,
+                    raw_path,
+                    attempted=True,
+                    accepted=False,
+                    status=(
+                        "raw path retained "
+                        f"(smoothed collision at pose {collision_index})"
+                    ),
+                    candidate_path=smoothed_path,
+                ),
             )
-        return smoothed_path, "curvature-smoothed path accepted"
+        return smoothed_path, self._make_smoothing_stats(
+            raw_path,
+            smoothed_path,
+            attempted=True,
+            accepted=True,
+            status="curvature-smoothed path accepted",
+            candidate_path=smoothed_path,
+        )
+
+    def _make_smoothing_stats(
+        self,
+        raw_path: list[HybridState],
+        final_path: list[HybridState],
+        attempted: bool,
+        accepted: bool,
+        status: str,
+        candidate_path: list[HybridState] | None = None,
+    ) -> PathSmoothingStats:
+        return PathSmoothingStats(
+            attempted=attempted,
+            accepted=accepted,
+            status=status,
+            knot_spacing_cm=self.smoothing_knot_spacing_cm,
+            turning_radius_cm=self.analytic_turning_radius_cm,
+            raw=calculate_path_smoothing_metrics(raw_path),
+            candidate=(
+                calculate_path_smoothing_metrics(candidate_path)
+                if candidate_path is not None
+                else None
+            ),
+            final=calculate_path_smoothing_metrics(final_path),
+        )
 
     def find_nearest_valid_pose(
         self,

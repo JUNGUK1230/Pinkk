@@ -3,7 +3,13 @@
 from .astar_planner import AStarPlanner, AStarResult
 from .coordinate_transform import BevConfig, CoordinateTransform
 from .hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
-from .path_smoothing import SmoothedPathPose, smooth_hybrid_path
+from .path_smoothing import (
+    PathSmoothingMetrics,
+    PathSmoothingStats,
+    SmoothedPathPose,
+    save_path_smoothing_stats,
+    smooth_hybrid_path,
+)
 from .trajectory_profile import TrajectoryPoint, build_trajectory_profile
 from .reeds_shepp import (
     ReedsSheppPath,
@@ -22,6 +28,9 @@ __all__ = [
     "HybridAStarResult",
     "HybridState",
     "SmoothedPathPose",
+    "PathSmoothingMetrics",
+    "PathSmoothingStats",
+    "save_path_smoothing_stats",
     "smooth_hybrid_path",
     "TrajectoryPoint",
     "build_trajectory_profile",
