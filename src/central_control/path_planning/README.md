@@ -15,6 +15,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 - `src/path_smoothing.py`: 기어 전환을 보존하는 cubic spline 경로 smoothing
 - `src/trajectory_profile.py`: Hybrid pose의 곡률·목표속도·각속도·정지점 생성
 - `src/trajectory_validator.py`: 제어기 전달 전 trajectory fail-closed 안전 검사
+- `src/vision_scene_input.py`: 최신 카메라 scene의 유효성·시간·지도 범위를 검사하는 입력 gate
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
 - `output/`: 실행 결과 이미지
@@ -59,6 +60,10 @@ python3 scripts/test_reeds_shepp.py
 python3 scripts/test_reeds_shepp_collision.py
 python3 scripts/test_trajectory_profile.py
 python3 scripts/test_trajectory_validator.py
+python3 scripts/test_live_vision_scene.py
+python3 scripts/read_live_vision_scene.py
+python3 scripts/test_plan_from_live_vision.py
+python3 scripts/plan_from_live_vision.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
 
@@ -182,6 +187,64 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 `r`로 클릭과 경로를 초기화하고, `s`로 Hybrid 결과 이미지와 CSV/JSON을 저장하며, `q` 또는 `ESC`로 종료합니다. `hybrid_path_world_cm.csv`의 yaw는 단순화 후 재계산한 값이 아니라 planner가 자동차 모델로 전개한 각 pose의 헤딩입니다. `direction` 값은 전진 `1`, 후진 `-1`입니다.
 
+## 상단 카메라 실시간 start/goal 입력
+
+상단 카메라 localization 프로세스는 YOLO 차량 segmentation 결과와 고정 주차면을 정합해 다음 정보를 `output/live_vision_scene.json`에 저장합니다.
+
+- ego 차량의 Camera BEV 중심과 LiDAR 중심
+- 차량 중심에서 4 cm 뒤로 보정한 rear-axle `(x_cm, y_cm, yaw_rad)` pose
+- 모든 주차면의 Camera BEV·LiDAR 중심과 차량 mask 점유율
+- 가장 가까운 빈 주차면과 서로 180° 다른 두 rear-axle goal pose 후보
+
+경로계획 쪽의 `load_vision_planning_request()`는 `planning_ready=true`인 최신 scene만 읽습니다. 기본 허용 나이는 **0.5초**이며 파일이 오래됐거나, ego 선택·차량 앞뒤가 모호하거나, start/goal이 지도 밖이면 `VisionSceneUnavailable`로 입력을 거부합니다. 카메라 프로세스와 별도로 아래 명령을 실행하면 실제로 전달될 start/goal을 확인할 수 있습니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/read_live_vision_scene.py
+```
+
+mock 회귀 테스트는 다중 차량 중 초기 ego 선택, 점유/빈 주차면 판정, 두 goal heading, stale 입력 차단 및 모호한 scene 차단을 함께 검사합니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/test_live_vision_scene.py
+```
+
+초기 ego BEV 중심과 헤딩은 `../config/yolo/realtime_localization.yaml`에서 설정합니다. 아래 one-shot 자동 계획까지 연결했지만 ROS 2 토픽 및 `/home/junguk/pinky_ctrl` 제어기 전송은 아직 수행하지 않습니다.
+
+### 차량 검출 후 자동 Hybrid A* 생성
+
+localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면의 우선 goal과 180° 반대 goal을 차례로 시도한 뒤 한 번 계획하고 종료합니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/plan_from_live_vision.py
+```
+
+처리 순서는 다음과 같습니다.
+
+1. 0.5초 이내의 vision scene과 지도 범위를 검사
+2. start/goal의 회전 차량 footprint가 충돌하면 30 cm 안에서 가까운 유효 pose로 보정
+3. Hybrid A* 및 Reeds–Shepp 목표 연결
+4. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
+5. trajectory validator 통과 시에만 world cm·Camera BEV CSV와 JSON 저장
+
+출력 파일:
+
+- `output/live_hybrid_path_world_cm.csv`: 추후 제어기 연결에 사용할 검증된 trajectory
+- `output/live_hybrid_path_camera_bev.csv`: 같은 경로의 Camera BEV 좌표
+- `output/live_hybrid_path_world_cm.json`: 검출 frame, 주차면, start/goal, planner·검증 metadata
+- `output/live_hybrid_planning_status.json`: 최신 성공 여부 또는 차단 이유
+
+검출 누락, stale 좌표, 모호한 헤딩, 경로 탐색 실패, smoothing 실패 또는 validator 실패 시 이전 자동 경로 파일을 삭제합니다. 따라서 단순히 Hybrid A*가 경로를 찾았다는 이유만으로 제어용 파일이 남지 않습니다. 이번 구현은 **한 scene에서 한 번 계획하는 기본 파이프라인**이며, 지속 재계획과 제어기 전송은 아직 하지 않습니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/test_plan_from_live_vision.py
+```
+
+회귀 테스트는 실제 occupancy map의 안전한 구간에서 클릭 없이 71개 trajectory point를 만들고 smoothing·validator·CSV/JSON 저장까지 검사합니다. 현재 카메라의 임시 초기 헤딩값으로 얻은 시험 pose는 경로 탐색 후 smoothing 제한을 넘어서 안전하게 차단됐습니다. 실제 초기 헤딩을 확정한 뒤 현장 pose로 다시 검증해야 합니다.
+
 ## Reeds–Shepp 목표 연결기
 
 기존 Hybrid A*를 교체하지 않고 목표 pose 부근의 탐색을 보조하기 위한 독립 Reeds–Shepp 생성기를 추가했습니다. 차량 wheelbase `8 cm`와 최대 가상 조향각 `30°`를 기준으로 최소 회전반경은 약 **13.86 cm**이며, 전진·후진을 포함한 `L`(좌회전), `R`(우회전), `S`(직진) 후보 중 가장 짧은 경로를 **0.5 cm 간격**으로 출력합니다.
@@ -226,6 +289,8 @@ python3 scripts/test_hybrid_astar_analytic.py
 
 ## 다음 단계
 
-- `/home/junguk/pinky_ctrl`의 Pure Pursuit·PI 입력 형식 확인
-- validator를 통과한 trajectory만 ROS2 토픽으로 발행
-- 선속도·각속도 제한을 저속 실차 응답에 맞게 튜닝
+- 실제 설치 위치에서 ego의 초기 BEV 중심과 LiDAR 기준 앞 방향 측정
+- 차량 앞/뒤를 구분할 marker 또는 front class를 추가해 180° heading 모호성 제거
+- 여러 빈 주차면을 경로 가능성까지 비교해 최종 goal을 선택
+- 정지 상태로 안정된 여러 프레임에서만 one-shot planner를 호출하는 coordinator 추가
+- 이후 `/home/junguk/pinky_ctrl` 입력 형식에 맞춰 validator 통과 trajectory만 ROS 2로 전달

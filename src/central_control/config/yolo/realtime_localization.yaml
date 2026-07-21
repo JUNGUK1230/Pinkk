@@ -1,0 +1,32 @@
+realtime_localization:
+  model_path: src/central_control/models/best.pt
+  calibration_path: src/central_control/camera_tools/first_map/camera_calibration.npz
+  homography_path: src/central_control/camera_tools/first_map/bev_homography.npz
+  registration_path: src/central_control/camera_tools/first_map/camera_to_lidar_rigid_registration.npz
+  parking_slots_path: src/central_control/config/map/parking_slots_bev.json
+  vehicle_config_path: src/central_control/path_planning/config/vehicle_config.yaml
+  scene_output_path: src/central_control/path_planning/output/live_vision_scene.json
+
+  camera_id: 2
+  camera_width: 1920
+  camera_height: 1080
+  camera_fps: 30
+  camera_fourcc: MJPG
+
+  confidence: 0.25
+  iou: 0.45
+  occupancy_threshold: 0.10
+  output_every_n_frames: 1
+
+  # 여러 car가 보일 때 ego를 구분하려면 실제 초기 BEV 중심을 [x, y]로 입력한다.
+  # null이면 첫 프레임에서 confidence가 가장 높은 car를 표시하지만 planning_ready=false이다.
+  initial_ego_center_bev_px: null
+
+  # Segmentation 장축만으로는 차량 앞뒤가 180도 모호하다.
+  # 설치 후 알려진 초기 차량 헤딩을 LiDAR grid 기준 각도로 입력해야 경로계획 입력이 활성화된다.
+  initial_ego_yaw_deg: null
+
+  position_filter_alpha: 0.5
+  yaw_filter_alpha: 0.35
+  max_center_jump_px: 250.0
+  minimum_mask_elongation: 1.05

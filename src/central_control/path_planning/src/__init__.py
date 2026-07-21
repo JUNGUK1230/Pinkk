@@ -18,6 +18,11 @@ from .trajectory_validator import (
     TrajectoryValidationResult,
     validate_trajectory,
 )
+from .vision_scene_input import (
+    VisionPlanningRequest,
+    VisionSceneUnavailable,
+    load_vision_planning_request,
+)
 from .reeds_shepp import (
     ReedsSheppPath,
     ReedsSheppPlanner,
@@ -46,6 +51,9 @@ __all__ = [
     "TrajectoryValidationMetrics",
     "TrajectoryValidationResult",
     "validate_trajectory",
+    "VisionPlanningRequest",
+    "VisionSceneUnavailable",
+    "load_vision_planning_request",
     "ReedsSheppPath",
     "ReedsSheppPlanner",
     "ReedsSheppPose",

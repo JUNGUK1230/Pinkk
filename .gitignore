@@ -16,3 +16,10 @@ src/vehicle_control/
 # Camera BEV recordings and extracted CVAT datasets are generated locally.
 src/central_control/camera_tools/first_map/bev_recordings/
 src/central_control/camera_tools/first_map/bev_dataset/
+
+# 상단 카메라 프로세스가 매 프레임 원자적으로 갱신하는 런타임 scene.
+src/central_control/path_planning/output/live_vision_scene.json
+src/central_control/path_planning/output/live_hybrid_path_world_cm.csv
+src/central_control/path_planning/output/live_hybrid_path_camera_bev.csv
+src/central_control/path_planning/output/live_hybrid_path_world_cm.json
+src/central_control/path_planning/output/live_hybrid_planning_status.json
