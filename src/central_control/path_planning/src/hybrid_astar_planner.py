@@ -5,9 +5,17 @@ import heapq
 import itertools
 import math
 import time
-from typing import Iterable
+from typing import Iterable, Protocol
 
 import numpy as np
+
+
+class PathPose(Protocol):
+    """Footprint 검사에 필요한 최소 경로 pose 인터페이스."""
+
+    x_cm: float
+    y_cm: float
+    yaw_rad: float
 
 
 @dataclass(frozen=True)
@@ -272,6 +280,25 @@ class HybridAStarPlanner:
     def is_pose_collision(self, x_cm: float, y_cm: float, yaw_rad: float) -> bool:
         """Return whether the rotated rectangular vehicle footprint collides."""
         return self._is_collision(x_cm, y_cm, self._normalize_yaw(yaw_rad))
+
+    def first_path_collision_index(
+        self,
+        poses: Iterable[PathPose],
+    ) -> int | None:
+        """Return the first footprint-colliding pose index, or None when safe.
+
+        Reeds-Shepp paths are sampled every 0.5 cm before this check. Reusing
+        this planner's footprint model keeps vehicle dimensions, map bounds,
+        heading discretization, and obstacle thresholds identical to Hybrid A*.
+        """
+        for index, pose in enumerate(poses):
+            if self.is_pose_collision(pose.x_cm, pose.y_cm, pose.yaw_rad):
+                return index
+        return None
+
+    def is_path_collision_free(self, poses: Iterable[PathPose]) -> bool:
+        """Return whether every sampled pose has a valid vehicle footprint."""
+        return self.first_path_collision_index(poses) is None
 
     def find_nearest_valid_pose(
         self,

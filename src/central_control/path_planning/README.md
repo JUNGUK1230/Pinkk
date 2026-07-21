@@ -53,6 +53,7 @@ python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
 python3 scripts/test_hybrid_astar.py
 python3 scripts/test_reeds_shepp.py
+python3 scripts/test_reeds_shepp_collision.py
 python3 scripts/test_trajectory_profile.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
@@ -156,16 +157,19 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 기존 Hybrid A*를 교체하지 않고 목표 pose 부근의 탐색을 보조하기 위한 독립 Reeds–Shepp 생성기를 추가했습니다. 차량 wheelbase `8 cm`와 최대 가상 조향각 `30°`를 기준으로 최소 회전반경은 약 **13.86 cm**이며, 전진·후진을 포함한 `L`(좌회전), `R`(우회전), `S`(직진) 후보 중 가장 짧은 경로를 **0.5 cm 간격**으로 출력합니다.
 
-현재 단계에서는 수학적인 경로 생성과 끝 pose·샘플 간격·전후진 전환을 독립 테스트합니다. 아직 Hybrid A* 탐색이나 occupancy grid에 연결하지 않았으므로 기존 경로 생성 결과에는 영향을 주지 않으며, 생성된 Reeds–Shepp 경로의 차량 footprint 충돌 검사도 다음 통합 단계에서 수행합니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
+수학적인 경로 생성과 끝 pose·샘플 간격·전후진 전환을 독립 테스트합니다. 생성된 모든 0.5 cm pose는 기존 `HybridAStarPlanner`의 회전 직사각형 footprint 판정을 그대로 사용해 검사할 수 있습니다. `first_path_collision_index()`는 최초 충돌 pose를 반환하고 `is_path_collision_free()`는 전체 경로 통과 여부를 반환하므로, 차량 일부가 지도 밖으로 나가거나 경로 중간에서 장애물을 침범하는 경우도 검출합니다.
+
+아직 Reeds–Shepp을 Hybrid A* 탐색 루프에 연결하지 않았으므로 기존 경로 생성 결과에는 영향을 주지 않습니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_reeds_shepp.py
+python3 scripts/test_reeds_shepp_collision.py
 ```
 
 ## 다음 단계
 
 - Hybrid A*가 목표 근처에서 Reeds–Shepp 후보를 생성하도록 analytic expansion 연결
-- Reeds–Shepp의 모든 0.5 cm pose에 차량 rectangle footprint 충돌 검사 적용
+- 충돌 없는 Reeds–Shepp 경로만 현재 Hybrid A* 경로 뒤에 연결
 - 곡률 연속 smoothing 후 footprint 재검증
 - 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달
