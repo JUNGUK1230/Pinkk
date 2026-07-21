@@ -247,10 +247,25 @@ class HybridAStarPlanner:
         progress_callback: Callable[[int, float, int], None] | None = None,
         progress_interval_nodes: int = 1000,
         require_smoothed_path: bool = False,
+        required_goal_direction: int | None = None,
+        min_final_direction_distance_cm: float = 0.0,
     ) -> HybridAStarResult:
         """Plan from a continuous start pose to a position-and-heading goal pose."""
         if progress_interval_nodes <= 0:
             raise ValueError("progress interval must be positive")
+        if required_goal_direction not in (None, -1, 1):
+            raise ValueError("required goal direction must be None, -1, or 1")
+        if (
+            not math.isfinite(min_final_direction_distance_cm)
+            or min_final_direction_distance_cm < 0.0
+        ):
+            raise ValueError(
+                "minimum final direction distance must be finite and non-negative"
+            )
+        if required_goal_direction is None and min_final_direction_distance_cm > 0.0:
+            raise ValueError(
+                "minimum final direction distance requires a goal direction"
+            )
         start_state = HybridState(start[0], start[1], self._normalize_yaw(start[2]), 1)
         goal_yaw = self._normalize_yaw(goal[2])
         self._validate_pose(
@@ -309,13 +324,27 @@ class HybridAStarPlanner:
             current = states[current_key]
 
             analytic_path = (
-                self.try_analytic_expansion(current, goal)
+                self.try_analytic_expansion(
+                    current,
+                    goal,
+                    required_goal_direction=required_goal_direction,
+                )
                 if expanded_nodes % self.analytic_expansion_interval_nodes == 0
                 else None
             )
             if analytic_path is not None:
                 sparse_path = self._reconstruct(states, parents, current_key)
                 raw_hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
+                motion_constraint_error = self._goal_motion_constraint_error(
+                    raw_hybrid_path,
+                    required_goal_direction,
+                    min_final_direction_distance_cm,
+                )
+                if motion_constraint_error is not None:
+                    rejected_goal_paths += 1
+                    last_rejected_goal_reason = motion_constraint_error
+                    analytic_path = None
+            if analytic_path is not None:
                 hybrid_path, smoothing_stats = self.smooth_path_with_fallback(
                     raw_hybrid_path
                 )
@@ -337,9 +366,26 @@ class HybridAStarPlanner:
                 rejected_goal_paths += 1
                 last_rejected_goal_reason = smoothing_stats.status
 
-            if self._is_goal(current, goal[0], goal[1], goal_yaw):
+            if self._is_goal(
+                current,
+                goal[0],
+                goal[1],
+                goal_yaw,
+                required_goal_direction,
+            ):
                 sparse_path = self._reconstruct(states, parents, current_key)
                 raw_hybrid_path = self._densify_path(sparse_path)
+                motion_constraint_error = self._goal_motion_constraint_error(
+                    raw_hybrid_path,
+                    required_goal_direction,
+                    min_final_direction_distance_cm,
+                )
+                if motion_constraint_error is not None:
+                    rejected_goal_paths += 1
+                    last_rejected_goal_reason = motion_constraint_error
+                    closed.add(current_key)
+                    expanded_nodes += 1
+                    continue
                 hybrid_path, smoothing_stats = self.smooth_path_with_fallback(
                     raw_hybrid_path
                 )
@@ -527,14 +573,64 @@ class HybridAStarPlanner:
         return self._build_holonomic_cost_to_goal(goal_x_cm, goal_y_cm)
 
     def _is_goal(
-        self, state: HybridState, goal_x: float, goal_y: float, goal_yaw: float
+        self,
+        state: HybridState,
+        goal_x: float,
+        goal_y: float,
+        goal_yaw: float,
+        required_direction: int | None = None,
     ) -> bool:
         return (
             math.hypot(goal_x - state.x_cm, goal_y - state.y_cm)
             <= self.goal_tolerance_cm
             and abs(self._angle_difference(goal_yaw, state.yaw_rad))
             <= self.goal_yaw_tolerance_rad
+            and (
+                required_direction is None
+                or state.direction == required_direction
+            )
         )
+
+    @staticmethod
+    def terminal_direction_distance_cm(
+        path: Iterable[HybridState],
+        direction: int,
+    ) -> float:
+        """Return consecutive distance travelled in direction at path end."""
+        if direction not in (-1, 1):
+            raise ValueError("direction must be -1 or 1")
+        poses = list(path)
+        distance_cm = 0.0
+        for index in range(len(poses) - 1, 0, -1):
+            if poses[index].direction != direction:
+                break
+            distance_cm += math.hypot(
+                poses[index].x_cm - poses[index - 1].x_cm,
+                poses[index].y_cm - poses[index - 1].y_cm,
+            )
+        return distance_cm
+
+    def _goal_motion_constraint_error(
+        self,
+        path: Iterable[HybridState],
+        required_direction: int | None,
+        minimum_distance_cm: float,
+    ) -> str | None:
+        if required_direction is None:
+            return None
+        poses = list(path)
+        if not poses or poses[-1].direction != required_direction:
+            return f"final direction is not {required_direction}"
+        terminal_distance_cm = self.terminal_direction_distance_cm(
+            poses,
+            required_direction,
+        )
+        if terminal_distance_cm + 1e-6 < minimum_distance_cm:
+            return (
+                f"final direction distance {terminal_distance_cm:.2f} cm is below "
+                f"required {minimum_distance_cm:.2f} cm"
+            )
+        return None
 
     def _validate_pose(
         self, label: str, x_cm: float, y_cm: float, yaw_rad: float
@@ -572,6 +668,7 @@ class HybridAStarPlanner:
         self,
         current: HybridState,
         goal: tuple[float, float, float],
+        required_goal_direction: int | None = None,
     ) -> ReedsSheppPath | None:
         """Return the shortest collision-free Reeds-Shepp goal connection.
 
@@ -589,15 +686,23 @@ class HybridAStarPlanner:
 
         start = (current.x_cm, current.y_cm, current.yaw_rad)
         normalized_goal = (goal[0], goal[1], self._normalize_yaw(goal[2]))
-        for candidate_index, path in enumerate(
-            self.reeds_shepp_planner.iter_candidates(start, normalized_goal)
+        checked_candidates = 0
+        for path in self.reeds_shepp_planner.iter_candidates(
+            start,
+            normalized_goal,
         ):
-            if candidate_index >= self.analytic_max_candidates:
-                break
             if not self.allow_reverse and any(
                 segment.direction < 0 for segment in path.segments
             ):
                 continue
+            if (
+                required_goal_direction is not None
+                and path.poses[-1].direction != required_goal_direction
+            ):
+                continue
+            if checked_candidates >= self.analytic_max_candidates:
+                break
+            checked_candidates += 1
             if self.is_path_collision_free(path.poses):
                 return path
         return None

@@ -19,8 +19,8 @@ realtime_localization:
   occupancy_threshold: 0.10
   output_every_n_frames: 1
 
-  # C1 장거리 경로 검증 후 현재 현장 테스트 목적지는 P6으로 고정한다.
-  target_slot_name: P6
+  # 현재 현장 후진주차 테스트 목적지는 P5로 고정한다.
+  target_slot_name: P5
 
   # 검증된 자동 Hybrid 경로를 localization 창에 빨간 선으로 표시한다.
   planned_path_path: src/central_control/path_planning/output/live_hybrid_path_world_cm.json

@@ -65,3 +65,9 @@ trajectory_validation:
   steering_rate_tolerance_deg: 0.1
   # rad 기준 약 0.000115 deg의 부동소수점 비교 여유다.
   numeric_tolerance: 0.000002
+
+# 상단 카메라에서 자동 생성하는 실제 주차 경로의 종단 maneuver 조건.
+# 일반 클릭 Hybrid A* 테스트에는 강제하지 않고 live planner에서만 적용한다.
+automatic_parking:
+  required_final_direction: -1
+  min_final_direction_distance_cm: 12.0

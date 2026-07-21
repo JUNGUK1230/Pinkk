@@ -56,6 +56,29 @@ def main() -> int:
     assert valid_result.metrics.gear_switch_count == 1
     assert valid_result.metrics.max_spacing_cm <= 0.5 + 1e-9
 
+    reverse_parking_result = validate_trajectory(
+        trajectory,
+        limits,
+        required_final_direction=-1,
+        min_final_direction_distance_cm=4.0,
+    )
+    assert reverse_parking_result.valid, reverse_parking_result.issues
+    short_reverse_result = validate_trajectory(
+        trajectory,
+        limits,
+        required_final_direction=-1,
+        min_final_direction_distance_cm=6.0,
+    )
+    assert "FINAL_DIRECTION_DISTANCE" in issue_codes(short_reverse_result)
+    wrong_final_direction_result = validate_trajectory(
+        trajectory,
+        limits,
+        required_final_direction=1,
+    )
+    assert "FINAL_DIRECTION_MISMATCH" in issue_codes(
+        wrong_final_direction_result
+    )
+
     non_finite = list(trajectory)
     non_finite[5] = replace(non_finite[5], x_cm=math.nan)
     assert "NON_FINITE_VALUE" in issue_codes(

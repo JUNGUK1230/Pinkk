@@ -24,7 +24,13 @@ from vision_scene_input import VisionPlanningRequest  # noqa: E402
 
 
 def main() -> int:
-    grid_map, planner, profile_config, limits = load_planner_stack()
+    (
+        grid_map,
+        planner,
+        profile_config,
+        limits,
+        parking_config,
+    ) = load_planner_stack()
     # 실제 지도에서 footprint가 통과하는 직선 구간이다. 자동 입력이 클릭 없이
     # planner, smoothing, profile, validator, 파일 저장까지 연결되는지 검사한다.
     request = VisionPlanningRequest(
@@ -88,10 +94,49 @@ def main() -> int:
             ),
         ),
         planning_budget_sec=0.0,
+        required_goal_direction=parking_config.required_final_direction,
+        min_final_direction_distance_cm=(
+            parking_config.min_final_direction_distance_cm
+        ),
     )
     assert c1_result[0] == "alternative goal"
     assert c1_result[5].valid
     assert c1_result[5].metrics.max_abs_steer_deg <= 30.0
+    assert c1_result[4][-1].direction == -1
+    assert (
+        planner.terminal_direction_distance_cm(c1_result[3].path, -1)
+        >= parking_config.min_final_direction_distance_cm - 1e-6
+    )
+
+    # P6은 primary heading의 12 cm approach가 벽과 충돌하므로 안전한
+    # alternative heading을 선택하고 전진 approach 후 직선 후진해야 한다.
+    p6_result = plan_and_validate(
+        planner,
+        profile_config,
+        limits,
+        (66.91479447988687, 23.780613374672036, 0.7336417665791615),
+        (
+            (
+                "primary goal",
+                (126.90516491010769, 99.81583190725081, 2.3054119010530005),
+            ),
+            (
+                "alternative goal",
+                (121.54274949205609, 105.75253982361679, -0.8361807525367926),
+            ),
+        ),
+        required_goal_direction=parking_config.required_final_direction,
+        min_final_direction_distance_cm=(
+            parking_config.min_final_direction_distance_cm
+        ),
+    )
+    assert p6_result[0] == "alternative goal"
+    assert p6_result[5].valid
+    assert p6_result[4][-1].direction == -1
+    assert (
+        planner.terminal_direction_distance_cm(p6_result[3].path, -1)
+        >= parking_config.min_final_direction_distance_cm - 1e-6
+    )
 
     with tempfile.TemporaryDirectory() as directory:
         output_dir = Path(directory)
@@ -135,6 +180,10 @@ def main() -> int:
     print(
         "C1 long-range regression: "
         f"{c1_result[0]}, points={len(c1_result[4])}"
+    )
+    print(
+        "P6 reverse-parking regression: "
+        f"{p6_result[0]}, points={len(p6_result[4])}"
     )
     return 0
 

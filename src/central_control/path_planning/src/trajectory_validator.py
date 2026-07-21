@@ -94,9 +94,24 @@ def validate_trajectory(
     trajectory: Sequence[TrajectoryPoint],
     limits: TrajectoryValidationLimits,
     collision_checker: CollisionChecker | None = None,
+    required_final_direction: int | None = None,
+    min_final_direction_distance_cm: float = 0.0,
 ) -> TrajectoryValidationResult:
     """수치·기구학·속도·정지·충돌 조건을 모두 검사한다."""
     limits.validate()
+    if required_final_direction not in (None, -1, 1):
+        raise ValueError("required final direction must be None, -1, or 1")
+    if (
+        not math.isfinite(min_final_direction_distance_cm)
+        or min_final_direction_distance_cm < 0.0
+    ):
+        raise ValueError(
+            "minimum final direction distance must be finite and non-negative"
+        )
+    if required_final_direction is None and min_final_direction_distance_cm > 0.0:
+        raise ValueError(
+            "minimum final direction distance requires a final direction"
+        )
     issues: list[TrajectoryValidationIssue] = []
     if not trajectory:
         issues.append(
@@ -241,6 +256,13 @@ def validate_trajectory(
 
     _validate_required_stops(trajectory, tolerance, issues)
     spacings = _validate_edges(trajectory, limits, issues)
+    _validate_final_direction(
+        trajectory,
+        required_final_direction,
+        min_final_direction_distance_cm,
+        tolerance,
+        issues,
+    )
     metrics = TrajectoryValidationMetrics(
         point_count=len(trajectory),
         path_length_cm=sum(spacings),
@@ -263,6 +285,45 @@ def validate_trajectory(
         ),
     )
     return TrajectoryValidationResult(not issues, tuple(issues), metrics)
+
+
+def _validate_final_direction(
+    trajectory: Sequence[TrajectoryPoint],
+    required_direction: int | None,
+    minimum_distance_cm: float,
+    tolerance: float,
+    issues: list[TrajectoryValidationIssue],
+) -> None:
+    """자동 주차의 마지막 연속 진입 방향과 거리를 검사한다."""
+    if required_direction is None:
+        return
+    if trajectory[-1].direction != required_direction:
+        issues.append(
+            TrajectoryValidationIssue(
+                "FINAL_DIRECTION_MISMATCH",
+                f"final direction must be {required_direction}",
+                len(trajectory) - 1,
+            )
+        )
+        return
+
+    terminal_distance_cm = 0.0
+    for index in range(len(trajectory) - 1, 0, -1):
+        if trajectory[index].direction != required_direction:
+            break
+        terminal_distance_cm += math.hypot(
+            trajectory[index].x_cm - trajectory[index - 1].x_cm,
+            trajectory[index].y_cm - trajectory[index - 1].y_cm,
+        )
+    if terminal_distance_cm + tolerance < minimum_distance_cm:
+        issues.append(
+            TrajectoryValidationIssue(
+                "FINAL_DIRECTION_DISTANCE",
+                f"final direction distance {terminal_distance_cm:.2f} cm is below "
+                f"required {minimum_distance_cm:.2f} cm",
+                len(trajectory) - 1,
+            )
+        )
 
 
 def _validate_required_stops(

@@ -76,6 +76,24 @@ def main() -> int:
     assert "curvature-smoothed path accepted" in direct_result.message
     assert_continuous_safe_path(direct_planner, direct_result.path, direct_goal)
 
+    # 자동 후진주차는 같은 x/y/yaw 도달만으로 끝내지 않고 마지막 연속
+    # 주행 방향과 최소 후진 진입거리까지 만족해야 한다.
+    reverse_result = direct_planner.plan(
+        (70.0, 30.0, 0.0),
+        (40.0, 30.0, 0.0),
+        required_goal_direction=-1,
+        min_final_direction_distance_cm=12.0,
+    )
+    assert reverse_result.success, reverse_result.message
+    assert reverse_result.path[-1].direction == -1
+    assert (
+        direct_planner.terminal_direction_distance_cm(
+            reverse_result.path,
+            -1,
+        )
+        >= 12.0 - 1e-6
+    )
+
     curved_goal = (70.0, 75.0, math.pi / 2.0)
     curved_result = direct_planner.plan((40.0, 40.0, 0.0), curved_goal)
     assert curved_result.success, curved_result.message

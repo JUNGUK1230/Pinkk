@@ -20,15 +20,31 @@ import cv2
 import numpy as np
 import yaml
 
-from .scene_localizer import (
-    AffineBevToLidar,
-    Detection,
-    EgoVehicleTracker,
-    ParkingSlotMap,
-    SceneLocalizer,
-    SceneObservation,
-    save_scene_observation,
-)
+if __package__:
+    from .scene_localizer import (
+        AffineBevToLidar,
+        Detection,
+        EgoVehicleTracker,
+        ParkingSlotMap,
+        SceneLocalizer,
+        SceneObservation,
+        save_scene_observation,
+    )
+else:
+    # `python3 path/to/live_localization.py` 직접 실행에서는 package 문맥이
+    # 없으므로 같은 폴더를 import 경로에 넣어 module 실행과 동일하게 동작한다.
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from scene_localizer import (  # type: ignore[no-redef]
+        AffineBevToLidar,
+        Detection,
+        EgoVehicleTracker,
+        ParkingSlotMap,
+        SceneLocalizer,
+        SceneObservation,
+        save_scene_observation,
+    )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

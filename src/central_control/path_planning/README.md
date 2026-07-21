@@ -28,7 +28,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 
 2D A*는 차량을 크기가 없는 하나의 점으로 보므로, 원본 occupancy grid만 사용하면 벽과 주차선 바로 옆으로 경로가 생성될 수 있습니다. 이를 방지하기 위해 차량 반폭과 안전 마진을 고려한 obstacle inflation을 적용합니다.
 
-현재 2D A* 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. Hybrid A*는 차량 크기를 inflation으로 대신하지 않고, 실제 회전된 rectangle footprint와 **2 cm** 추가 안전마진을 사용합니다.
+현재 2D A* 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. Hybrid A*는 차량 크기를 inflation으로 대신하지 않고, 실제 회전된 rectangle footprint와 **1 cm** 추가 안전마진을 사용합니다.
 
 ## 요구 환경
 
@@ -120,7 +120,7 @@ Hybrid A*가 생성한 고밀도 pose의 가상 조향각을 다음 식으로 �
 
 ```text
 curvature_1pm = tan(steer_rad) / wheelbase_m
-target_angular_z_radps = target_speed_mps * curvature_1pm
+  target_angular_z_radps = target_speed_mps * curvature_1pm
 ```
 
 `target_speed_mps`는 signed 속도이므로 전진은 양수, 후진은 음수입니다. 직선에서는 빠르고 차량의 최대 가상 조향각 `30°`를 기준으로 곡률이 커질수록 감속합니다. 0.5 cm 경로 간격을 사용한 전방·후방 패스로 가속도와 감속도를 제한합니다. 시작, 도착, 전진↔후진 전환 직전 pose는 `stop_required=1`, `target_speed_mps=0` 조건을 가집니다.
@@ -171,7 +171,7 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_trajectory_validator.py
 ```
 
-차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×10 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 차량 반폭 5 cm와 안전마진 2 cm를 합해 직선 벽에서 경로 중심선까지 명목상 7 cm를 확보합니다. 폭 20 cm 주차면에서는 안전영역을 포함한 차량 폭이 14 cm이므로 좌우 합계 약 6 cm의 공간이 남습니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
+차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×8 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 차량 반폭 4 cm와 안전마진 1 cm를 합해 직선 벽에서 경로 중심선까지 명목상 5 cm를 확보합니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
@@ -196,26 +196,36 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 - 모든 주차면의 Camera BEV·LiDAR 중심과 차량 mask 점유율
 - 설정된 목표 주차면과 서로 180° 다른 두 rear-axle goal pose 후보
 
-현재 현장 테스트 설정은 `../config/yolo/realtime_localization.yaml`의 `target_slot_name: P6`을 사용하므로 실제 planning request는 가까운 주차면이 아니라 항상 P6을 선택합니다. P6이 점유되면 다른 자리로 자동 변경하지 않고 계획을 차단합니다. C1 장거리 경로 테스트는 완료했으며 회귀 테스트로 계속 유지합니다.
+현재 통합 테스트 설정은 `../config/yolo/realtime_localization.yaml`의 `target_slot_name: P5`를 사용하므로 실제 planning request는 가까운 주차면이 아니라 항상 P5를 선택합니다. P5가 점유되면 다른 자리로 자동 변경하지 않고 계획을 차단합니다. 아래 P6 내용은 후진주차 알고리즘 회귀 기록으로 유지합니다.
 
-### P6 탐색 성능 점검 메모
+### P6 후진주차 구현 메모
 
-2026-07-21 점검에서 9분 이상 실행된 직접 원인은 YOLO가 아니라 **Hybrid A* 후보 반복 탐색**으로 확인했습니다. 과거 기본 `--planning-timeout-sec 0`이 planner의 후보당 제한까지 무제한으로 덮어썼고, 각 heading의 nearby goal마다 Hybrid A*와 Reeds–Shepp 검사를 처음부터 반복했습니다.
+2026-07-21 점검 결과, 기존 P6 경로 245점 중 242점이 전진이고 마지막 20점도 모두 `direction=1`이었습니다. Hybrid A*의 goal 판정이 `x·y·yaw`만 검사하고 후진 비용을 1.5배로 두기 때문에, 같은 자세에 전진으로 도착할 수 있으면 전진주차를 선택한 것이 원인이었습니다.
 
-수정 전 5초 cProfile에서는 약 612만 함수 호출로 1,770개 상태만 확장했습니다. 누적 시간의 약 절반은 goal 30cm 안에서 매 노드마다 실행되는 Reeds–Shepp 후보 생성과 footprint 충돌 검사에 사용됐고, 나머지 주요 비용은 motion primitive의 footprint 충돌 검사였습니다. 2D cost-to-go 생성은 약 0.24초로 주 병목이 아니었습니다.
+자동 카메라 경로에는 `config/planner_config.yaml`의 `automatic_parking` 조건을 적용합니다.
 
-다음 최적화를 적용했습니다.
+```yaml
+automatic_parking:
+  required_final_direction: -1
+  min_final_direction_distance_cm: 12.0
+```
 
-1. 기본 전체 제한 30초와 후보당 제한 5초를 분리하고, `0`은 명시적 진단 실행에서만 무제한으로 사용
-2. 1,000개 확장 노드마다 expanded/open/elapsed 진행 상황 출력
-3. 같은 heading의 nearby goal이 2D cost-to-go를 재사용
-4. Reeds–Shepp analytic expansion을 20개 노드마다 실행하고 최단 후보부터 최대 12개만 lazy 검사
-5. smoothing 실패 raw 경로는 자동 파이프라인에서 반환하지 않고 같은 탐색을 계속 수행
-6. closed state를 덮어쓰지 않아 parent chain의 연속 pose 보존
-7. footprint bounds·조향 bin을 미리 계산하고 occupancy 충돌 검사의 NumPy 호출 수 축소
-8. 두 heading의 명목 goal 확인 후 primary·alternative에 가까운 nearby 탐색 기회를 보장하면서 선호 primary를 우선 탐색
+단순히 마지막 state만 후진으로 강제하면 3cm motion primitive 하나만 후진한 경로가 생성될 수 있습니다. 현재 구현은 목표 heading을 따라 목표 12cm 앞에 approach pose를 만들고 다음 두 단계로 계획합니다.
 
-동일 P6 현장 좌표의 재현 테스트는 유효한 245점 trajectory를 **16.7초**에 생성했고 최종 validator를 통과했습니다. 수정 전 9분 이상과 비교하면 약 32배 빨라졌으며, 측정 환경에서 탐색 처리량은 대략 350노드/초에서 2,000노드/초 이상으로 증가했습니다. 결과는 CPU와 시스템 부하에 따라 달라질 수 있습니다.
+1. Hybrid A*와 Reeds–Shepp로 approach pose에 **전진 방향**으로 정확히 도착
+2. 정지·기어 전환 후 목표까지 12cm 직선 후진
+
+approach pose 또는 최종 직선 후진 footprint가 장애물과 충돌하면 해당 heading은 사용하지 않습니다. P6 primary heading의 12cm approach는 벽과 충돌하므로 안전한 alternative heading을 자동 선택합니다. 동일 P6 현장 좌표 회귀에서는 약 **0.38초**, 313점으로 경로를 생성했고 마지막 연속 후진 12cm와 최종 validator를 통과했습니다. C1도 같은 방식의 alternative heading 후진주차 회귀를 통과했습니다.
+
+최종 trajectory validator는 `FINAL_DIRECTION_MISMATCH`와 `FINAL_DIRECTION_DISTANCE`를 별도로 검사합니다. 따라서 planner 결과가 있어도 마지막 방향이 후진이 아니거나 연속 후진거리가 12cm 미만이면 CSV·JSON과 overlay를 저장하지 않습니다.
+
+### P5 진입 차단 진단 메모
+
+2026-07-21 P5 현장 좌표에서는 Hybrid A* 속도가 아니라 occupancy 안전영역이 원인으로 경로가 차단됐습니다. Camera BEV의 P5 polygon을 LiDAR grid로 변환하면 내부 셀 중 원본 obstacle 비율이 약 **23.1%**, 2cm inflation 이후 약 **53.3%**입니다. 현재 차량 footprint와 2cm 안전마진으로는 P5 중심 주변 ±8cm 안에 충돌 없는 12cm 후진 corridor가 없습니다.
+
+안전마진을 1cm로 낮추면 일부 corridor pose는 생기지만 approach 도달 경로는 전체 30초 안에 만들어지지 않았으므로, 마진 축소만으로 해결되지 않았습니다. 설정된 2cm 안전값을 임의로 낮추지 않고 유지합니다. P5를 사용하려면 LiDAR map에서 주차면 내부를 막는 구조물이 실제 장애물인지 확인하고, 주행 가능한 바닥·주차선이 obstacle로 들어간 경우 occupancy map을 정리한 뒤 다시 정합해야 합니다.
+
+마지막 직선 후진 corridor는 이제 Hybrid A*를 시작하기 전에 전 구간 footprint 검사합니다. 막힌 후보는 5초 timeout을 반복하지 않고 `candidate skipped: final parking maneuver footprint collision`로 즉시 차단됩니다.
 
 경로계획 쪽의 `load_vision_planning_request()`는 `planning_ready=true`인 최신 scene만 읽습니다. 기본 허용 나이는 **0.5초**이며 파일이 오래됐거나, ego 선택·차량 앞뒤가 모호하거나, start/goal이 지도 밖이면 `VisionSceneUnavailable`로 입력을 거부합니다. 카메라 프로세스와 별도로 아래 명령을 실행하면 실제로 전달될 start/goal을 확인할 수 있습니다.
 
@@ -235,7 +245,7 @@ python3 scripts/test_live_vision_scene.py
 
 ### 차량 검출 후 자동 Hybrid A* 생성
 
-localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면의 우선 goal과 180° 반대 goal을 먼저 한 번씩 확인합니다. 이어서 primary 주변 2개, alternative 주변 2개에 탐색 기회를 주고 나머지는 교차 순서로 시도합니다. 한 번 계획하고 종료하며 전체 계획은 기본 30초, 각 goal 후보는 기본 5초로 제한됩니다.
+localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면의 두 heading에서 충돌 없는 후진주차 approach를 찾은 뒤 한 번 계획하고 종료합니다. 전체 계획은 기본 30초, 각 후보는 기본 5초로 제한됩니다.
 
 주차면 명목 중심에서 찾은 경로가 smoothing 조향각·조향 변화율을 넘으면 heading을 유지한 채 goal의 전방축·측면축 **3cm** 범위를 1cm 간격 square ring 순서로 탐색합니다. 차량 footprint가 유효하고 최종 validator를 통과한 가장 가까운 pose만 선택합니다. 일반 Hybrid A* goal 도달 경로도 Reeds–Shepp 도달 경로와 동일하게 곡률 smoothing을 적용하므로 3cm primitive의 조향 변화가 0.5cm 출력에서 순간 변화로 남지 않게 검사합니다.
 
@@ -244,27 +254,21 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/plan_from_live_vision.py
 ```
 
-필요할 때만 전체·후보 계획 제한시간을 초 단위로 지정합니다. 아래 예시는 전체 60초, 후보당 8초로 제한합니다. `0`은 무제한 진단용이므로 일반 실행에는 권장하지 않습니다.
-
-```bash
-python3 scripts/plan_from_live_vision.py \
-  --planning-timeout-sec 60 \
-  --candidate-timeout-sec 8
-```
-
 처리 순서는 다음과 같습니다.
 
 1. 0.5초 이내의 vision scene과 지도 범위를 검사
 2. start/goal의 회전 차량 footprint가 충돌하면 30 cm 안에서 가까운 유효 pose로 보정
-3. 장애물을 반영한 2D cost-to-go 휴리스틱 기반 Hybrid A* 및 Reeds–Shepp 목표 연결
-4. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
-5. trajectory validator 통과 시에만 world cm·Camera BEV CSV와 JSON 저장
+3. 목표 12cm 앞의 충돌 없는 후진주차 approach pose 선택
+4. Hybrid A* 및 Reeds–Shepp로 approach에 전진 도착
+5. 정지 후 12cm 직선 후진 maneuver 연결
+6. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
+7. 종단 후진 방향·거리 포함 trajectory validator 통과 시에만 파일 저장
 
 출력 파일:
 
 - `output/live_hybrid_path_world_cm.csv`: 추후 제어기 연결에 사용할 검증된 trajectory
 - `output/live_hybrid_path_camera_bev.csv`: 같은 경로의 Camera BEV 좌표
-- `output/live_hybrid_path_world_cm.json`: 검출 frame, 주차면, start/goal, planner·검증 metadata
+- `output/live_hybrid_path_world_cm.json`: 검출 frame, 주차면, start/goal, planner·검증 및 `parking_maneuver` metadata
 - `output/live_camera_bev.png`: localization이 원자적으로 갱신하는 최신 원본 Camera BEV
 - `output/live_hybrid_path_on_camera_bev.png`: 빨간 경로·초록 start·파란 goal heading overlay
 - `output/live_hybrid_planning_status.json`: 최신 성공 여부 또는 차단 이유
@@ -273,18 +277,14 @@ localization은 scene JSON을 공개하기 직전에 동일 frame의 Camera BEV�
 
 검출 누락, stale 좌표, 모호한 헤딩, 경로 탐색 실패, smoothing 실패 또는 validator 실패 시 이전 자동 경로 파일과 overlay를 삭제합니다. 따라서 단순히 Hybrid A*가 경로를 찾았다는 이유만으로 제어용 파일이 남지 않습니다. 이번 구현은 **한 scene에서 한 번 계획하는 기본 파이프라인**이며, 지속 재계획과 제어기 전송은 아직 하지 않습니다.
 
-검증된 P6 경로가 생성되면 localization 프로세스가 `live_hybrid_path_world_cm.json` 변경을 감지해 현재 창에 굵은 빨간 polyline으로 표시합니다. 이전 C1 결과처럼 현재 설정 목표와 다른 경로는 표시하지 않습니다. 차량이 저장 경로의 start에서 8cm 이상 이동하면 오래된 경로를 숨깁니다. 화면에 선이 없으면 아직 planner를 실행하지 않았거나, 경로가 validator에서 차단됐거나, 실행 중인 localization이 변경 전 설정을 읽은 상태인지 확인합니다.
+검증된 현재 목표(P5) 경로가 생성되면 localization 프로세스가 `live_hybrid_path_world_cm.json` 변경을 감지해 현재 창에 굵은 빨간 polyline으로 표시합니다. 차량이 저장 경로의 start에서 8cm 이상 이동하면 오래된 경로를 숨깁니다. 화면에 선이 없으면 아직 planner를 실행하지 않았거나, 경로가 validator에서 차단됐거나, 실행 중인 localization이 변경 전 설정을 읽은 상태인지 확인합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_plan_from_live_vision.py
 ```
 
-회귀 테스트는 실제 occupancy map의 안전한 구간에서 클릭 없이 trajectory를 만들고 smoothing·validator·CSV/JSON 저장까지 검사합니다. 또한 실제 C1 장거리 start/goal에서 대체 heading 경로가 후보당 제한 안에 생성되고 steering·spacing 검증을 통과하는지 확인합니다.
-
-Hybrid A*의 휴리스틱은 각 계획마다 goal에서 역방향 2D Dijkstra를 수행해 장애물을 우회하는 거리표를 만듭니다. 단순 직선거리만 사용하던 때보다 C1처럼 멀고 벽이 있는 goal에서 불필요한 pose 확장을 크게 줄입니다. 이 거리표는 탐색 안내용이며 최종 경로의 차량 footprint 충돌 검사는 기존과 동일하게 모든 pose에서 별도로 수행합니다.
-
-차량 rectangle footprint 바깥의 추가 obstacle inflation은 **2 cm**입니다. 차량 폭 10 cm를 기준으로 경로 중심은 측면 장애물에서 최소 약 7 cm(차량 반폭 5 cm + 안전마진 2 cm)를 확보하도록 탐색합니다. 이 여유는 raw Hybrid 경로를 spline으로 부드럽게 만들 때 곡선이 벽 쪽으로 잘려 들어가는 현상을 줄입니다. start가 이미 이 안전영역 안에 있으면 현재 heading을 유지한 채 가장 가까운 유효 pose로 보정되며 터미널에 보정 전후 좌표를 출력합니다.
+회귀 테스트는 일반 경로의 smoothing·validator·CSV/JSON 저장과 함께 C1/P6의 전진 approach→정지→12cm 후진 진입을 검사합니다. P6에서는 충돌하는 primary approach를 거부하고 alternative heading을 선택하는지도 확인합니다.
 
 ## Reeds–Shepp 목표 연결기
 
@@ -300,7 +300,7 @@ analytic 경로의 물리적 최소 회전반경은 wheelbase와 최대 조향�
 
 충돌 안전 analytic 경로를 기어가 같은 구간별로 나눈 뒤 clamped cubic spline으로 다시 생성합니다. spline은 위치뿐 아니라 시작·목표 접선도 고정하므로 요청한 start/goal의 `x`, `y`, `yaw`를 유지합니다. 전진↔후진 cusp는 두 spline 구간이 공유하는 고정점으로 남기며, 해당 위치에서는 trajectory profile이 정지를 요구하므로 정지 후 조향 방향을 바꿀 수 있습니다.
 
-기본 control knot 간격은 **6 cm**이고 최종 경로는 **0.5 cm 이하** 간격으로 다시 샘플링합니다. C1 장거리 경로에서 3 cm knot이 raw grid 굴곡을 과도하게 따라가던 문제를 줄이기 위한 값입니다. 각 spline 미분값으로 yaw, 곡률 및 가상 조향각을 재계산한 후 다음 조건을 모두 검사합니다.
+기본 control knot 간격은 **6 cm**이고 최종 경로는 **0.5 cm 이하** 간격으로 다시 샘플링합니다. 각 spline 미분값으로 yaw, 곡률 및 가상 조향각을 재계산한 후 다음 조건을 모두 검사합니다.
 
 - 최대 가상 조향각 `30°` 이하
 - 조향 변화율 `10° / 3 cm` 이하
