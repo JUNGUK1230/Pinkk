@@ -10,7 +10,7 @@ Collision checking and analytic expansion integration are later stages.
 
 from dataclasses import dataclass
 import math
-from typing import Callable
+from typing import Callable, Iterator
 
 
 Pose = tuple[float, float, float]
@@ -88,6 +88,14 @@ class ReedsSheppPlanner:
         path: if that path collides, a slightly longer symmetric candidate may
         still provide a safe connection to the exact goal pose.
         """
+        return list(self.iter_candidates(start, goal))
+
+    def iter_candidates(self, start: Pose, goal: Pose) -> Iterator[ReedsSheppPath]:
+        """Yield sampled candidates shortest-first instead of building all at once.
+
+        Hybrid A* usually accepts or rejects only the first few candidates. Lazy
+        sampling avoids constructing every longer 0.5 cm path at each expansion.
+        """
         _validate_pose("start", start)
         _validate_pose("goal", goal)
         if (
@@ -97,18 +105,17 @@ class ReedsSheppPlanner:
             pose = ReedsSheppPose(
                 start[0], start[1], _normalize_yaw(start[2]), 1, "S"
             )
-            return [ReedsSheppPath((), (pose,), 0.0)]
+            yield ReedsSheppPath((), (pose,), 0.0)
+            return
 
         candidates = self._generate_candidates(start, goal)
-        paths: list[ReedsSheppPath] = []
         for candidate in sorted(
             candidates,
             key=lambda value: value.normalized_length,
         ):
             path = self._sample_candidate(start, goal, candidate)
             if path is not None:
-                paths.append(path)
-        return paths
+                yield path
 
     def _generate_candidates(self, start: Pose, goal: Pose) -> list[_Candidate]:
         dx = goal[0] - start[0]

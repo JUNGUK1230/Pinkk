@@ -45,19 +45,29 @@ from vision_scene_input import (  # noqa: E402
     VisionSceneUnavailable,
     load_vision_planning_request,
 )
+from visualization import draw_visible_polyline  # noqa: E402
 
 
 Pose = tuple[float, float, float]
 POSE_ADJUSTMENT_RADIUS_CM = 30.0
+# 주차면 명목 중심이 안전마진·정합 오차에 걸리거나 smoothing 곡률이 큰 경우,
+# 주차면 안쪽의 작은 범위에서 동일 heading의 rear-axle goal을 다시 탐색한다.
+GOAL_SEARCH_RADIUS_CM = 3.0
+GOAL_SEARCH_STEP_CM = 1.0
+DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC = 30.0
+DEFAULT_CANDIDATE_TIMEOUT_SEC = 5.0
 DEFAULT_SCENE_PATH = PROJECT_ROOT / "output/live_vision_scene.json"
 DEFAULT_REGISTRATION_PATH = (
     CENTRAL_ROOT
     / "camera_tools/first_map/camera_to_lidar_rigid_registration.npz"
 )
+DEFAULT_LIVE_BEV_PATH = PROJECT_ROOT / "output/live_camera_bev.png"
+FALLBACK_BEV_PATH = CENTRAL_ROOT / "camera_tools/first_map/camera_bev.png"
 OUTPUT_FILES = (
     "live_hybrid_path_world_cm.csv",
     "live_hybrid_path_camera_bev.csv",
     "live_hybrid_path_world_cm.json",
+    "live_hybrid_path_on_camera_bev.png",
 )
 
 
@@ -72,6 +82,24 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=10.0,
         help="Maximum time to wait for a fresh planning-ready detection.",
+    )
+    parser.add_argument(
+        "--planning-timeout-sec",
+        type=float,
+        default=DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC,
+        help=(
+            "Maximum total Hybrid A* planning time (default: 30 seconds). "
+            "Use 0 only for an explicitly unlimited diagnostic run."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-timeout-sec",
+        type=float,
+        default=DEFAULT_CANDIDATE_TIMEOUT_SEC,
+        help=(
+            "Maximum time for one nearby goal candidate (default: 5 seconds). "
+            "Use 0 only for an explicitly unlimited diagnostic candidate."
+        ),
     )
     return parser.parse_args()
 
@@ -141,6 +169,11 @@ def load_planner_stack() -> tuple[
         ),
         path_smoothing_enabled=bool(hybrid["path_smoothing_enabled"]),
         smoothing_knot_spacing_cm=float(hybrid["smoothing_knot_spacing_cm"]),
+        max_expanded_nodes=int(hybrid["max_expanded_nodes"]),
+        analytic_expansion_interval_nodes=int(
+            hybrid["analytic_expansion_interval_nodes"]
+        ),
+        analytic_max_candidates=int(hybrid["analytic_max_candidates"]),
     )
     limits = TrajectoryValidationLimits(
         wheelbase_cm=planner.wheelbase_cm,
@@ -222,6 +255,8 @@ def plan_and_validate(
     limits: TrajectoryValidationLimits,
     start: Pose,
     goal_candidates: Sequence[tuple[str, Pose]],
+    planning_budget_sec: float = DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC,
+    candidate_timeout_sec: float = DEFAULT_CANDIDATE_TIMEOUT_SEC,
 ) -> tuple[
     str,
     Pose,
@@ -230,16 +265,163 @@ def plan_and_validate(
     list[TrajectoryPoint],
     TrajectoryValidationResult,
 ]:
-    """주 goal 실패 시 180도 반대 goal을 시도하고 검증된 첫 경로를 반환한다."""
+    """두 goal heading과 주변 pose 중 검증된 첫 경로를 반환한다.
+
+    두 timeout은 독립적이다. 0은 명시적인 진단 실행에서만 무제한을 뜻한다.
+    """
+    if planning_budget_sec < 0.0:
+        raise ValueError("planning budget must not be negative")
+    if candidate_timeout_sec < 0.0:
+        raise ValueError("candidate timeout must not be negative")
     adjusted_start = adjust_pose(planner, start, "Start")
+    planning_deadline = (
+        None
+        if planning_budget_sec == 0.0
+        else time.monotonic() + planning_budget_sec
+    )
     failures: list[str] = []
+    prepared_candidates: list[
+        tuple[str, Sequence[tuple[str, Pose]], np.ndarray]
+    ] = []
+    candidate_failures: dict[str, list[str]] = {}
+    attempted_counts: dict[str, int] = {}
     for candidate_name, raw_goal in goal_candidates:
         try:
-            adjusted_goal = adjust_pose(planner, raw_goal, candidate_name)
-            result = planner.plan(adjusted_start, adjusted_goal)
-            if not result.success:
-                failures.append(f"{candidate_name}: {result.message}")
+            nominal_goal = adjust_pose(planner, raw_goal, candidate_name)
+            poses = _nearby_goal_poses(planner, nominal_goal, candidate_name)
+            # 같은 heading의 nearby pose는 불과 몇 cm 차이다. 명목 goal에서
+            # 만든 expensive 2D cost-to-go를 재사용해 후보당 Dijkstra를 없앤다.
+            cost_map = planner.build_holonomic_cost_to_goal(
+                nominal_goal[0],
+                nominal_goal[1],
+            )
+            prepared_candidates.append((candidate_name, poses, cost_map))
+            candidate_failures[candidate_name] = []
+            attempted_counts[candidate_name] = 0
+        except (TypeError, ValueError) as error:
+            failures.append(f"{candidate_name}: {error}")
+
+    # 두 heading의 명목 goal을 먼저 확인한다. 이어서 선호 목표의 가까운
+    # nearby pose 두 개를 먼저 보되 alternative에도 같은 수의 기회를 보장하고,
+    # 나머지는 번갈아 탐색한다. P6의 유력 primary를 빠르게 풀면서도 전체
+    # timeout 때문에 alternative가 완전히 굶는 상황을 막는다.
+    ordered_attempts: list[tuple[str, str, Pose, np.ndarray, int]] = []
+    for candidate_name, poses, cost_map in prepared_candidates:
+        if poses:
+            goal_label, adjusted_goal = poses[0]
+            ordered_attempts.append(
+                (
+                    candidate_name,
+                    goal_label,
+                    adjusted_goal,
+                    cost_map,
+                    len(poses),
+                )
+            )
+    priority_nearby_count = 2
+    for candidate_name, poses, cost_map in prepared_candidates:
+        for goal_label, adjusted_goal in poses[1 : 1 + priority_nearby_count]:
+            ordered_attempts.append(
+                (
+                    candidate_name,
+                    goal_label,
+                    adjusted_goal,
+                    cost_map,
+                    len(poses),
+                )
+            )
+    maximum_candidate_count = max(
+        (len(poses) for _, poses, _ in prepared_candidates),
+        default=0,
+    )
+    for pose_index in range(1 + priority_nearby_count, maximum_candidate_count):
+        for candidate_name, poses, cost_map in prepared_candidates:
+            if pose_index >= len(poses):
                 continue
+            goal_label, adjusted_goal = poses[pose_index]
+            ordered_attempts.append(
+                (
+                    candidate_name,
+                    goal_label,
+                    adjusted_goal,
+                    cost_map,
+                    len(poses),
+                )
+            )
+
+    for (
+        candidate_name,
+        goal_label,
+        adjusted_goal,
+        cost_map,
+        candidate_pose_count,
+    ) in ordered_attempts:
+        remaining_sec = (
+            None
+            if planning_deadline is None
+            else planning_deadline - time.monotonic()
+        )
+        if remaining_sec is not None and remaining_sec <= 0.0:
+            candidate_failures[candidate_name].append(
+                f"automatic planning budget exceeded "
+                f"({planning_budget_sec:.1f} sec)"
+            )
+            break
+        attempted_counts[candidate_name] += 1
+        configured_timeout_sec = planner.timeout_sec
+        effective_candidate_timeout = (
+            math.inf
+            if candidate_timeout_sec == 0.0
+            else candidate_timeout_sec
+        )
+        if remaining_sec is not None:
+            effective_candidate_timeout = min(
+                effective_candidate_timeout,
+                max(0.1, remaining_sec),
+            )
+        planner.timeout_sec = effective_candidate_timeout
+        print(
+            "Planning candidate "
+            f"{goal_label} ({attempted_counts[candidate_name]}/"
+            f"{candidate_pose_count})..."
+        )
+        candidate_started_at = time.monotonic()
+
+        def report_progress(
+            expanded_nodes: int,
+            elapsed_sec: float,
+            open_nodes: int,
+        ) -> None:
+            print(
+                "  progress: "
+                f"expanded={expanded_nodes}, open={open_nodes}, "
+                f"elapsed={elapsed_sec:.1f}s"
+            )
+
+        try:
+            result = planner.plan(
+                adjusted_start,
+                adjusted_goal,
+                holonomic_cost_to_goal=cost_map,
+                progress_callback=report_progress,
+                progress_interval_nodes=1000,
+                require_smoothed_path=True,
+            )
+        except (TypeError, ValueError) as error:
+            candidate_failures[candidate_name].append(str(error))
+            continue
+        finally:
+            planner.timeout_sec = configured_timeout_sec
+        candidate_elapsed_sec = time.monotonic() - candidate_started_at
+        print(
+            "  candidate result: "
+            f"success={result.success}, expanded={result.expanded_nodes}, "
+            f"elapsed={candidate_elapsed_sec:.2f}s, message={result.message}"
+        )
+        if not result.success:
+            candidate_failures[candidate_name].append(result.message)
+            continue
+        try:
             trajectory = build_trajectory_profile(
                 result.path,
                 wheelbase_cm=planner.wheelbase_cm,
@@ -253,24 +435,83 @@ def plan_and_validate(
                 limits,
                 collision_checker=planner.is_pose_collision,
             )
-            if not validation.valid:
-                codes = ", ".join(issue.code for issue in validation.issues)
-                failures.append(
-                    f"{candidate_name}: {result.message}; "
-                    f"validation failed ({codes})"
-                )
-                continue
-            return (
-                candidate_name,
-                adjusted_start,
-                adjusted_goal,
-                result,
-                trajectory,
-                validation,
-            )
         except (TypeError, ValueError) as error:
-            failures.append(f"{candidate_name}: {error}")
+            candidate_failures[candidate_name].append(str(error))
+            continue
+        if not validation.valid:
+            codes = ", ".join(
+                sorted({issue.code for issue in validation.issues})
+            )
+            candidate_failures[candidate_name].append(
+                f"{result.message}; validation failed ({codes})"
+            )
+            continue
+        if goal_label != candidate_name:
+            print(
+                "Selected nearby parking goal: "
+                f"{goal_label} -> {adjusted_goal}"
+            )
+        return (
+            goal_label,
+            adjusted_start,
+            adjusted_goal,
+            result,
+            trajectory,
+            validation,
+        )
+
+    for candidate_name, _, _ in prepared_candidates:
+        messages = candidate_failures[candidate_name]
+        last_failure = (
+            messages[-1] if messages else "no footprint-valid nearby goal"
+        )
+        failures.append(
+            f"{candidate_name}: {attempted_counts[candidate_name]} nearby poses "
+            f"rejected; last={last_failure}"
+        )
     raise RuntimeError("; ".join(failures))
+
+
+def _nearby_goal_poses(
+    planner: HybridAStarPlanner,
+    nominal_goal: Pose,
+    candidate_name: str,
+) -> Sequence[tuple[str, Pose]]:
+    """명목 goal부터 heading 축·수직 축의 작은 square ring 순서로 생성한다."""
+    yaw = nominal_goal[2]
+    forward = (math.cos(yaw), math.sin(yaw))
+    lateral = (-math.sin(yaw), math.cos(yaw))
+    ring_count = int(math.floor(GOAL_SEARCH_RADIUS_CM / GOAL_SEARCH_STEP_CM))
+    candidates: list[tuple[str, Pose]] = []
+    seen: set[tuple[int, int]] = set()
+    for ring in range(ring_count + 1):
+        for along_index in range(-ring, ring + 1):
+            for lateral_index in range(-ring, ring + 1):
+                if max(abs(along_index), abs(lateral_index)) != ring:
+                    continue
+                along_cm = along_index * GOAL_SEARCH_STEP_CM
+                lateral_cm = lateral_index * GOAL_SEARCH_STEP_CM
+                pose = (
+                    nominal_goal[0]
+                    + along_cm * forward[0]
+                    + lateral_cm * lateral[0],
+                    nominal_goal[1]
+                    + along_cm * forward[1]
+                    + lateral_cm * lateral[1],
+                    yaw,
+                )
+                key = (round(pose[0] * 1000), round(pose[1] * 1000))
+                if key in seen or planner.is_pose_collision(*pose):
+                    continue
+                seen.add(key)
+                label = candidate_name
+                if ring > 0:
+                    label += (
+                        f" offset(along={along_cm:+.1f}, "
+                        f"lateral={lateral_cm:+.1f})cm"
+                    )
+                candidates.append((label, pose))
+    return candidates
 
 
 def trajectory_rows(
@@ -305,13 +546,15 @@ def save_outputs(
     resolution_cm: float,
     profile_config: dict[str, float],
     output_dir: Path | None = None,
+    bev_image_path: Path | None = None,
 ) -> None:
-    """검증된 경로만 world·Camera CSV와 metadata JSON으로 원자 저장한다."""
+    """검증된 경로만 좌표 파일과 Camera BEV overlay로 원자 저장한다."""
     output_dir = PROJECT_ROOT / "output" if output_dir is None else output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     world_path = output_dir / OUTPUT_FILES[0]
     camera_path = output_dir / OUTPUT_FILES[1]
     json_path = output_dir / OUTPUT_FILES[2]
+    overlay_path = output_dir / OUTPUT_FILES[3]
     rows = trajectory_rows(trajectory)
     columns = list(rows[0])
 
@@ -329,8 +572,37 @@ def save_outputs(
     )
     camera_points = lidar_points @ camera_from_lidar.T
 
+    selected_bev_path = bev_image_path
+    if selected_bev_path is None:
+        selected_bev_path = (
+            DEFAULT_LIVE_BEV_PATH
+            if DEFAULT_LIVE_BEV_PATH.exists()
+            else FALLBACK_BEV_PATH
+        )
+        if selected_bev_path == FALLBACK_BEV_PATH:
+            print(
+                "WARNING: latest live Camera BEV is missing; "
+                f"using fallback image: {FALLBACK_BEV_PATH}"
+            )
+    bev_image = cv2.imread(str(selected_bev_path), cv2.IMREAD_COLOR)
+    if bev_image is None:
+        raise FileNotFoundError(
+            f"Camera BEV for path overlay is unreadable: {selected_bev_path}"
+        )
+    overlay, skipped_points = draw_live_path_overlay(
+        bev_image,
+        camera_points,
+        adjusted_start,
+        adjusted_goal,
+        camera_from_lidar,
+        resolution_cm,
+        request.frame_index,
+        request.slot_name,
+    )
+
     _atomic_dict_csv(world_path, columns, rows)
     _atomic_camera_csv(camera_path, camera_points)
+    _atomic_image(overlay_path, overlay)
     payload = {
         "frame": "lidar_map_cm",
         "planner": "hybrid_astar",
@@ -355,9 +627,99 @@ def save_outputs(
             if result.smoothing_stats is not None
             else None
         ),
+        "visualization": {
+            "bev_image_path": str(selected_bev_path),
+            "overlay_path": str(overlay_path),
+            "out_of_bounds_path_points": skipped_points,
+        },
         "path": rows,
     }
     _atomic_json(json_path, payload)
+
+
+def draw_live_path_overlay(
+    bev_image: np.ndarray,
+    camera_points: np.ndarray,
+    start_pose: Pose,
+    goal_pose: Pose,
+    camera_from_lidar: np.ndarray,
+    resolution_cm: float,
+    frame_index: int,
+    slot_name: str,
+) -> tuple[np.ndarray, int]:
+    """Camera BEV에 경로와 rear-axle start/goal heading을 BGR 색상으로 표시한다."""
+    canvas = bev_image.copy()
+    path_px = [(float(point[0]), float(point[1])) for point in camera_points]
+    skipped = draw_visible_polyline(
+        canvas,
+        path_px,
+        color=(0, 0, 255),
+        thickness=4,
+    )
+    _draw_pose_arrow(
+        canvas,
+        start_pose,
+        camera_from_lidar,
+        resolution_cm,
+        color=(0, 255, 0),
+    )
+    _draw_pose_arrow(
+        canvas,
+        goal_pose,
+        camera_from_lidar,
+        resolution_cm,
+        color=(255, 0, 0),
+    )
+    cv2.putText(
+        canvas,
+        f"frame={frame_index} slot={slot_name} | path=red start=green goal=blue",
+        (20, 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.75,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    return canvas, skipped
+
+
+def _draw_pose_arrow(
+    image: np.ndarray,
+    pose: Pose,
+    camera_from_lidar: np.ndarray,
+    resolution_cm: float,
+    color: tuple[int, int, int],
+    arrow_length_cm: float = 12.0,
+) -> None:
+    points_cm = (
+        (pose[0], pose[1]),
+        (
+            pose[0] + arrow_length_cm * math.cos(pose[2]),
+            pose[1] + arrow_length_cm * math.sin(pose[2]),
+        ),
+    )
+    lidar_points = np.asarray(
+        [
+            [x_cm / resolution_cm, y_cm / resolution_cm, 1.0]
+            for x_cm, y_cm in points_cm
+        ],
+        dtype=np.float64,
+    )
+    camera_points = lidar_points @ camera_from_lidar.T
+    start = tuple(int(round(value)) for value in camera_points[0])
+    end = tuple(int(round(value)) for value in camera_points[1])
+    height, width = image.shape[:2]
+    if 0 <= start[0] < width and 0 <= start[1] < height:
+        cv2.circle(image, start, 10, color, 3, cv2.LINE_AA)
+        cv2.arrowedLine(
+            image,
+            start,
+            end,
+            color,
+            3,
+            cv2.LINE_AA,
+            tipLength=0.2,
+        )
 
 
 def invalidate_outputs(reason: str) -> None:
@@ -407,6 +769,13 @@ def _atomic_json(path: Path, payload: dict[str, object]) -> None:
     temporary.replace(path)
 
 
+def _atomic_image(path: Path, image: np.ndarray) -> None:
+    temporary = path.with_name(f"{path.stem}.tmp{path.suffix}")
+    if not cv2.imwrite(str(temporary), image):
+        raise OSError(f"failed to save Camera BEV path overlay: {path}")
+    temporary.replace(path)
+
+
 def _pose_dict(pose: Pose) -> dict[str, float]:
     return {"x_cm": pose[0], "y_cm": pose[1], "yaw_rad": pose[2]}
 
@@ -438,6 +807,8 @@ def main() -> int:
                 ("primary goal", request.goal_pose_cm),
                 ("alternative goal", request.alternative_goal_pose_cm),
             ),
+            planning_budget_sec=args.planning_timeout_sec,
+            candidate_timeout_sec=args.candidate_timeout_sec,
         )
         save_outputs(
             request,
@@ -458,6 +829,9 @@ def main() -> int:
                 "source_frame_index": request.frame_index,
                 "parking_slot": request.slot_name,
                 "trajectory_points": len(trajectory),
+                "camera_bev_overlay": (
+                    "output/live_hybrid_path_on_camera_bev.png"
+                ),
             },
         )
     except (
@@ -486,6 +860,7 @@ def main() -> int:
     print("Saved live Hybrid world path: output/live_hybrid_path_world_cm.csv")
     print("Saved live Hybrid Camera path: output/live_hybrid_path_camera_bev.csv")
     print("Saved live Hybrid JSON: output/live_hybrid_path_world_cm.json")
+    print("Saved Camera BEV overlay: output/live_hybrid_path_on_camera_bev.png")
     return 0
 
 

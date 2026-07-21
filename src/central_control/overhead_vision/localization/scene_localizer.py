@@ -206,8 +206,23 @@ class EgoVehicleTracker:
         self.minimum_elongation = minimum_elongation
         self.previous_center_bev: Point | None = None
         self.previous_yaw_rad: float | None = self.initial_yaw_rad
+        self.manual_yaw_rad: float | None = None
         # Mask의 장축은 방향축만 제공한다. 초기 yaw가 없으면 앞뒤 절대 방향은
         # 이후 프레임에서도 결정할 수 없으므로 계속 ambiguous로 유지한다.
+        self.absolute_heading_resolved = self.initial_yaw_rad is not None
+
+    def set_manual_heading(self, yaw_rad: float) -> None:
+        """사용자가 Camera BEV에서 지정한 차량 앞 방향을 고정 heading으로 사용한다."""
+        if not math.isfinite(yaw_rad):
+            raise ValueError("manual yaw must be finite")
+        self.manual_yaw_rad = _normalize_yaw(yaw_rad)
+        self.previous_yaw_rad = self.manual_yaw_rad
+        self.absolute_heading_resolved = True
+
+    def clear_manual_heading(self) -> None:
+        """수동 heading을 지우고 다시 사용자 입력이 필요한 상태로 되돌린다."""
+        self.manual_yaw_rad = None
+        self.previous_yaw_rad = self.initial_yaw_rad
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
 
     def update(self, detections: Sequence[Detection]) -> VehicleObservation | None:
@@ -249,25 +264,33 @@ class EgoVehicleTracker:
                 + self.position_alpha * (raw_center[1] - self.previous_center_bev[1]),
             )
         axis, elongation = _principal_axis(detection.polygon_bev)
-        axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
-        yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))
-        reference_yaw = self.previous_yaw_rad
-        if reference_yaw is None:
-            yaw = yaw_candidates[0]
+        if self.manual_yaw_rad is not None:
+            # 테스트 단계에서는 mask 장축으로 heading을 갱신하지 않는다.
+            # 사용자가 다시 지정할 때까지 클릭한 절대 방향을 그대로 유지한다.
+            yaw = self.manual_yaw_rad
+            heading_ambiguous = False
         else:
-            measured_yaw = min(
-                yaw_candidates,
-                key=lambda value: abs(_angle_difference(value, reference_yaw)),
+            axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
+            yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))
+            reference_yaw = self.previous_yaw_rad
+            if reference_yaw is None:
+                yaw = yaw_candidates[0]
+            else:
+                measured_yaw = min(
+                    yaw_candidates,
+                    key=lambda value: abs(
+                        _angle_difference(value, reference_yaw)
+                    ),
+                )
+                yaw = _normalize_yaw(
+                    reference_yaw
+                    + self.yaw_alpha
+                    * _angle_difference(measured_yaw, reference_yaw)
+                )
+            heading_ambiguous = (
+                not self.absolute_heading_resolved
+                or elongation < self.minimum_elongation
             )
-            yaw = _normalize_yaw(
-                reference_yaw
-                + self.yaw_alpha * _angle_difference(measured_yaw, reference_yaw)
-            )
-
-        heading_ambiguous = (
-            not self.absolute_heading_resolved
-            or elongation < self.minimum_elongation
-        )
         center_lidar = self.transform.point_to_lidar(center)
         center_cm = (
             center_lidar[0] * self.transform.resolution_cm,
@@ -374,17 +397,19 @@ class ParkingSlotMap:
 
 
 class SceneLocalizer:
-    """Ego pose, 주차면 점유, 가장 가까운 free goal을 한 프레임에서 생성한다."""
+    """Ego pose, 주차면 점유, 지정 또는 가까운 free goal을 생성한다."""
 
     def __init__(
         self,
         tracker: EgoVehicleTracker,
         parking_slots: ParkingSlotMap,
         goal_heading_weight_cm: float = 14.0,
+        target_slot_name: str | None = None,
     ) -> None:
         self.tracker = tracker
         self.parking_slots = parking_slots
         self.goal_heading_weight_cm = goal_heading_weight_cm
+        self.target_slot_name = target_slot_name
 
     def observe(
         self,
@@ -416,9 +441,34 @@ class SceneLocalizer:
                 vehicle,
                 slots,
                 None,
-                "ego pose is ambiguous; configure initial center/yaw",
+                "ego heading is required; press h and click the vehicle front",
             )
-        empty_slots = [slot for slot in slots if not slot.occupied]
+        if self.target_slot_name is not None:
+            target_slot = next(
+                (slot for slot in slots if slot.name == self.target_slot_name),
+                None,
+            )
+            if target_slot is None:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    f"target parking slot not found: {self.target_slot_name}",
+                )
+            if target_slot.occupied:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    f"target parking slot is occupied: {self.target_slot_name}",
+                )
+            empty_slots = [target_slot]
+        else:
+            empty_slots = [slot for slot in slots if not slot.occupied]
         if not empty_slots:
             return SceneObservation(
                 frame_index,

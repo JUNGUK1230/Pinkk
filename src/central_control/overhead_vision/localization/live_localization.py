@@ -10,6 +10,7 @@
 """
 
 import argparse
+import json
 import math
 from pathlib import Path
 import time
@@ -32,6 +33,7 @@ from .scene_localizer import (
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CONFIG = REPO_ROOT / "src/central_control/config/yolo/realtime_localization.yaml"
+WINDOW_NAME = "PINKK Live Vehicle and Parking Localization"
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,13 +177,25 @@ def build_localizer(
         rear_axle_offset_cm,
         float(config["occupancy_threshold"]),
     )
-    return SceneLocalizer(tracker, slots), transform
+    target_slot_value = config.get("target_slot_name")
+    target_slot_name = (
+        str(target_slot_value) if target_slot_value is not None else None
+    )
+    return (
+        SceneLocalizer(
+            tracker,
+            slots,
+            target_slot_name=target_slot_name,
+        ),
+        transform,
+    )
 
 
 def draw_scene(
     bev: np.ndarray,
     scene: SceneObservation,
     transform: AffineBevToLidar,
+    target_slot_name: str | None = None,
 ) -> np.ndarray:
     canvas = bev.copy()
     selected_name = (
@@ -190,7 +204,9 @@ def draw_scene(
     for slot in scene.parking_slots:
         polygon = np.rint(slot.polygon_bev).astype(np.int32)
         color = (0, 0, 255) if slot.occupied else (0, 180, 0)
-        if slot.name == selected_name:
+        if slot.name == target_slot_name and not slot.occupied:
+            color = (255, 0, 255)
+        if slot.name == selected_name and not slot.occupied:
             color = (0, 255, 255)
         cv2.polylines(canvas, [polygon], True, color, 2, cv2.LINE_AA)
         center = tuple(round(value) for value in slot.center_bev_px)
@@ -215,8 +231,8 @@ def draw_scene(
             for value in transform.planner_cm_to_bev(vehicle.rear_axle_cm)
         )
         cv2.circle(canvas, center, 6, (0, 0, 255), -1)
-        cv2.circle(canvas, rear, 7, (0, 255, 0), 2)
-        if vehicle.planning_ready:
+        if not vehicle.heading_ambiguous:
+            cv2.circle(canvas, rear, 7, (0, 255, 0), 2)
             front = (
                 round(rear[0] + 2.0 * (center[0] - rear[0])),
                 round(rear[1] + 2.0 * (center[1] - rear[1])),
@@ -243,6 +259,215 @@ def draw_scene(
         cv2.LINE_AA,
     )
     return canvas
+
+
+class ManualHeadingSelector:
+    """h 키 이후 한 번의 BEV 클릭으로 검출 차량의 앞 방향을 지정한다."""
+
+    def __init__(
+        self,
+        tracker: EgoVehicleTracker,
+        transform: AffineBevToLidar,
+    ) -> None:
+        self.tracker = tracker
+        self.transform = transform
+        self.scene: SceneObservation | None = None
+        self.armed = False
+
+    def update_scene(self, scene: SceneObservation) -> None:
+        self.scene = scene
+
+    def arm(self) -> None:
+        if self.scene is None or self.scene.vehicle is None:
+            print("Manual heading unavailable: ego vehicle is not detected")
+            return
+        self.armed = True
+        print("Manual heading armed: click a point in FRONT of the ego vehicle")
+
+    def clear(self) -> None:
+        self.tracker.clear_manual_heading()
+        self.armed = False
+        print("Manual heading cleared. Press h and click the vehicle front again")
+
+    def mouse_callback(
+        self,
+        event: int,
+        x: int,
+        y: int,
+        flags: int,
+        parameter: object,
+    ) -> None:
+        del flags, parameter
+        if event != cv2.EVENT_LBUTTONDOWN or not self.armed:
+            return
+        if self.scene is None or self.scene.vehicle is None:
+            print("Manual heading failed: ego vehicle is not detected")
+            self.armed = False
+            return
+        center = self.scene.vehicle.center_bev_px
+        direction = (float(x) - center[0], float(y) - center[1])
+        if math.hypot(*direction) < 10.0:
+            print("Manual heading failed: click farther from the vehicle center")
+            return
+        yaw_rad = self.transform.axis_yaw_in_lidar(center, direction)
+        self.tracker.set_manual_heading(yaw_rad)
+        self.armed = False
+        print(
+            "Manual ego heading set: "
+            f"click=({x}, {y}), yaw={math.degrees(yaw_rad):.1f} deg"
+        )
+
+    def draw_instruction(self, image: np.ndarray) -> None:
+        if self.armed:
+            message = "CLICK A POINT IN FRONT OF THE EGO VEHICLE"
+            color = (0, 255, 255)
+        elif self.tracker.manual_yaw_rad is None:
+            if self.tracker.absolute_heading_resolved:
+                message = "CONFIG HEADING SET | h: replace by click"
+                color = (0, 255, 0)
+            else:
+                message = "PRESS h, THEN CLICK THE EGO FRONT | x: clear heading"
+                color = (0, 165, 255)
+        else:
+            message = "MANUAL HEADING SET | h: set again | x: clear"
+            color = (0, 255, 0)
+        cv2.putText(
+            image,
+            message,
+            (20, image.shape[0] - 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+
+
+class PlannedPathOverlay:
+    """검증된 자동 Hybrid JSON을 감시해 live BEV에 연속 경로선을 그린다."""
+
+    def __init__(
+        self,
+        path: Path,
+        transform: AffineBevToLidar,
+        expected_slot_name: str | None,
+    ) -> None:
+        self.path = path
+        self.transform = transform
+        self.expected_slot_name = expected_slot_name
+        self.modified_time_ns: int | None = None
+        self.path_bev: tuple[tuple[float, float], ...] = ()
+        self.start_cm: tuple[float, float] | None = None
+        self.source_frame: int | None = None
+        self.slot_name: str | None = None
+        self.status = "no validated path"
+
+    def refresh(self) -> None:
+        if not self.path.exists():
+            self._clear("no validated path")
+            return
+        modified_time_ns = self.path.stat().st_mtime_ns
+        if modified_time_ns == self.modified_time_ns:
+            return
+        self.modified_time_ns = modified_time_ns
+        try:
+            with self.path.open(encoding="utf-8") as file:
+                payload = json.load(file)
+            source = payload["source"]
+            slot_name = str(source["parking_slot"])
+            if (
+                self.expected_slot_name is not None
+                and slot_name != self.expected_slot_name
+            ):
+                self._clear(
+                    f"path target {slot_name} ignored; waiting for "
+                    f"{self.expected_slot_name}"
+                )
+                return
+            points_cm = [
+                (float(point["x_cm"]), float(point["y_cm"]))
+                for point in payload["path"]
+            ]
+            if len(points_cm) < 2:
+                raise ValueError("planned path needs at least two points")
+            self.path_bev = tuple(
+                self.transform.planner_cm_to_bev(point)
+                for point in points_cm
+            )
+            self.start_cm = points_cm[0]
+            self.source_frame = int(source["frame_index"])
+            self.slot_name = slot_name
+            self.status = f"path frame={self.source_frame} target={slot_name}"
+            print(f"Loaded validated live path: {len(points_cm)} points, {self.status}")
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as error:
+            self._clear(f"invalid path overlay: {error}")
+
+    def draw(self, image: np.ndarray, scene: SceneObservation) -> None:
+        self.refresh()
+        if not self.path_bev:
+            return
+        if scene.vehicle is not None and self.start_cm is not None:
+            distance = math.hypot(
+                scene.vehicle.rear_axle_cm[0] - self.start_cm[0],
+                scene.vehicle.rear_axle_cm[1] - self.start_cm[1],
+            )
+            if distance > 8.0:
+                cv2.putText(
+                    image,
+                    f"PATH HIDDEN: ego moved {distance:.1f} cm from path start",
+                    (20, 65),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    (0, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+                return
+        _draw_continuous_path(image, self.path_bev)
+        cv2.putText(
+            image,
+            self.status,
+            (20, 65),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+    def _clear(self, status: str) -> None:
+        self.path_bev = ()
+        self.start_cm = None
+        self.source_frame = None
+        self.slot_name = None
+        self.status = status
+
+
+def _draw_continuous_path(
+    image: np.ndarray,
+    path_bev: Sequence[tuple[float, float]],
+) -> int:
+    """화면 안의 연속 구간만 굵은 빨간 polyline으로 그린다."""
+    height, width = image.shape[:2]
+    segments: list[list[tuple[int, int]]] = []
+    current: list[tuple[int, int]] = []
+    skipped = 0
+    for x_float, y_float in path_bev:
+        point = (int(round(x_float)), int(round(y_float)))
+        if 0 <= point[0] < width and 0 <= point[1] < height:
+            current.append(point)
+        else:
+            skipped += 1
+            if current:
+                segments.append(current)
+                current = []
+    if current:
+        segments.append(current)
+    for segment in segments:
+        if len(segment) >= 2:
+            points = np.asarray(segment, dtype=np.int32).reshape(-1, 1, 2)
+            cv2.polylines(image, [points], False, (0, 0, 255), 5, cv2.LINE_AA)
+    return skipped
 
 
 def print_scene(scene: SceneObservation) -> None:
@@ -274,6 +499,17 @@ def print_scene(scene: SceneObservation) -> None:
         )
 
 
+def save_bev_image_atomic(image: np.ndarray, save_path: Path) -> None:
+    """경로 시각화 프로세스가 반쯤 저장된 BEV를 읽지 않도록 원자 교체한다."""
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = save_path.with_name(
+        f"{save_path.stem}.tmp{save_path.suffix}"
+    )
+    if not cv2.imwrite(str(temporary), image):
+        raise RuntimeError(f"failed to save latest Camera BEV: {save_path}")
+    temporary.replace(save_path)
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -295,6 +531,12 @@ def main() -> int:
                 f"vehicle heading and occupancy require segment weights, got {model.task}"
             )
         output_path = resolve_path(str(config["scene_output_path"]))
+        bev_output_path = resolve_path(str(config["bev_output_path"]))
+        planned_path_path = resolve_path(str(config["planned_path_path"]))
+        target_slot_value = config.get("target_slot_name")
+        target_slot_name = (
+            str(target_slot_value) if target_slot_value is not None else None
+        )
     except (ImportError, FileNotFoundError, KeyError, TypeError, ValueError, OSError) as error:
         print(f"ERROR: initialization failed: {error}")
         print("Run with the project virtual environment: .venv/bin/python")
@@ -316,7 +558,18 @@ def main() -> int:
 
     print(f"Loaded YOLO segmentation: {model_path} names={model.names}")
     print(f"Scene output: {output_path}")
-    print("q/ESC: quit")
+    print(f"Latest Camera BEV: {bev_output_path}")
+    print(f"Fixed target parking slot: {target_slot_name}")
+    print("h: arm manual heading click | x: clear heading | q/ESC: quit")
+    heading_selector = ManualHeadingSelector(localizer.tracker, transform)
+    path_overlay = PlannedPathOverlay(
+        planned_path_path,
+        transform,
+        expected_slot_name=target_slot_name,
+    )
+    if not args.no_display:
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.setMouseCallback(WINDOW_NAME, heading_selector.mouse_callback)
     frame_index = 0
     last_print_time = 0.0
     output_every = max(1, int(config["output_every_n_frames"]))
@@ -356,7 +609,14 @@ def main() -> int:
                 bev.shape[:2],
                 frame_index,
             )
+            heading_selector.update_scene(scene)
             if frame_index % output_every == 0:
+                try:
+                    # BEV를 먼저 교체하고 같은 frame의 scene을 나중에 공개한다.
+                    save_bev_image_atomic(bev, bev_output_path)
+                except RuntimeError as error:
+                    print(f"ERROR: {error}")
+                    return 1
                 save_scene_observation(scene, output_path)
             now = time.monotonic()
             if now - last_print_time >= 1.0 or static_bev is not None:
@@ -364,13 +624,22 @@ def main() -> int:
                 last_print_time = now
 
             if not args.no_display:
-                cv2.imshow(
-                    "PINKK Live Vehicle and Parking Localization",
-                    draw_scene(bev, scene, transform),
+                canvas = draw_scene(
+                    bev,
+                    scene,
+                    transform,
+                    target_slot_name=target_slot_name,
                 )
+                path_overlay.draw(canvas, scene)
+                heading_selector.draw_instruction(canvas)
+                cv2.imshow(WINDOW_NAME, canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
+                if key == ord("h"):
+                    heading_selector.arm()
+                elif key == ord("x"):
+                    heading_selector.clear()
             frame_index += 1
             if static_bev is not None:
                 break

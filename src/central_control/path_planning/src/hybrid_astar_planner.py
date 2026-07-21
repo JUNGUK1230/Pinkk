@@ -5,7 +5,7 @@ import heapq
 import itertools
 import math
 import time
-from typing import Iterable, Protocol
+from typing import Callable, Iterable, Protocol
 
 import numpy as np
 
@@ -65,7 +65,7 @@ class HybridAStarPlanner:
         resolution_cm: float = 1.0,
         wheelbase_cm: float = 8.0,
         vehicle_length_cm: float = 12.0,
-        vehicle_width_cm: float = 8.0,
+        vehicle_width_cm: float = 10.0,
         rear_overhang_cm: float | None = None,
         minimum_turning_radius_cm: float | None = None,
         motion_step_cm: float = 3.0,
@@ -95,6 +95,9 @@ class HybridAStarPlanner:
         analytic_turning_radius_margin_cm: float = 4.0,
         path_smoothing_enabled: bool = True,
         smoothing_knot_spacing_cm: float = 3.0,
+        max_expanded_nodes: int = 50000,
+        analytic_expansion_interval_nodes: int = 20,
+        analytic_max_candidates: int = 12,
     ) -> None:
         if grid.ndim != 2:
             raise ValueError("grid must be a two-dimensional array")
@@ -126,6 +129,12 @@ class HybridAStarPlanner:
             raise ValueError("analytic turning radius margin must not be negative")
         if smoothing_knot_spacing_cm <= 0:
             raise ValueError("smoothing knot spacing must be positive")
+        if max_expanded_nodes <= 0:
+            raise ValueError("maximum expanded nodes must be positive")
+        if analytic_expansion_interval_nodes <= 0:
+            raise ValueError("analytic expansion interval must be positive")
+        if analytic_max_candidates <= 0:
+            raise ValueError("analytic maximum candidates must be positive")
 
         self.grid = grid
         self.height, self.width = grid.shape
@@ -146,7 +155,25 @@ class HybridAStarPlanner:
         self.motion_step_cm = motion_step_cm
         self.path_output_step_cm = path_output_step_cm
         self.yaw_resolution_rad = math.radians(yaw_resolution_deg)
-        self.steer_set_rad = tuple(math.radians(value) for value in steer_set_deg)
+        requested_steer_set_rad = tuple(
+            math.radians(value) for value in steer_set_deg
+        )
+        # The configured steering set and minimum turning radius can disagree
+        # slightly (30 deg with an 8 cm wheelbase is about 13.86 cm). The physical
+        # turning-radius limit wins so generated primitives never exceed it.
+        physical_max_steer_rad = (
+            math.atan(self.wheelbase_cm / minimum_turning_radius_cm)
+            if minimum_turning_radius_cm is not None
+            else math.inf
+        )
+        self.steer_set_rad = tuple(
+            math.copysign(min(abs(value), physical_max_steer_rad), value)
+            for value in requested_steer_set_rad
+        )
+        self._steer_bin_by_value = {
+            round(value, 12): index
+            for index, value in enumerate(self.steer_set_rad)
+        }
         self.max_steer_change_rad = math.radians(max_steer_change_deg)
         self.allow_reverse = allow_reverse
         self.obstacle_threshold = obstacle_threshold
@@ -162,6 +189,9 @@ class HybridAStarPlanner:
         self.analytic_turning_radius_margin_cm = analytic_turning_radius_margin_cm
         self.path_smoothing_enabled = path_smoothing_enabled
         self.smoothing_knot_spacing_cm = smoothing_knot_spacing_cm
+        self.max_expanded_nodes = max_expanded_nodes
+        self.analytic_expansion_interval_nodes = analytic_expansion_interval_nodes
+        self.analytic_max_candidates = analytic_max_candidates
         self.max_abs_steer_rad = max(abs(value) for value in self.steer_set_rad)
         if self.analytic_expansion_enabled and self.max_abs_steer_rad <= 1e-12:
             raise ValueError(
@@ -196,19 +226,46 @@ class HybridAStarPlanner:
         # then use NumPy indexing instead of rebuilding a rotated polygon for every
         # motion sample expanded by the search.
         self._footprint_offsets = self._build_footprint_offsets()
+        self._footprint_bounds = tuple(
+            (
+                int(offset_y.min()),
+                int(offset_y.max()),
+                int(offset_x.min()),
+                int(offset_x.max()),
+            )
+            for offset_y, offset_x in self._footprint_offsets
+        )
+        # plan()마다 goal에서 역방향으로 계산하는 2D obstacle-aware 거리 맵.
+        # Hybrid 상태의 yaw·steer 차원은 유지하면서 막힌 벽 쪽 확장을 줄인다.
+        self._holonomic_cost_to_goal: np.ndarray | None = None
 
     def plan(
         self,
         start: tuple[float, float, float],
         goal: tuple[float, float, float],
+        holonomic_cost_to_goal: np.ndarray | None = None,
+        progress_callback: Callable[[int, float, int], None] | None = None,
+        progress_interval_nodes: int = 1000,
+        require_smoothed_path: bool = False,
     ) -> HybridAStarResult:
         """Plan from a continuous start pose to a position-and-heading goal pose."""
+        if progress_interval_nodes <= 0:
+            raise ValueError("progress interval must be positive")
         start_state = HybridState(start[0], start[1], self._normalize_yaw(start[2]), 1)
         goal_yaw = self._normalize_yaw(goal[2])
         self._validate_pose(
             "start", start_state.x_cm, start_state.y_cm, start_state.yaw_rad
         )
         self._validate_pose("goal", goal[0], goal[1], goal_yaw)
+        if holonomic_cost_to_goal is None:
+            self._holonomic_cost_to_goal = self._build_holonomic_cost_to_goal(
+                goal[0],
+                goal[1],
+            )
+        else:
+            if holonomic_cost_to_goal.shape != self.grid.shape:
+                raise ValueError("holonomic cost map shape must match planning grid")
+            self._holonomic_cost_to_goal = holonomic_cost_to_goal
 
         start_key = self._state_key(start_state)
         counter = itertools.count()
@@ -223,11 +280,27 @@ class HybridAStarPlanner:
         closed: set[tuple[int, int, int, int, int]] = set()
         started_at = time.monotonic()
         expanded_nodes = 0
+        rejected_goal_paths = 0
+        last_rejected_goal_reason = ""
 
         while open_heap:
             if time.monotonic() - started_at > self.timeout_sec:
+                suffix = (
+                    f"; {rejected_goal_paths} goal paths rejected, "
+                    f"last={last_rejected_goal_reason}"
+                    if rejected_goal_paths
+                    else ""
+                )
                 return HybridAStarResult(
-                    [], math.inf, False, expanded_nodes, "timeout"
+                    [], math.inf, False, expanded_nodes, "timeout" + suffix
+                )
+            if expanded_nodes >= self.max_expanded_nodes:
+                return HybridAStarResult(
+                    [],
+                    math.inf,
+                    False,
+                    expanded_nodes,
+                    f"maximum expanded nodes reached ({self.max_expanded_nodes})",
                 )
 
             _, _, current_key = heapq.heappop(open_heap)
@@ -235,38 +308,75 @@ class HybridAStarPlanner:
                 continue
             current = states[current_key]
 
-            analytic_path = self.try_analytic_expansion(current, goal)
+            analytic_path = (
+                self.try_analytic_expansion(current, goal)
+                if expanded_nodes % self.analytic_expansion_interval_nodes == 0
+                else None
+            )
             if analytic_path is not None:
                 sparse_path = self._reconstruct(states, parents, current_key)
                 raw_hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
                 hybrid_path, smoothing_stats = self.smooth_path_with_fallback(
                     raw_hybrid_path
                 )
-                return HybridAStarResult(
-                    hybrid_path,
-                    g_score[current_key]
-                    + self._analytic_path_cost(current, analytic_path),
-                    True,
-                    expanded_nodes,
-                    "goal reached by Reeds-Shepp analytic expansion; "
-                    + smoothing_stats.status,
-                    smoothing_stats,
-                )
+                if (
+                    not require_smoothed_path
+                    or not self.path_smoothing_enabled
+                    or smoothing_stats.accepted
+                ):
+                    return HybridAStarResult(
+                        hybrid_path,
+                        g_score[current_key]
+                        + self._analytic_path_cost(current, analytic_path),
+                        True,
+                        expanded_nodes,
+                        "goal reached by Reeds-Shepp analytic expansion; "
+                        + smoothing_stats.status,
+                        smoothing_stats,
+                    )
+                rejected_goal_paths += 1
+                last_rejected_goal_reason = smoothing_stats.status
 
             if self._is_goal(current, goal[0], goal[1], goal_yaw):
                 sparse_path = self._reconstruct(states, parents, current_key)
-                return HybridAStarResult(
-                    self._densify_path(sparse_path),
-                    g_score[current_key],
-                    True,
-                    expanded_nodes,
-                    "goal reached",
+                raw_hybrid_path = self._densify_path(sparse_path)
+                hybrid_path, smoothing_stats = self.smooth_path_with_fallback(
+                    raw_hybrid_path
                 )
+                if (
+                    not require_smoothed_path
+                    or not self.path_smoothing_enabled
+                    or smoothing_stats.accepted
+                ):
+                    return HybridAStarResult(
+                        hybrid_path,
+                        g_score[current_key],
+                        True,
+                        expanded_nodes,
+                        "goal reached; " + smoothing_stats.status,
+                        smoothing_stats,
+                    )
+                rejected_goal_paths += 1
+                last_rejected_goal_reason = smoothing_stats.status
 
             closed.add(current_key)
             expanded_nodes += 1
+            if (
+                progress_callback is not None
+                and expanded_nodes % progress_interval_nodes == 0
+            ):
+                progress_callback(
+                    expanded_nodes,
+                    time.monotonic() - started_at,
+                    len(open_heap),
+                )
             for neighbor, primitive_cost in self._neighbors(current):
                 neighbor_key = self._state_key(neighbor)
+                # Closed nodes already have descendants. Replacing their continuous
+                # pose would make those descendants reconstruct through a different
+                # parent pose than the one that generated them.
+                if neighbor_key in closed:
+                    continue
                 tentative_cost = g_score[current_key] + primitive_cost
                 if tentative_cost >= g_score.get(neighbor_key, math.inf):
                     continue
@@ -298,7 +408,7 @@ class HybridAStarPlanner:
                     cost *= self.reverse_penalty
                 if direction != state.direction:
                     cost += self.gear_switch_penalty
-                max_steer = max(abs(value) for value in self.steer_set_rad) or 1.0
+                max_steer = self.max_abs_steer_rad or 1.0
                 cost += self.steer_penalty * abs(steer_rad) / max_steer
                 cost += self.steer_change_penalty * abs(steer_rad - state.steer_rad) / max_steer
                 yield neighbor, cost
@@ -327,19 +437,94 @@ class HybridAStarPlanner:
         x_bin = round(state.x_cm / self.resolution_cm)
         y_bin = round(state.y_cm / self.resolution_cm)
         yaw_bin = self._yaw_bin(state.yaw_rad)
-        steer_bin = min(
-            range(len(self.steer_set_rad)),
-            key=lambda index: abs(self.steer_set_rad[index] - state.steer_rad),
-        )
+        steer_bin = self._steer_bin_by_value.get(round(state.steer_rad, 12))
+        if steer_bin is None:
+            steer_bin = min(
+                range(len(self.steer_set_rad)),
+                key=lambda index: abs(
+                    self.steer_set_rad[index] - state.steer_rad
+                ),
+            )
         return x_bin, y_bin, yaw_bin, state.direction, steer_bin
 
     def _heuristic(
         self, state: HybridState, goal: tuple[float, float, float]
     ) -> float:
         distance = math.hypot(goal[0] - state.x_cm, goal[1] - state.y_cm)
+        if self._holonomic_cost_to_goal is not None:
+            grid_x = round(state.x_cm / self.resolution_cm)
+            grid_y = round(state.y_cm / self.resolution_cm)
+            if 0 <= grid_x < self.width and 0 <= grid_y < self.height:
+                obstacle_aware_distance = float(
+                    self._holonomic_cost_to_goal[grid_y, grid_x]
+                )
+                if math.isfinite(obstacle_aware_distance):
+                    distance = max(distance, obstacle_aware_distance)
         yaw_error = abs(self._angle_difference(goal[2], state.yaw_rad))
-        # A mild heading term guides search without dominating obstacle detours.
+        # 2D cost-to-go가 실제 통로를 안내하고, heading 항은 목표 근처에서만
+        # 방향 수렴을 돕는다. 차체 footprint 충돌은 기존 Hybrid 확장에서 검사한다.
         return 1.1 * distance + 0.2 * self.wheelbase_cm * yaw_error
+
+    def _build_holonomic_cost_to_goal(
+        self,
+        goal_x_cm: float,
+        goal_y_cm: float,
+    ) -> np.ndarray:
+        """장애물을 피하는 8방향 2D 최단거리 lower-bound 맵을 생성한다."""
+        goal_x = round(goal_x_cm / self.resolution_cm)
+        goal_y = round(goal_y_cm / self.resolution_cm)
+        costs = np.full((self.height, self.width), math.inf, dtype=np.float64)
+        if not (0 <= goal_x < self.width and 0 <= goal_y < self.height):
+            return costs
+        if self.grid[goal_y, goal_x] >= self.obstacle_threshold:
+            return costs
+
+        costs[goal_y, goal_x] = 0.0
+        queue: list[tuple[float, int, int]] = [(0.0, goal_x, goal_y)]
+        diagonal_cost = math.sqrt(2.0) * self.resolution_cm
+        straight_cost = self.resolution_cm
+        neighbors = (
+            (-1, 0, straight_cost),
+            (1, 0, straight_cost),
+            (0, -1, straight_cost),
+            (0, 1, straight_cost),
+            (-1, -1, diagonal_cost),
+            (-1, 1, diagonal_cost),
+            (1, -1, diagonal_cost),
+            (1, 1, diagonal_cost),
+        )
+        while queue:
+            cost, x, y = heapq.heappop(queue)
+            if cost > costs[y, x] + 1e-12:
+                continue
+            for dx, dy, move_cost in neighbors:
+                next_x = x + dx
+                next_y = y + dy
+                if not (0 <= next_x < self.width and 0 <= next_y < self.height):
+                    continue
+                if self.grid[next_y, next_x] >= self.obstacle_threshold:
+                    continue
+                # 대각선으로 두 장애물 모서리 사이를 통과하는 낙관적 경로를
+                # 피하고 실제 A* 통로 구조와 같은 cost-to-go를 만든다.
+                if dx != 0 and dy != 0:
+                    if (
+                        self.grid[y, next_x] >= self.obstacle_threshold
+                        or self.grid[next_y, x] >= self.obstacle_threshold
+                    ):
+                        continue
+                next_cost = cost + move_cost
+                if next_cost + 1e-12 < costs[next_y, next_x]:
+                    costs[next_y, next_x] = next_cost
+                    heapq.heappush(queue, (next_cost, next_x, next_y))
+        return costs
+
+    def build_holonomic_cost_to_goal(
+        self,
+        goal_x_cm: float,
+        goal_y_cm: float,
+    ) -> np.ndarray:
+        """Build a reusable obstacle-aware cost map for nearby goal poses."""
+        return self._build_holonomic_cost_to_goal(goal_x_cm, goal_y_cm)
 
     def _is_goal(
         self, state: HybridState, goal_x: float, goal_y: float, goal_yaw: float
@@ -404,7 +589,11 @@ class HybridAStarPlanner:
 
         start = (current.x_cm, current.y_cm, current.yaw_rad)
         normalized_goal = (goal[0], goal[1], self._normalize_yaw(goal[2]))
-        for path in self.reeds_shepp_planner.plan_candidates(start, normalized_goal):
+        for candidate_index, path in enumerate(
+            self.reeds_shepp_planner.iter_candidates(start, normalized_goal)
+        ):
+            if candidate_index >= self.analytic_max_candidates:
+                break
             if not self.allow_reverse and any(
                 segment.direction < 0 for segment in path.segments
             ):
@@ -579,6 +768,8 @@ class HybridAStarPlanner:
                 * distance_cm
                 / self.motion_step_cm
                 + math.radians(0.1)
+                # Spline 미분과 chord 거리의 부동소수점 경계 오차만 허용한다.
+                + 2e-6
             )
             if abs(second.steer_rad - first.steer_rad) > allowed_change:
                 return raw_path, self._make_smoothing_stats(
@@ -683,16 +874,18 @@ class HybridAStarPlanner:
         if not (0 <= gx < self.width and 0 <= gy < self.height):
             return True
 
-        offset_y, offset_x = self._footprint_offsets[self._yaw_bin(yaw_rad)]
-        footprint_x = gx + offset_x
-        footprint_y = gy + offset_y
+        yaw_bin = self._yaw_bin(yaw_rad)
+        offset_y, offset_x = self._footprint_offsets[yaw_bin]
+        min_y, max_y, min_x, max_x = self._footprint_bounds[yaw_bin]
         if (
-            np.any(footprint_x < 0)
-            or np.any(footprint_x >= self.width)
-            or np.any(footprint_y < 0)
-            or np.any(footprint_y >= self.height)
+            gx + min_x < 0
+            or gx + max_x >= self.width
+            or gy + min_y < 0
+            or gy + max_y >= self.height
         ):
             return True
+        footprint_x = gx + offset_x
+        footprint_y = gy + offset_y
         return bool(
             np.any(self.grid[footprint_y, footprint_x] >= self.obstacle_threshold)
         )

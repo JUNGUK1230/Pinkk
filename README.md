@@ -86,16 +86,22 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/read_live_vision_scene.py
 ```
 
-차량이 발견된 fresh scene으로 한 번 자동 경로를 생성하려면 localization을 계속 실행한 상태에서 다음 명령을 사용합니다. 가장 가까운 빈 주차면의 두 진입 헤딩을 순서대로 시도하며, footprint 보정·곡률 smoothing·속도 프로파일·trajectory validator를 모두 통과한 경로만 저장합니다.
+차량이 발견된 fresh scene으로 한 번 자동 경로를 생성하려면 localization 창에서 수동 heading을 지정한 뒤, localization을 계속 실행한 상태에서 다음 명령을 사용합니다. 현재 고정 목표 P6의 두 진입 헤딩과 명목 goal 주변 3cm pose를 교차 순서로 시도하며, footprint 보정·곡률 smoothing·속도 프로파일·trajectory validator를 모두 통과한 경로만 저장합니다. 앞서 완료한 C1 장거리 탐색과 동일하게 장애물을 반영한 2D cost-to-go 휴리스틱과 6cm smoothing control knot을 사용합니다.
+
+실시간 계획 시간은 기본적으로 무제한입니다. 탐색 중에는 후보 번호가 출력되며 필요하면 `Ctrl+C`로 중단합니다. 제한이 필요한 경우 `--planning-timeout-sec 120`처럼 전체 제한시간을 초 단위로 지정할 수 있습니다.
+
+Hybrid 탐색은 차량 rectangle 바깥에 2cm obstacle inflation을 추가해, 폭 10cm 차량의 중심 경로가 측면 장애물에서 약 7cm 이상 떨어지도록 합니다. 폭 20cm 주차면 안에서 양쪽 안전공간을 유지하면서 smoothing 경로가 벽을 침범하지 않게 확보하는 여유입니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/plan_from_live_vision.py
 ```
 
-생성 파일은 `output/live_hybrid_path_world_cm.csv`, `output/live_hybrid_path_camera_bev.csv`, `output/live_hybrid_path_world_cm.json`입니다. 이번 단계는 한 번 계획하고 종료하는 기본 파이프라인이며 제어기로 전송하지 않습니다. 실패 시 이전 자동 경로 파일을 제거하고 `output/live_hybrid_planning_status.json`에 차단 이유를 기록합니다.
+생성 파일은 `output/live_hybrid_path_world_cm.csv`, `output/live_hybrid_path_camera_bev.csv`, `output/live_hybrid_path_world_cm.json` 및 `output/live_hybrid_path_on_camera_bev.png`입니다. 경로 이미지는 최신 `live_camera_bev.png` 위에 빨간 경로, 초록 start heading, 파란 goal heading을 표시합니다. 이번 단계는 한 번 계획하고 종료하는 기본 파이프라인이며 제어기로 전송하지 않습니다. 실패 시 이전 자동 경로와 overlay를 제거하고 `output/live_hybrid_planning_status.json`에 차단 이유를 기록합니다.
 
-현재 차량 segmentation 장축만으로는 앞/뒤가 180° 모호하며, 화면에 차량이 여러 대면 ego 차량을 처음부터 구분할 단서가 필요합니다. 최초 설치 시 `src/central_control/config/yolo/realtime_localization.yaml`에 `initial_ego_center_bev_px`와 LiDAR 좌표계 기준 `initial_ego_yaw_deg`를 설정하십시오. 값이 없거나 검출 결과가 모호하면 화면과 JSON에는 관측 좌표를 남기지만 `planning_ready=false`로 만들어 경로계획 입력을 차단합니다.
+현재 차량 segmentation 장축만으로는 앞/뒤가 180° 모호하므로 기본 실행에서는 heading을 자동 확정하지 않습니다. localization 창에서 `h`를 누른 뒤 검출 차량의 **앞쪽 지점**을 클릭하면 해당 방향을 수동 heading으로 고정합니다. `x`를 누르면 지우고 다시 지정할 수 있습니다. 목표 주차면은 현재 `P6`으로 고정되며 P6이 점유 상태면 계획을 차단합니다. 화면에 차량이 여러 대면 `initial_ego_center_bev_px` 또는 `--initial-ego-center`로 ego 후보도 지정할 수 있습니다.
+
+별도 터미널에서 `plan_from_live_vision.py`를 실행해 검증 경로가 저장되면 localization 창이 파일을 자동으로 읽어 **굵은 빨간 연속선**으로 표시합니다. 이전 C1 경로처럼 현재 P6 목표와 다른 결과는 표시하지 않습니다.
 
 저장된 BEV 이미지로 카메라 없이 전체 변환을 확인할 수도 있습니다.
 

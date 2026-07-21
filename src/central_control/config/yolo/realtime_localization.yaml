@@ -6,6 +6,7 @@ realtime_localization:
   parking_slots_path: src/central_control/config/map/parking_slots_bev.json
   vehicle_config_path: src/central_control/path_planning/config/vehicle_config.yaml
   scene_output_path: src/central_control/path_planning/output/live_vision_scene.json
+  bev_output_path: src/central_control/path_planning/output/live_camera_bev.png
 
   camera_id: 2
   camera_width: 1920
@@ -18,12 +19,18 @@ realtime_localization:
   occupancy_threshold: 0.10
   output_every_n_frames: 1
 
+  # C1 장거리 경로 검증 후 현재 현장 테스트 목적지는 P6으로 고정한다.
+  target_slot_name: P6
+
+  # 검증된 자동 Hybrid 경로를 localization 창에 빨간 선으로 표시한다.
+  planned_path_path: src/central_control/path_planning/output/live_hybrid_path_world_cm.json
+
   # 여러 car가 보일 때 ego를 구분하려면 실제 초기 BEV 중심을 [x, y]로 입력한다.
   # null이면 첫 프레임에서 confidence가 가장 높은 car를 표시하지만 planning_ready=false이다.
   initial_ego_center_bev_px: null
 
-  # Segmentation 장축만으로는 차량 앞뒤가 180도 모호하다.
-  # 설치 후 알려진 초기 차량 헤딩을 LiDAR grid 기준 각도로 입력해야 경로계획 입력이 활성화된다.
+  # 기본 null: 실행 창에서 h를 누르고 차량 앞쪽을 클릭해 heading을 지정한다.
+  # 숫자를 넣으면 기존 CLI/설정 기반 초기 heading 방식도 사용할 수 있다.
   initial_ego_yaw_deg: null
 
   position_filter_alpha: 0.5
