@@ -173,6 +173,7 @@ class InteractiveHybridAStarApp:
             if abs(point.target_speed_mps) > 1e-12
         ]
         print("Hybrid A* path found")
+        print(f"Goal connection: {result.message}")
         print(f"Path poses: {len(result.path)}")
         print(f"Total cost: {result.total_cost:.3f}")
         print(f"Expanded nodes: {result.expanded_nodes}")
@@ -401,6 +402,7 @@ def main() -> int:
             vehicle_length_cm=float(vehicle["length_cm"]),
             vehicle_width_cm=float(vehicle["width_cm"]),
             rear_overhang_cm=float(vehicle["rear_overhang_cm"]),
+            minimum_turning_radius_cm=float(vehicle["min_turning_radius_cm"]),
             motion_step_cm=float(hybrid["motion_step_cm"]),
             path_output_step_cm=float(hybrid["path_output_step_cm"]),
             yaw_resolution_deg=float(hybrid["yaw_resolution_deg"]),
@@ -414,6 +416,10 @@ def main() -> int:
             gear_switch_penalty=float(cost["gear_switch_penalty"]),
             steer_penalty=float(cost["steer_penalty"]),
             steer_change_penalty=float(cost["steer_change_penalty"]),
+            analytic_expansion_enabled=bool(hybrid["analytic_expansion_enabled"]),
+            analytic_expansion_distance_cm=float(
+                hybrid["analytic_expansion_distance_cm"]
+            ),
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError, OSError) as error:
         print(f"ERROR: Failed to initialize Hybrid A*: {error}")
@@ -426,6 +432,12 @@ def main() -> int:
         f"{planner.vehicle_width_cm:.1f} cm, safety margin={safety_margin_cm:.1f} cm"
     )
     print(f"Control path output step: {planner.path_output_step_cm:.2f} cm")
+    print(
+        "Reeds-Shepp analytic expansion: "
+        f"enabled={planner.analytic_expansion_enabled}, "
+        f"distance={planner.analytic_expansion_distance_cm:.1f} cm, "
+        f"turning radius={planner.analytic_turning_radius_cm:.2f} cm"
+    )
     print(
         "Steering candidates: "
         + ", ".join(

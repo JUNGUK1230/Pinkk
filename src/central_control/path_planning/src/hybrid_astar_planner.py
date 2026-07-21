@@ -9,6 +9,11 @@ from typing import Iterable, Protocol
 
 import numpy as np
 
+if __package__:
+    from .reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
+else:
+    from reeds_shepp import ReedsSheppPath, ReedsSheppPlanner
+
 
 class PathPose(Protocol):
     """Footprint 검사에 필요한 최소 경로 pose 인터페이스."""
@@ -51,6 +56,7 @@ class HybridAStarPlanner:
         vehicle_length_cm: float = 12.0,
         vehicle_width_cm: float = 8.0,
         rear_overhang_cm: float | None = None,
+        minimum_turning_radius_cm: float | None = None,
         motion_step_cm: float = 3.0,
         path_output_step_cm: float = 0.5,
         yaw_resolution_deg: float = 10.0,
@@ -73,6 +79,8 @@ class HybridAStarPlanner:
         gear_switch_penalty: float = 5.0,
         steer_penalty: float = 0.2,
         steer_change_penalty: float = 0.5,
+        analytic_expansion_enabled: bool = True,
+        analytic_expansion_distance_cm: float = 30.0,
     ) -> None:
         if grid.ndim != 2:
             raise ValueError("grid must be a two-dimensional array")
@@ -90,12 +98,16 @@ class HybridAStarPlanner:
             )
         if vehicle_length_cm < wheelbase_cm:
             raise ValueError("vehicle length must not be shorter than wheelbase")
+        if minimum_turning_radius_cm is not None and minimum_turning_radius_cm <= 0:
+            raise ValueError("minimum turning radius must be positive")
         if yaw_resolution_deg <= 0 or max_steer_change_deg <= 0 or timeout_sec <= 0:
             raise ValueError(
                 "yaw resolution, maximum steering change, and timeout must be positive"
             )
         if not steer_set_deg:
             raise ValueError("steer_set_deg must contain at least one steering angle")
+        if analytic_expansion_distance_cm <= 0:
+            raise ValueError("analytic expansion distance must be positive")
 
         self.grid = grid
         self.height, self.width = grid.shape
@@ -127,6 +139,33 @@ class HybridAStarPlanner:
         self.gear_switch_penalty = gear_switch_penalty
         self.steer_penalty = steer_penalty
         self.steer_change_penalty = steer_change_penalty
+        self.analytic_expansion_enabled = analytic_expansion_enabled
+        self.analytic_expansion_distance_cm = analytic_expansion_distance_cm
+        self.max_abs_steer_rad = max(abs(value) for value in self.steer_set_rad)
+        if self.analytic_expansion_enabled and self.max_abs_steer_rad <= 1e-12:
+            raise ValueError(
+                "analytic expansion requires at least one non-zero steering angle"
+            )
+        kinematic_turning_radius_cm = (
+            self.wheelbase_cm / math.tan(self.max_abs_steer_rad)
+            if self.max_abs_steer_rad > 1e-12
+            else math.inf
+        )
+        self.analytic_turning_radius_cm = max(
+            kinematic_turning_radius_cm,
+            minimum_turning_radius_cm or 0.0,
+        )
+        self.analytic_steer_rad = math.atan(
+            self.wheelbase_cm / self.analytic_turning_radius_cm
+        )
+        self.reeds_shepp_planner = (
+            ReedsSheppPlanner(
+                self.analytic_turning_radius_cm,
+                step_size_cm=self.path_output_step_cm,
+            )
+            if self.analytic_expansion_enabled
+            else None
+        )
         self.yaw_bin_count = max(1, round(2.0 * math.pi / self.yaw_resolution_rad))
         # Cache occupied grid offsets for each discrete heading. Collision checks
         # then use NumPy indexing instead of rebuilding a rotated polygon for every
@@ -170,6 +209,20 @@ class HybridAStarPlanner:
             if current_key in closed:
                 continue
             current = states[current_key]
+
+            analytic_path = self.try_analytic_expansion(current, goal)
+            if analytic_path is not None:
+                sparse_path = self._reconstruct(states, parents, current_key)
+                hybrid_path = self._join_analytic_path(sparse_path, analytic_path)
+                return HybridAStarResult(
+                    hybrid_path,
+                    g_score[current_key]
+                    + self._analytic_path_cost(current, analytic_path),
+                    True,
+                    expanded_nodes,
+                    "goal reached by Reeds-Shepp analytic expansion",
+                )
+
             if self._is_goal(current, goal[0], goal[1], goal_yaw):
                 sparse_path = self._reconstruct(states, parents, current_key)
                 return HybridAStarResult(
@@ -299,6 +352,96 @@ class HybridAStarPlanner:
     def is_path_collision_free(self, poses: Iterable[PathPose]) -> bool:
         """Return whether every sampled pose has a valid vehicle footprint."""
         return self.first_path_collision_index(poses) is None
+
+    def try_analytic_expansion(
+        self,
+        current: HybridState,
+        goal: tuple[float, float, float],
+    ) -> ReedsSheppPath | None:
+        """Return the shortest collision-free Reeds-Shepp goal connection.
+
+        Candidates are attempted only near the goal. A rejected candidate has
+        no effect on the open set, so normal Hybrid A* expansion remains the
+        fallback whenever every analytic path intersects an obstacle.
+        """
+        if self.reeds_shepp_planner is None:
+            return None
+        if (
+            math.hypot(goal[0] - current.x_cm, goal[1] - current.y_cm)
+            > self.analytic_expansion_distance_cm
+        ):
+            return None
+
+        start = (current.x_cm, current.y_cm, current.yaw_rad)
+        normalized_goal = (goal[0], goal[1], self._normalize_yaw(goal[2]))
+        for path in self.reeds_shepp_planner.plan_candidates(start, normalized_goal):
+            if not self.allow_reverse and any(
+                segment.direction < 0 for segment in path.segments
+            ):
+                continue
+            if self.is_path_collision_free(path.poses):
+                return path
+        return None
+
+    def _join_analytic_path(
+        self,
+        sparse_path: list[HybridState],
+        analytic_path: ReedsSheppPath,
+    ) -> list[HybridState]:
+        """Densify the searched prefix and append continuous analytic poses."""
+        path = self._densify_path(sparse_path)
+        for pose in analytic_path.poses[1:]:
+            if pose.segment_mode == "L":
+                steer_rad = self.analytic_steer_rad
+            elif pose.segment_mode == "R":
+                steer_rad = -self.analytic_steer_rad
+            else:
+                steer_rad = 0.0
+            path.append(
+                HybridState(
+                    pose.x_cm,
+                    pose.y_cm,
+                    pose.yaw_rad,
+                    pose.direction,
+                    steer_rad,
+                )
+            )
+        return path
+
+    def _analytic_path_cost(
+        self,
+        current: HybridState,
+        path: ReedsSheppPath,
+    ) -> float:
+        """Apply Hybrid A* reverse, gear, and steering costs to an analytic path."""
+        cost = 0.0
+        previous_direction = current.direction
+        previous_steer = current.steer_rad
+        max_steer = self.max_abs_steer_rad or 1.0
+
+        for segment in path.segments:
+            distance_cm = abs(segment.length_cm)
+            direction = segment.direction
+            if segment.mode == "L":
+                steer_rad = self.analytic_steer_rad
+            elif segment.mode == "R":
+                steer_rad = -self.analytic_steer_rad
+            else:
+                steer_rad = 0.0
+
+            cost += distance_cm * (self.reverse_penalty if direction < 0 else 1.0)
+            if direction != previous_direction:
+                cost += self.gear_switch_penalty
+            primitive_count = distance_cm / self.motion_step_cm
+            cost += primitive_count * self.steer_penalty * abs(steer_rad) / max_steer
+            cost += (
+                self.steer_change_penalty
+                * abs(steer_rad - previous_steer)
+                / max_steer
+            )
+            previous_direction = direction
+            previous_steer = steer_rad
+        return cost
 
     def find_nearest_valid_pose(
         self,

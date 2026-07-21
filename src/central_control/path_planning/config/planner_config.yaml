@@ -27,6 +27,9 @@ hybrid_astar:
   timeout_sec: 10.0
   goal_tolerance_cm: 4.0
   goal_yaw_tolerance_deg: 15.0
+  # 목표 30 cm 이내에서 충돌 없는 Reeds-Shepp 경로로 정확한 goal pose 연결을 시도한다.
+  analytic_expansion_enabled: true
+  analytic_expansion_distance_cm: 30.0
 
 cost:
   reverse_penalty: 1.5

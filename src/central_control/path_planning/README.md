@@ -6,7 +6,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 
 - `config/map_config.yaml`: 지도, BEV, LiDAR 및 정합 파일 설정
 - `config/vehicle_config.yaml`: 차량 제원과 조향 제약
-- `config/planner_config.yaml`: A* 및 향후 Hybrid A* 파라미터
+- `config/planner_config.yaml`: A*, Hybrid A* 및 analytic expansion 파라미터
 - `src/occupancy_grid.py`: ROS map_server 형식 PGM/YAML 로더
 - `src/coordinate_transform.py`: BEV pixel, world cm, grid 좌표 변환
 - `src/astar_planner.py`: 4/8방향 2D A* 탐색
@@ -52,6 +52,7 @@ python3 scripts/test_astar_overlay.py
 python3 scripts/test_astar_on_camera_bev.py
 python3 scripts/click_astar_on_camera_bev.py
 python3 scripts/test_hybrid_astar.py
+python3 scripts/test_hybrid_astar_analytic.py
 python3 scripts/test_reeds_shepp.py
 python3 scripts/test_reeds_shepp_collision.py
 python3 scripts/test_trajectory_profile.py
@@ -157,19 +158,21 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 
 기존 Hybrid A*를 교체하지 않고 목표 pose 부근의 탐색을 보조하기 위한 독립 Reeds–Shepp 생성기를 추가했습니다. 차량 wheelbase `8 cm`와 최대 가상 조향각 `30°`를 기준으로 최소 회전반경은 약 **13.86 cm**이며, 전진·후진을 포함한 `L`(좌회전), `R`(우회전), `S`(직진) 후보 중 가장 짧은 경로를 **0.5 cm 간격**으로 출력합니다.
 
-수학적인 경로 생성과 끝 pose·샘플 간격·전후진 전환을 독립 테스트합니다. 생성된 모든 0.5 cm pose는 기존 `HybridAStarPlanner`의 회전 직사각형 footprint 판정을 그대로 사용해 검사할 수 있습니다. `first_path_collision_index()`는 최초 충돌 pose를 반환하고 `is_path_collision_free()`는 전체 경로 통과 여부를 반환하므로, 차량 일부가 지도 밖으로 나가거나 경로 중간에서 장애물을 침범하는 경우도 검출합니다.
+수학적인 경로 생성과 끝 pose·샘플 간격·전후진 전환을 독립 테스트합니다. 생성된 모든 0.5 cm pose는 기존 `HybridAStarPlanner`의 회전 직사각형 footprint 판정을 그대로 사용해 검사합니다. `first_path_collision_index()`는 최초 충돌 pose를 반환하고 `is_path_collision_free()`는 전체 경로 통과 여부를 반환하므로, 차량 일부가 지도 밖으로 나가거나 경로 중간에서 장애물을 침범하는 경우도 검출합니다.
 
-아직 Reeds–Shepp을 Hybrid A* 탐색 루프에 연결하지 않았으므로 기존 경로 생성 결과에는 영향을 주지 않습니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
+Hybrid A*는 목표와의 직선거리가 기본 **30 cm** 이내가 되면 Reeds–Shepp analytic expansion을 시도합니다. 후보를 길이순으로 검사하여 footprint 충돌이 없는 첫 경로만 기존 탐색 경로 뒤에 붙입니다. 모든 후보가 막히면 경로계획을 실패시키지 않고 기존 motion primitive 탐색을 계속합니다. 연결 성공 시 허용 오차 부근에서 끝내지 않고 요청한 goal의 `x`, `y`, `yaw`에 정확히 도달합니다.
+
+analytic 경로의 최소 회전반경은 wheelbase와 최대 조향각으로 계산한 값보다 작아지지 않으며, 실차 설정 `min_turning_radius_cm: 14.0`도 함께 적용합니다. 활성화 여부와 시도 거리는 `config/planner_config.yaml`의 `analytic_expansion_enabled`, `analytic_expansion_distance_cm`으로 조정합니다. 기반 수식 구현의 출처와 MIT 라이선스는 `THIRD_PARTY_NOTICES.md`에 기록했습니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_reeds_shepp.py
 python3 scripts/test_reeds_shepp_collision.py
+python3 scripts/test_hybrid_astar_analytic.py
 ```
 
 ## 다음 단계
 
-- Hybrid A*가 목표 근처에서 Reeds–Shepp 후보를 생성하도록 analytic expansion 연결
-- 충돌 없는 Reeds–Shepp 경로만 현재 Hybrid A* 경로 뒤에 연결
-- 곡률 연속 smoothing 후 footprint 재검증
+- Hybrid A*와 Reeds–Shepp 접합부 및 L/R/S 전환부의 조향 변화 smoothing
+- smoothing된 경로를 0.5 cm 간격으로 재샘플링하고 footprint 재검증
 - 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달

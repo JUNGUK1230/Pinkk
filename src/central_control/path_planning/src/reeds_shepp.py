@@ -78,6 +78,16 @@ class ReedsSheppPlanner:
 
     def plan(self, start: Pose, goal: Pose) -> ReedsSheppPath | None:
         """Return the shortest sampled path, or None if no formula is valid."""
+        paths = self.plan_candidates(start, goal)
+        return paths[0] if paths else None
+
+    def plan_candidates(self, start: Pose, goal: Pose) -> list[ReedsSheppPath]:
+        """Return all valid sampled candidates in ascending length order.
+
+        Hybrid A* analytic expansion needs more than the mathematical shortest
+        path: if that path collides, a slightly longer symmetric candidate may
+        still provide a safe connection to the exact goal pose.
+        """
         _validate_pose("start", start)
         _validate_pose("goal", goal)
         if (
@@ -87,17 +97,18 @@ class ReedsSheppPlanner:
             pose = ReedsSheppPose(
                 start[0], start[1], _normalize_yaw(start[2]), 1, "S"
             )
-            return ReedsSheppPath((), (pose,), 0.0)
+            return [ReedsSheppPath((), (pose,), 0.0)]
 
         candidates = self._generate_candidates(start, goal)
+        paths: list[ReedsSheppPath] = []
         for candidate in sorted(
             candidates,
             key=lambda value: value.normalized_length,
         ):
             path = self._sample_candidate(start, goal, candidate)
             if path is not None:
-                return path
-        return None
+                paths.append(path)
+        return paths
 
     def _generate_candidates(self, start: Pose, goal: Pose) -> list[_Candidate]:
         dx = goal[0] - start[0]
@@ -416,7 +427,11 @@ def _add_candidate(
     for existing in candidates:
         if (
             existing.modes == candidate.modes
-            and abs(existing.normalized_length - candidate.normalized_length) <= 1e-10
+            and len(existing.lengths) == len(candidate.lengths)
+            and all(
+                abs(first - second) <= 1e-10
+                for first, second in zip(existing.lengths, candidate.lengths)
+            )
         ):
             return
     candidates.append(candidate)

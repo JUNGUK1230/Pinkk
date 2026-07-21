@@ -71,6 +71,16 @@ def main() -> int:
         assert_valid_path(planner.plan(start, goal), goal) for start, goal in cases
     ]
 
+    candidates = planner.plan_candidates(*cases[2])
+    candidate_lengths = [path.total_length_cm for path in candidates]
+    assert len(candidates) > 1
+    assert candidate_lengths == sorted(candidate_lengths)
+    assert math.isclose(
+        candidate_lengths[0],
+        paths[2].total_length_cm,
+        abs_tol=1e-9,
+    )
+
     # 뒤쪽의 동일 헤딩 목표는 직선 후진 하나로 도달해야 한다.
     reverse_path = paths[1]
     assert len(reverse_path.segments) == 1
