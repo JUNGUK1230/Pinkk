@@ -28,6 +28,11 @@ from trajectory_profile import (  # noqa: E402
     TrajectoryPoint,
     build_trajectory_profile,
 )
+from trajectory_validator import (  # noqa: E402
+    TrajectoryValidationLimits,
+    TrajectoryValidationResult,
+    validate_trajectory,
+)
 from visualization import draw_visible_polyline  # noqa: E402
 
 GridPoint = tuple[int, int]
@@ -55,6 +60,7 @@ class InteractiveHybridAStarApp:
         camera_from_lidar: np.ndarray,
         planner: HybridAStarPlanner,
         trajectory_profile_config: dict[str, float],
+        trajectory_validation_limits: TrajectoryValidationLimits,
         resolution_cm: float,
         output_dir: Path,
     ) -> None:
@@ -64,6 +70,7 @@ class InteractiveHybridAStarApp:
         self.camera_from_lidar = camera_from_lidar
         self.planner = planner
         self.trajectory_profile_config = trajectory_profile_config
+        self.trajectory_validation_limits = trajectory_validation_limits
         self.resolution_cm = resolution_cm
         self.output_dir = output_dir
         self.camera_clicks: list[GridPoint] = []
@@ -75,6 +82,7 @@ class InteractiveHybridAStarApp:
         self.total_cost = math.inf
         self.goal_connection_message = ""
         self.smoothing_stats: PathSmoothingStats | None = None
+        self.validation_result: TrajectoryValidationResult | None = None
         self.display_image = camera_bev.copy()
 
     def handle_click(self, point: GridPoint) -> None:
@@ -160,8 +168,27 @@ class InteractiveHybridAStarApp:
             print(f"Trajectory profile failed: {error}")
             return
 
+        validation_result = validate_trajectory(
+            trajectory_points,
+            self.trajectory_validation_limits,
+            collision_checker=self.planner.is_pose_collision,
+        )
+        if not validation_result.valid:
+            self._clear_path()
+            self._render()
+            print("Trajectory validation failed; path transmission blocked")
+            for issue in validation_result.issues:
+                location = (
+                    f"point {issue.index}: "
+                    if issue.index is not None
+                    else ""
+                )
+                print(f"- [{issue.code}] {location}{issue.message}")
+            return
+
         self.path_states = result.path
         self.trajectory_points = trajectory_points
+        self.validation_result = validation_result
         self.total_cost = result.total_cost
         self.goal_connection_message = result.message
         self.smoothing_stats = result.smoothing_stats
@@ -203,6 +230,15 @@ class InteractiveHybridAStarApp:
                 f"{min(nonzero_speeds):.3f} to {max(nonzero_speeds):.3f} m/s"
             )
         print(f"Out-of-bounds path points: {skipped}/{len(result.path)}")
+        metrics = validation_result.metrics
+        print("Trajectory validation passed")
+        print(
+            "Validation maxima: "
+            f"spacing={metrics.max_spacing_cm:.3f} cm, "
+            f"steer={metrics.max_abs_steer_deg:.3f} deg, "
+            f"speed={metrics.max_abs_speed_mps:.3f} m/s, "
+            f"angular={metrics.max_abs_angular_speed_radps:.3f} rad/s"
+        )
 
     @staticmethod
     def _heading(
@@ -273,6 +309,7 @@ class InteractiveHybridAStarApp:
         self.total_cost = math.inf
         self.goal_connection_message = ""
         self.smoothing_stats = None
+        self.validation_result = None
 
     def reset(self) -> None:
         self.camera_clicks.clear()
@@ -283,7 +320,12 @@ class InteractiveHybridAStarApp:
 
     def save(self) -> None:
         """Save the Hybrid path with planner-generated yaw and direction."""
-        if not self.path_states or not self.trajectory_points:
+        if (
+            not self.path_states
+            or not self.trajectory_points
+            or self.validation_result is None
+            or not self.validation_result.valid
+        ):
             print("No Hybrid A* path to save.")
             return
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -418,6 +460,7 @@ def main() -> int:
             key: float(value)
             for key, value in config["trajectory_profile"].items()
         }
+        trajectory_validation_config = config["trajectory_validation"]
         safety_margin_cm = float(hybrid["footprint_safety_margin_cm"])
         planning_grid = grid_map.inflate_obstacles(
             safety_margin_cm, grid_map.resolution_cm
@@ -454,6 +497,47 @@ def main() -> int:
             smoothing_knot_spacing_cm=float(
                 hybrid["smoothing_knot_spacing_cm"]
             ),
+        )
+        trajectory_validation_limits = TrajectoryValidationLimits(
+            wheelbase_cm=planner.wheelbase_cm,
+            max_spacing_cm=planner.path_output_step_cm,
+            max_steer_rad=max(abs(value) for value in planner.steer_set_rad),
+            max_steer_change_rad_per_cm=(
+                planner.max_steer_change_rad / planner.motion_step_cm
+            ),
+            steer_change_tolerance_rad=math.radians(
+                float(
+                    trajectory_validation_config[
+                        "steering_rate_tolerance_deg"
+                    ]
+                )
+            ),
+            max_forward_speed_mps=trajectory_profile_config[
+                "max_forward_speed_mps"
+            ],
+            max_reverse_speed_mps=trajectory_profile_config[
+                "max_reverse_speed_mps"
+            ],
+            max_angular_speed_radps=trajectory_profile_config[
+                "max_angular_speed_radps"
+            ],
+            max_acceleration_mps2=trajectory_profile_config[
+                "max_acceleration_mps2"
+            ],
+            max_deceleration_mps2=trajectory_profile_config[
+                "max_deceleration_mps2"
+            ],
+            max_yaw_change_rad=math.radians(
+                float(trajectory_validation_config["max_yaw_change_deg"])
+            ),
+            max_motion_heading_error_rad=math.radians(
+                float(
+                    trajectory_validation_config[
+                        "max_motion_heading_error_deg"
+                    ]
+                )
+            ),
+            tolerance=float(trajectory_validation_config["numeric_tolerance"]),
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError, OSError) as error:
         print(f"ERROR: Failed to initialize Hybrid A*: {error}")
@@ -502,6 +586,7 @@ def main() -> int:
         camera_from_lidar,
         planner,
         trajectory_profile_config,
+        trajectory_validation_limits,
         grid_map.resolution_cm,
         PROJECT_ROOT / "output",
     )

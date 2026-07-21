@@ -11,6 +11,13 @@ from .path_smoothing import (
     smooth_hybrid_path,
 )
 from .trajectory_profile import TrajectoryPoint, build_trajectory_profile
+from .trajectory_validator import (
+    TrajectoryValidationIssue,
+    TrajectoryValidationLimits,
+    TrajectoryValidationMetrics,
+    TrajectoryValidationResult,
+    validate_trajectory,
+)
 from .reeds_shepp import (
     ReedsSheppPath,
     ReedsSheppPlanner,
@@ -34,6 +41,11 @@ __all__ = [
     "smooth_hybrid_path",
     "TrajectoryPoint",
     "build_trajectory_profile",
+    "TrajectoryValidationIssue",
+    "TrajectoryValidationLimits",
+    "TrajectoryValidationMetrics",
+    "TrajectoryValidationResult",
+    "validate_trajectory",
     "ReedsSheppPath",
     "ReedsSheppPlanner",
     "ReedsSheppPose",

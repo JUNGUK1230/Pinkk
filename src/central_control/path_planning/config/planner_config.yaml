@@ -50,3 +50,10 @@ trajectory_profile:
   max_angular_speed_radps: 0.5
   max_acceleration_mps2: 0.05
   max_deceleration_mps2: 0.05
+
+trajectory_validation:
+  # 0.5 cm 출력에서 정상 최대 yaw 변화(약 2 deg)보다 여유 있게 설정한다.
+  max_yaw_change_deg: 5.0
+  max_motion_heading_error_deg: 5.0
+  steering_rate_tolerance_deg: 0.1
+  numeric_tolerance: 0.000001

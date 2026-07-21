@@ -14,6 +14,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 - `src/reeds_shepp.py`: Hybrid A* 목표 연결에 사용할 Reeds–Shepp 경로 생성기
 - `src/path_smoothing.py`: 기어 전환을 보존하는 cubic spline 경로 smoothing
 - `src/trajectory_profile.py`: Hybrid pose의 곡률·목표속도·각속도·정지점 생성
+- `src/trajectory_validator.py`: 제어기 전달 전 trajectory fail-closed 안전 검사
 - `src/visualization.py`: 지도와 경로의 OpenCV 시각화
 - `scripts/`: 지도 로딩 및 A* 실행 스크립트
 - `output/`: 실행 결과 이미지
@@ -57,6 +58,7 @@ python3 scripts/test_hybrid_astar_analytic.py
 python3 scripts/test_reeds_shepp.py
 python3 scripts/test_reeds_shepp_collision.py
 python3 scripts/test_trajectory_profile.py
+python3 scripts/test_trajectory_validator.py
 python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```
 
@@ -140,6 +142,30 @@ target_angular_z_radps
 stop_required
 ```
 
+## 제어기 전달 전 trajectory 안전 검사
+
+속도 프로파일 생성이 끝나면 `validate_trajectory()`를 통과한 경로만 테스트 결과로 등록합니다. 검사 실패 시 경로 목록을 비워 `s` 저장을 차단하며, 향후 ROS2 publisher도 동일한 `valid` 결과를 전송 조건으로 사용합니다. Camera BEV 클릭은 현재 start/goal 입력을 위한 테스트 수단일 뿐이며 validator는 입력 방식과 독립적입니다.
+
+다음 조건을 검사합니다.
+
+- 빈 경로 및 `NaN`·무한대 값
+- direction과 signed 속도의 일치 여부
+- 전진 `0.05 m/s`, 후진 `0.03 m/s`, 각속도 `0.5 rad/s` 제한
+- 조향각 `±30°`와 거리 기준 조향 변화율
+- 곡률과 `tan(steer) / wheelbase`의 일치 여부
+- 각속도와 `speed × curvature`의 일치 여부
+- 경로점 간격 `0.5 cm`, yaw 변화 및 실제 이동방향 연속성
+- 가속도·감속도 `0.05 m/s²` 제한
+- 시작·도착·전후진 전환 직전의 필수 정지
+- 모든 pose의 차량 rectangle footprint 충돌
+
+실패 시 오류 코드와 pose index를 출력하고 경로 전달을 차단합니다.
+
+```bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/test_trajectory_validator.py
+```
+
 차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×8 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 차량 반폭 4 cm와 안전마진 1 cm를 합해 직선 벽에서 경로 중심선까지 명목상 5 cm를 확보합니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
 
 ```bash
@@ -200,6 +226,6 @@ python3 scripts/test_hybrid_astar_analytic.py
 
 ## 다음 단계
 
-- 여러 테스트 경로의 smoothing 통계를 누적 비교하는 리포트 도구 추가
-- trajectory의 선속도·각속도 변화율 제한을 실차 응답에 맞게 튜닝
-- 생성 trajectory를 ROS2 토픽으로 PID/Pure Pursuit 제어기에 전달
+- `/home/junguk/pinky_ctrl`의 Pure Pursuit·PI 입력 형식 확인
+- validator를 통과한 trajectory만 ROS2 토픽으로 발행
+- 선속도·각속도 제한을 저속 실차 응답에 맞게 튜닝
