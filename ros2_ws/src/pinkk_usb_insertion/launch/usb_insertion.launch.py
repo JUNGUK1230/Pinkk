@@ -6,6 +6,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -15,6 +16,9 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument('use_manual_input', default_value='false'),
+            DeclareLaunchArgument(
+                'enable_pbvs_test_execution', default_value='false'
+            ),
             Node(
                 package='pinkk_usb_insertion',
                 executable='manual_detection_node',
@@ -31,6 +35,37 @@ def generate_launch_description() -> LaunchDescription:
                 name='pinkk_port_pose_node',
                 output='screen',
                 parameters=[{'control_config': common_control}],
+            ),
+            Node(
+                package='pinkk_usb_insertion',
+                executable='pbvs_alignment_node',
+                name='pinkk_pbvs_alignment_node',
+                output='screen',
+                parameters=[
+                    {
+                        'control_config': common_control,
+                        'handeye_config': str(config / 'handeye.yaml'),
+                        'use_latest_flange_tf': ParameterValue(
+                            LaunchConfiguration('use_manual_input'),
+                            value_type=bool,
+                        ),
+                    }
+                ],
+            ),
+            Node(
+                package='pinkk_usb_insertion',
+                executable='pbvs_step_executor_node',
+                name='pinkk_pbvs_step_executor_node',
+                output='screen',
+                parameters=[
+                    {
+                        'control_config': common_control,
+                        'enable_test_execution': ParameterValue(
+                            LaunchConfiguration('enable_pbvs_test_execution'),
+                            value_type=bool,
+                        ),
+                    }
+                ],
             ),
             Node(
                 package='pinkk_usb_insertion',

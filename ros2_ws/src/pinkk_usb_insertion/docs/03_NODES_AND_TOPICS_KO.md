@@ -63,7 +63,38 @@ YOLO 모델이 준비되지 않았을 때만 사용하는 개발용 입력 노�
 운영 환경에서는 실행하지 않습니다. 통합 launch의 `use_manual_input` 기본값은
 false입니다.
 
-## 4. `arm_motion_node`
+## 4. `pbvs_alignment_node`
+
+유효한 포트 관측, 현재 flange TF, Hand-eye 행렬을 결합해 base 기준 포트 pose와
+다음 XY 정렬 목표를 계산합니다. 현재 구현은 flange의 Z와 회전을 보존합니다.
+
+| 방향 | 토픽 | 형식 | 설명 |
+|---|---|---|---|
+| 입력 | `/robot_arm/perception/usb_port/observation` | `UsbPortObservation` | solvePnP 관측 |
+| TF 입력 | `g_base → joint6_flange` | TF2 | 관측 시각의 flange pose |
+| 출력 | `/robot_arm/pbvs/port_pose_base` | `PoseStamped` | base 기준 포트 pose |
+| 출력 | `/robot_arm/pbvs/target_flange_pose` | `PoseStamped` | 고정-Z 다음 XY 목표 |
+| 출력 | `/robot_arm/pbvs/converged` | `Bool` | XY 허용오차 도달 여부 |
+| 출력 | `/robot_arm/pbvs/status` | `String` | 오차, 제한된 step, 거부 이유 |
+
+이 출력은 `/robot_arm/target_pose`와 분리된 DRY RUN 결과입니다. PBVS 노드는 실제
+이동 명령을 발행하지 않습니다.
+
+## 5. `pbvs_step_executor_node`
+
+명시적인 `execute_once` 명령이 들어왔을 때만 최신 PBVS 목표를 검사합니다. 최대
+1 mm 간격 waypoint의 MoveIt IK·충돌·관절 점프 사전검사를 통과하면 waypoint를
+한 점씩 실행하지 않고 최종 pose를 Cartesian action으로 한 번 보냅니다.
+
+| 방향 | 이름 | 형식 | 설명 |
+|---|---|---|---|
+| 입력 | `/robot_arm/pbvs/step_command` | `String` | `execute_once`만 허용 |
+| Action 출력 | `/robot_arm/cartesian_move` | `CartesianMove` | 고정 Z/Roll/Pitch flange 목표 |
+| 출력 | `/robot_arm/pbvs/execution_status` | `String` | 사전검사·실행·거부 이유 |
+
+실행 launch 인자 `enable_pbvs_test_execution`의 기본값은 `false`입니다.
+
+## 6. `arm_motion_node`
 
 상위 제어기와 실제 로봇 실행기의 경계입니다.
 
@@ -83,7 +114,7 @@ false입니다.
 현재는 목표를 받아 안전 설정을 검사하고 실제 백엔드 호출을 거부합니다. 이후
 MoveIt action 연동은 이 노드 내부에만 추가합니다.
 
-## 5. `usb_insertion_node`
+## 7. `usb_insertion_node`
 
 전체 작업 순서를 관리합니다.
 
@@ -101,7 +132,7 @@ MoveIt action 연동은 이 노드 내부에만 추가합니다.
 | `/robot_arm/usb_insertion/state` | `String` | 현재 상태 이름 |
 | `/robot_arm/usb_insertion/status` | `String` | 전이 결과 또는 실패 이유 |
 
-## 6. Custom interface
+## 7. Custom interface
 
 `pinkk_usb_insertion_interfaces` 패키지에 다음 메시지를 정의합니다.
 
@@ -140,7 +171,7 @@ UsbPortObservation
 Pose와 `valid`를 별도 토픽으로 나누지 않아 서로 다른 영상 프레임의 값이 섞이지
 않게 합니다.
 
-## 7. 향후 제어 인터페이스
+## 8. 향후 제어 인터페이스
 
 실제 로봇 이동을 연결할 때 다음 custom message 또는 action을 별도로 정의합니다.
 

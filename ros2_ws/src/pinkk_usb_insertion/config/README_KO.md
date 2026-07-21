@@ -64,6 +64,12 @@ minimum_keypoint_confidence: 0.60
 `target_detection_id`가 비어 있으면 품질 점수가 가장 높은 포트 후보를 선택합니다.
 특정 포트를 추적할 때는 상위 상태 머신이 선택한 ID를 지정하도록 확장합니다.
 
+`pbvs.maximum_xy_step_m`은 원거리 PBVS의 1회 최대 XY 이동량입니다. 현재 값은
+10 mm지만 목표에 가까워지면 계산된 오차만큼만 이동합니다.
+`pbvs_test_execution.cartesian_speed`와 `cartesian_mode`는 로봇 PC 브리지의
+`send_coords()`에 전달됩니다. 현재 mode 1은 선형 좌표 이동 용도이며, 실제 로봇
+PC의 `pymycobot` 버전에서 동작을 확인하기 전에는 실행을 허용하지 않습니다.
+
 ### 주요 실행 조합
 
 계산만 수행:

@@ -39,10 +39,12 @@ source ~/mycobot_moveit_ws/install_pinkk/setup.bash
 
 ros2 pkg prefix pinkk_mycobot_bridge
 ros2 pkg prefix pinkk_handeye_automation
+ros2 pkg prefix pinkk_usb_insertion_interfaces
+ros2 pkg prefix pinkk_usb_insertion
 ```
 
-두 Pinkk 패키지 경로가 모두 `~/mycobot_moveit_ws/install_pinkk` 아래로 나오면 최신
-프로젝트 overlay가 선택된 것입니다.
+네 Pinkk 패키지 경로가 모두 `~/mycobot_moveit_ws/install_pinkk` 아래로 나오면
+최신 프로젝트 overlay가 선택된 것입니다.
 
 ## 두 플로우를 섞지 않기
 

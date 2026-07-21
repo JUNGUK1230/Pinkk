@@ -2,10 +2,11 @@
 
 이 단계에서는 로봇을 직접 제어하지 않습니다. 로봇 PC의 Flask MJPEG 영상을
 노트북 OpenCV 창으로 받아 USB-A 포트의 네 모서리를 클릭하고, `solvePnP`로
-다음 TF만 발행합니다.
+TF를 발행합니다. 유효한 네 점은 PBVS 수동 입력 토픽에도 한 번 발행합니다.
 
 ```text
 camera_optical_frame -> usb_port
+/robot_arm/perception/usb_port/manual_keypoints
 ```
 
 이미 실행 중인 TF가 다음 행렬 곱을 처리하므로 최종 USB base 좌표는
@@ -61,3 +62,25 @@ ros2 run tf2_ros tf2_echo g_base usb_port
 
 로봇을 움직인 뒤에는 `r`로 이전 클릭을 지우고 완전히 정지한 새 영상에서 다시
 네 점을 클릭합니다.
+
+## 고정-Z PBVS와 연결
+
+`pinkk_usb_insertion` 통합 launch를 `use_manual_input:=true`로 실행하면 네 번째
+클릭 직후 다음 경로가 동작합니다.
+
+```text
+OpenCV 네 점 클릭
+→ manual_keypoints
+→ manual_detection_node
+→ port_pose_node의 solvePnP
+→ pbvs_alignment_node
+→ 고정-Z target_flange_pose와 status
+```
+
+클릭 창의 TF와 PBVS 포트 pose는 서로 독립된 출력이므로 다음 두 결과를 비교할 수
+있습니다.
+
+```bash
+ros2 run tf2_ros tf2_echo g_base usb_port
+ros2 topic echo /robot_arm/pbvs/port_pose_base
+```

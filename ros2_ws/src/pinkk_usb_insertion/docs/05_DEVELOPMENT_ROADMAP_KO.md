@@ -12,7 +12,8 @@
 - YOLO keypoint용 custom detection 메시지
 - 수동 입력을 동일 메시지로 변환하는 테스트 노드
 - solvePnP
-- PBVS 및 IBVS 계산 인터페이스
+- 고정-Z 카메라 기준 PBVS 계산과 DRY RUN 토픽
+- IBVS 계산 인터페이스
 - 상태 머신
 - 실제 이동 없는 ROS 토픽 연결
 
@@ -21,6 +22,7 @@
 - 패키지 빌드 성공
 - 단위 테스트 성공
 - 수동 특징점으로 pose 토픽 발행
+- 현재 flange Z·자세가 유지된 PBVS XY 목표 토픽 발행
 - `start` 명령 후 `DRY_RUN_COMPLETE` 도달
 
 ## 2단계: 포트 pose 안정화
@@ -36,10 +38,19 @@
 - 고정 포트 반복 측정 결과가 정한 허용범위 안에 있음
 - 잘못된 특징점 순서와 오래된 검출을 자동 거부
 
-## 3단계: 접근 이동 연결
+## 3단계: 고정-Z PBVS 반복 검증
 
 - `T_base_flange` TF 입력
 - `T_base_port` 계산
+- 수동 keypoint 위치를 바꿔 XY 이동 방향 확인
+- 원거리에서 한 번에 최대 10 mm인 목표를 관측마다 다시 계산
+- Z와 자세가 입력 flange pose와 같은지 로그로 확인
+- 실제 로봇을 연결하기 전 임시 정적 TF로 계산 경로 확인
+
+현재 단계의 목표 토픽은 실제 이동 명령과 분리합니다.
+
+## 4단계: 접근 이동 연결
+
 - 작업영역 검사
 - MoveIt IK dry run
 - `arm_motion_node`에 실제 action client 연결
@@ -47,7 +58,7 @@
 
 이 단계에서도 `insertion_enabled=false`를 유지합니다.
 
-## 4단계: Tool TCP 적용
+## 5단계: Tool TCP 적용
 
 - 충전기 기계적 고정
 - `T_flange_plug` 측정
@@ -59,7 +70,7 @@
 - flange가 아니라 plug tip이 접근 목표와 일치
 - TCP를 제거하거나 미보정으로 바꾸면 실행이 자동 거부됨
 
-## 5단계: YOLO 추론 노드 연결
+## 6단계: YOLO 추론 노드 연결
 
 - 4개 모서리 정의와 라벨 순서 고정
 - confidence와 누락점 정책 정의
@@ -68,7 +79,7 @@
 
 YOLO 모델 파일 경로와 학습 데이터는 제어 코드와 분리합니다.
 
-## 6단계: Stop-and-go IBVS
+## 7단계: Stop-and-go IBVS-PD
 
 처음부터 연속 속도 제어를 사용하지 않습니다.
 
@@ -83,10 +94,10 @@ YOLO 모델 파일 경로와 학습 데이터는 제어 코드와 분리합니�
 
 - 수동 정렬 상태의 목표 keypoint 저장
 - 카메라 X/Y와 로봇 이동 방향 확인
-- P gain과 최대 step 제한
+- P/D gain과 최대 step 제한
 - 중심, 회전, 크기 오차 순서로 확장
 
-## 7단계: 실제 삽입
+## 8단계: 실제 삽입
 
 - 저속 직선 전진
 - 최대 거리와 timeout

@@ -53,19 +53,11 @@ class ManualDetectionNode(Node):
             self._keypoint_callback,
             10,
         )
+        self.create_timer(0.5, self._publish_camera_info)
 
-    def _keypoint_callback(self, message: Float64MultiArray) -> None:
-        if len(message.data) != 8:
-            self.get_logger().error('수동 keypoint는 총 8개 값이어야 합니다')
-            return
-        points = np.asarray(message.data, dtype=np.float64).reshape(4, 2)
-        if not np.all(np.isfinite(points)):
-            self.get_logger().error('수동 keypoint에 NaN 또는 inf가 있습니다')
-            return
-
-        stamp = self.get_clock().now().to_msg()
+    def _make_camera_info(self) -> CameraInfo:
         camera_info = CameraInfo()
-        camera_info.header.stamp = stamp
+        camera_info.header.stamp = self.get_clock().now().to_msg()
         camera_info.header.frame_id = self._frame_id
         camera_info.width = self._width
         camera_info.height = self._height
@@ -78,6 +70,21 @@ class ManualDetectionNode(Node):
             self._camera_matrix[3], self._camera_matrix[4], self._camera_matrix[5], 0.0,
             self._camera_matrix[6], self._camera_matrix[7], self._camera_matrix[8], 0.0,
         ]
+        return camera_info
+
+    def _publish_camera_info(self) -> None:
+        self._camera_info_publisher.publish(self._make_camera_info())
+
+    def _keypoint_callback(self, message: Float64MultiArray) -> None:
+        if len(message.data) != 8:
+            self.get_logger().error('수동 keypoint는 총 8개 값이어야 합니다')
+            return
+        points = np.asarray(message.data, dtype=np.float64).reshape(4, 2)
+        if not np.all(np.isfinite(points)):
+            self.get_logger().error('수동 keypoint에 NaN 또는 inf가 있습니다')
+            return
+
+        camera_info = self._make_camera_info()
         self._camera_info_publisher.publish(camera_info)
 
         detection = UsbPortDetection()

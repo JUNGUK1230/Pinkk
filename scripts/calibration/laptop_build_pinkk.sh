@@ -17,6 +17,10 @@ exec colcon --log-base log_pinkk build \
     --base-paths \
         "${REPO_ROOT}/ros2_ws/src/pinkk_mycobot_bridge" \
         "${REPO_ROOT}/ros2_ws/src/pinkk_handeye_automation" \
+        "${REPO_ROOT}/ros2_ws/src/pinkk_usb_insertion_interfaces" \
+        "${REPO_ROOT}/ros2_ws/src/pinkk_usb_insertion" \
     --packages-select \
         pinkk_mycobot_bridge \
-        pinkk_handeye_automation
+        pinkk_handeye_automation \
+        pinkk_usb_insertion_interfaces \
+        pinkk_usb_insertion

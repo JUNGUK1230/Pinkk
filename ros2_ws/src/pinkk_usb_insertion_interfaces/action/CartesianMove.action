@@ -1,0 +1,13 @@
+geometry_msgs/PoseStamped target
+int32 speed
+int32 mode
+bool lock_z
+bool lock_roll_pitch
+---
+bool success
+string message
+geometry_msgs/PoseStamped actual
+---
+geometry_msgs/PoseStamped actual
+float64 position_error_m
+float64 orientation_error_deg

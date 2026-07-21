@@ -8,6 +8,7 @@ find_package(std_msgs REQUIRED)
 find_package(vision_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/CartesianMove.action"
   "msg/Keypoint2D.msg"
   "msg/UsbPortDetection.msg"
   "msg/UsbPortDetectionArray.msg"

@@ -27,6 +27,8 @@ setup(
     entry_points={
         'console_scripts': [
             'port_pose_node = pinkk_usb_insertion.port_pose_node:main',
+            'pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main',
+            'pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main',
             'manual_detection_node = pinkk_usb_insertion.manual_detection_node:main',
             'arm_motion_node = pinkk_usb_insertion.arm_motion_node:main',
             'usb_insertion_node = pinkk_usb_insertion.usb_insertion_node:main',

@@ -13,6 +13,7 @@ import rclpy
 import requests
 from geometry_msgs.msg import TransformStamped
 from scipy.spatial.transform import Rotation
+from std_msgs.msg import Float64MultiArray
 from tf2_ros import TransformBroadcaster
 
 from ..config import settings as config
@@ -144,6 +145,7 @@ class ManualUsbTf:
         height_mm: float,
         camera_frame: str,
         usb_frame: str,
+        keypoint_topic: str,
     ) -> None:
         self.node = node
         self.broadcaster = TransformBroadcaster(node)
@@ -153,6 +155,12 @@ class ManualUsbTf:
         self.height_mm = height_mm
         self.camera_frame = camera_frame
         self.usb_frame = usb_frame
+        self.keypoint_topic = keypoint_topic
+        self.keypoint_publisher = node.create_publisher(
+            Float64MultiArray,
+            keypoint_topic,
+            10,
+        )
         self.frozen: np.ndarray | None = None
         self.points: list[tuple[float, float]] = []
         self.pose: tuple[np.ndarray, np.ndarray, float, np.ndarray] | None = None
@@ -189,6 +197,10 @@ class ManualUsbTf:
                 f"Z={xyz[2]:.2f}, reprojection={error:.3f}px"
             )
             print(f"TF 발행: {self.camera_frame} -> {self.usb_frame}")
+            keypoints = Float64MultiArray()
+            keypoints.data = [coordinate for point in self.points for coordinate in point]
+            self.keypoint_publisher.publish(keypoints)
+            print(f"PBVS 수동 keypoint 발행: {self.keypoint_topic}")
 
     def publish(self) -> None:
         if self.pose is None:
@@ -271,6 +283,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--usb-height", type=float, default=4.5)
     parser.add_argument("--camera-frame", default="camera_optical_frame")
     parser.add_argument("--usb-frame", default="usb_port")
+    parser.add_argument(
+        "--keypoint-topic",
+        default="/robot_arm/perception/usb_port/manual_keypoints",
+        help="유효한 네 점을 발행할 PBVS 수동 입력 토픽",
+    )
     return parser.parse_args()
 
 
@@ -287,6 +304,7 @@ def main() -> None:
         args.usb_height,
         args.camera_frame,
         args.usb_frame,
+        args.keypoint_topic,
     )
     stream = MjpegStream(args.url)
     window = "manual_usb_tf"

@@ -30,6 +30,40 @@ approach:
   maximum_translation_step_m: 0.005
   settle_seconds: 0.5
 
+pbvs:
+  enabled: true
+  reference: camera
+  publish_motion_commands: false
+  desired_port_x_m: 0.0
+  desired_port_y_m: 0.0
+  xy_tolerance_m: 0.003
+  maximum_xy_step_m: 0.010
+  keep_flange_z: true
+
+alignment_reference:
+  capture_on_first_valid_observation: false
+  lock_base_z: true
+  lock_initial_orientation: true
+
+yaw_pbvs:
+  enabled: false
+  pending_requirement: calibrated_tcp_and_yolo_keypoint_order
+  maximum_step_deg: 2.0
+  tolerance_deg: 1.0
+  preserve_locked_tilt: true
+
+pbvs_test_execution:
+  maximum_target_age_seconds: 30.0
+  maximum_z_change_m: 0.0005
+  maximum_orientation_change_deg: 0.5
+  cartesian_waypoint_spacing_m: 0.001
+  maximum_joint_step_deg: 5.0
+  post_move_z_tolerance_m: 0.001
+  post_move_orientation_tolerance_deg: 1.0
+  cartesian_speed: 10
+  cartesian_mode: 1
+  cartesian_action_timeout_seconds: 20.0
+
 ibvs:
   enabled: false
   pixel_tolerance: 3.0

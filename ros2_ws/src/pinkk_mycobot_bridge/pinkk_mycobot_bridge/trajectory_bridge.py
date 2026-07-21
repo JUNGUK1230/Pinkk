@@ -10,6 +10,8 @@ from typing import Sequence
 
 import rclpy
 from control_msgs.action import FollowJointTrajectory
+from geometry_msgs.msg import PoseStamped
+from pinkk_usb_insertion_interfaces.action import CartesianMove
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -18,6 +20,12 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
+from .cartesian_conversion import (
+    pose_error,
+    pose_values_to_robot_coords,
+    robot_coords_to_pose_values,
+    wrapped_angle_difference_deg,
+)
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
 
 
@@ -61,6 +69,7 @@ class MyCobotTrajectoryBridge(Node):
     """하나의 serial 연결로 실제 상태 발행과 최종 목표 자세 실행을 담당한다."""
 
     ACTION_NAME = "/arm_group_controller/follow_joint_trajectory"
+    CARTESIAN_ACTION_NAME = "/robot_arm/cartesian_move"
 
     def __init__(self) -> None:
         super().__init__("pinkk_mycobot_trajectory_bridge")
@@ -70,6 +79,14 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("goal_tolerance_deg", 2.0)
         self.declare_parameter("max_execution_seconds", 60.0)
+        self.declare_parameter("cartesian_base_frame", "g_base")
+        self.declare_parameter("cartesian_position_tolerance_m", 0.001)
+        self.declare_parameter("cartesian_orientation_tolerance_deg", 1.0)
+        self.declare_parameter("cartesian_max_translation_m", 0.0105)
+        self.declare_parameter("cartesian_max_rotation_deg", 2.1)
+        self.declare_parameter("cartesian_path_z_tolerance_m", 0.002)
+        self.declare_parameter("cartesian_path_tilt_tolerance_deg", 3.0)
+        self.declare_parameter("cartesian_timeout_seconds", 15.0)
 
         port = str(self.get_parameter("port").value)
         baud = int(self.get_parameter("baud").value)
@@ -81,6 +98,30 @@ class MyCobotTrajectoryBridge(Node):
         self._max_execution_seconds = float(
             self.get_parameter("max_execution_seconds").value
         )
+        self._cartesian_base_frame = str(
+            self.get_parameter("cartesian_base_frame").value
+        )
+        self._cartesian_position_tolerance = float(
+            self.get_parameter("cartesian_position_tolerance_m").value
+        )
+        self._cartesian_orientation_tolerance = float(
+            self.get_parameter("cartesian_orientation_tolerance_deg").value
+        )
+        self._cartesian_max_translation = float(
+            self.get_parameter("cartesian_max_translation_m").value
+        )
+        self._cartesian_max_rotation = float(
+            self.get_parameter("cartesian_max_rotation_deg").value
+        )
+        self._cartesian_path_z_tolerance = float(
+            self.get_parameter("cartesian_path_z_tolerance_m").value
+        )
+        self._cartesian_path_tilt_tolerance = float(
+            self.get_parameter("cartesian_path_tilt_tolerance_deg").value
+        )
+        self._cartesian_timeout = float(
+            self.get_parameter("cartesian_timeout_seconds").value
+        )
         if not Path(port).exists():
             raise FileNotFoundError(f"로봇 serial port가 없습니다: {port}")
         if not 1 <= self._speed <= 100:
@@ -91,6 +132,17 @@ class MyCobotTrajectoryBridge(Node):
             raise ValueError("goal_tolerance_deg는 0보다 커야 합니다")
         if self._max_execution_seconds <= 0.0:
             raise ValueError("max_execution_seconds는 0보다 커야 합니다")
+        positive_cartesian_parameters = (
+            self._cartesian_position_tolerance,
+            self._cartesian_orientation_tolerance,
+            self._cartesian_max_translation,
+            self._cartesian_max_rotation,
+            self._cartesian_path_z_tolerance,
+            self._cartesian_path_tilt_tolerance,
+            self._cartesian_timeout,
+        )
+        if any(value <= 0.0 for value in positive_cartesian_parameters):
+            raise ValueError("Cartesian 제한값과 timeout은 0보다 커야 합니다")
 
         try:
             from pymycobot import MyCobot280
@@ -98,7 +150,9 @@ class MyCobotTrajectoryBridge(Node):
             raise RuntimeError("pymycobot을 찾을 수 없습니다") from error
 
         self._serial_lock = threading.Lock()
+        self._motion_lock = threading.Lock()
         self._robot = MyCobot280(port, baud)
+        self._cartesian_ready = self._check_cartesian_api()
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
@@ -117,14 +171,61 @@ class MyCobotTrajectoryBridge(Node):
             cancel_callback=self._cancel_callback,
             callback_group=ReentrantCallbackGroup(),
         )
+        self._cartesian_action_server = ActionServer(
+            self,
+            CartesianMove,
+            self.CARTESIAN_ACTION_NAME,
+            execute_callback=self._execute_cartesian,
+            goal_callback=self._cartesian_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=ReentrantCallbackGroup(),
+        )
         self.get_logger().info(
             f"실제 실행 브리지 준비: port={port}, baud={baud}, speed={self._speed}, "
             f"action={self.ACTION_NAME}"
         )
+        cartesian_mode = "준비" if self._cartesian_ready else "사용 불가"
+        self.get_logger().warning(
+            f"Cartesian send_coords action {cartesian_mode}: "
+            f"action={self.CARTESIAN_ACTION_NAME}, max_step="
+            f"{self._cartesian_max_translation * 1000.0:.1f}mm"
+        )
+
+    def _check_cartesian_api(self) -> bool:
+        required = (
+            "get_coords",
+            "send_coords",
+            "get_reference_frame",
+            "get_end_type",
+        )
+        missing = [
+            name for name in required
+            if not callable(getattr(self._robot, name, None))
+        ]
+        if missing:
+            self.get_logger().error(f"Cartesian API가 없습니다: {missing}")
+            return False
+        try:
+            with self._serial_lock:
+                reference_frame = self._robot.get_reference_frame()
+                end_type = self._robot.get_end_type()
+        except Exception as error:
+            self.get_logger().error(f"Cartesian 좌표계 확인 실패: {error}")
+            return False
+        if reference_frame != 0 or end_type != 0:
+            self.get_logger().error(
+                "Cartesian action 차단: reference_frame과 end_type은 "
+                f"base(0)/flange(0)여야 합니다: {reference_frame}/{end_type}"
+            )
+            return False
+        return True
 
     def _goal_callback(self, goal_request: FollowJointTrajectory.Goal) -> GoalResponse:
         try:
-            validate_trajectory(goal_request.trajectory.joint_names, goal_request.trajectory.points)
+            validate_trajectory(
+                goal_request.trajectory.joint_names,
+                goal_request.trajectory.points,
+            )
             planned_seconds = duration_seconds(
                 goal_request.trajectory.points[-1].time_from_start
             )
@@ -146,6 +247,20 @@ class MyCobotTrajectoryBridge(Node):
         return CancelResponse.ACCEPT
 
     def _execute(self, goal_handle: object) -> FollowJointTrajectory.Result:
+        result = FollowJointTrajectory.Result()
+        if not self._motion_lock.acquire(blocking=False):
+            result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+            result.error_string = "다른 로봇 이동이 실행 중입니다"
+            goal_handle.abort()
+            return result
+        try:
+            return self._execute_joint_trajectory(goal_handle)
+        finally:
+            self._motion_lock.release()
+
+    def _execute_joint_trajectory(
+        self, goal_handle: object
+    ) -> FollowJointTrajectory.Result:
         trajectory = goal_handle.request.trajectory
         target_rad = validate_trajectory(trajectory.joint_names, trajectory.points)
         target_deg = radians_to_degrees(target_rad)
@@ -207,6 +322,224 @@ class MyCobotTrajectoryBridge(Node):
         result.error_string = "ROS가 종료되었습니다"
         return result
 
+    def _cartesian_goal_callback(self, goal_request: CartesianMove.Goal) -> GoalResponse:
+        try:
+            if not self._cartesian_ready:
+                raise ValueError(
+                    "로봇 Cartesian API와 base/flange 좌표계가 확인되지 않았습니다"
+                )
+            if goal_request.target.header.frame_id != self._cartesian_base_frame:
+                raise ValueError(
+                    f"목표 frame은 {self._cartesian_base_frame}여야 합니다"
+                )
+            if not 1 <= int(goal_request.speed) <= 100:
+                raise ValueError("Cartesian speed는 1~100이어야 합니다")
+            if int(goal_request.mode) not in (0, 1):
+                raise ValueError("Cartesian mode는 0 또는 1이어야 합니다")
+            self._pose_message_to_coords(goal_request.target)
+        except ValueError as error:
+            self.get_logger().error(f"Cartesian 목표 거부: {error}")
+            return GoalResponse.REJECT
+        return GoalResponse.ACCEPT
+
+    def _execute_cartesian(self, goal_handle: object) -> CartesianMove.Result:
+        result = CartesianMove.Result()
+        if not self._motion_lock.acquire(blocking=False):
+            result.success = False
+            result.message = "다른 로봇 이동이 실행 중입니다"
+            goal_handle.abort()
+            return result
+        try:
+            return self._execute_cartesian_locked(goal_handle)
+        finally:
+            self._motion_lock.release()
+
+    def _execute_cartesian_locked(self, goal_handle: object) -> CartesianMove.Result:
+        request = goal_handle.request
+        result = CartesianMove.Result()
+        target_coords = self._pose_message_to_coords(request.target)
+        try:
+            start_coords = self._read_robot_coords()
+            start_pose = self._pose_from_coords(start_coords)
+            target_position, target_quaternion = self._pose_values(request.target)
+            start_position, start_quaternion = self._pose_values(start_pose)
+            distance, rotation = pose_error(
+                target_position,
+                target_quaternion,
+                start_position,
+                start_quaternion,
+            )
+            if distance > self._cartesian_max_translation:
+                raise ValueError(
+                    f"Cartesian 이동량 {distance * 1000.0:.3f}mm가 "
+                    "제한 "
+                    f"{self._cartesian_max_translation * 1000.0:.3f}mm를 초과합니다"
+                )
+            if rotation > self._cartesian_max_rotation:
+                raise ValueError(
+                    f"Cartesian 회전량 {rotation:.3f}deg가 "
+                    f"제한 {self._cartesian_max_rotation:.3f}deg를 초과합니다"
+                )
+            if request.lock_z and abs(target_coords[2] - start_coords[2]) > 0.5:
+                raise ValueError(
+                    "lock_z 요청인데 목표 Z가 시작 Z와 0.5mm 이상 다릅니다"
+                )
+            if request.lock_roll_pitch:
+                roll_change = abs(
+                    wrapped_angle_difference_deg(target_coords[3], start_coords[3])
+                )
+                pitch_change = abs(
+                    wrapped_angle_difference_deg(target_coords[4], start_coords[4])
+                )
+                if max(roll_change, pitch_change) > 0.5:
+                    raise ValueError(
+                        "lock_roll_pitch 요청인데 목표 Roll/Pitch가 시작값과 "
+                        "0.5deg 이상 다릅니다"
+                    )
+
+            self.get_logger().warning(
+                "Cartesian 목표 전송 [mm, deg]: "
+                f"{[round(value, 3) for value in target_coords]}, "
+                f"speed={request.speed}, mode={request.mode}"
+            )
+            with self._serial_lock:
+                self._robot.send_coords(
+                    target_coords, int(request.speed), int(request.mode)
+                )
+        except Exception as error:
+            result.success = False
+            result.message = f"Cartesian 명령 실패: {error}"
+            goal_handle.abort()
+            return result
+
+        started = time.monotonic()
+        while rclpy.ok():
+            if goal_handle.is_cancel_requested:
+                self._stop_robot()
+                result.success = False
+                result.message = "사용자가 Cartesian 이동을 취소했습니다"
+                goal_handle.canceled()
+                return result
+            try:
+                actual_coords = self._read_robot_coords()
+                actual = self._pose_from_coords(actual_coords)
+                actual_position, actual_quaternion = self._pose_values(actual)
+                position_error_m, orientation_error_deg = pose_error(
+                    target_position,
+                    target_quaternion,
+                    actual_position,
+                    actual_quaternion,
+                )
+                self._validate_locked_path(request, start_coords, actual_coords)
+            except Exception as error:
+                self._stop_robot()
+                result.success = False
+                result.message = f"Cartesian 실행 감시 실패: {error}"
+                goal_handle.abort()
+                return result
+
+            feedback = CartesianMove.Feedback()
+            feedback.actual = actual
+            feedback.position_error_m = position_error_m
+            feedback.orientation_error_deg = orientation_error_deg
+            goal_handle.publish_feedback(feedback)
+            if (
+                position_error_m <= self._cartesian_position_tolerance
+                and orientation_error_deg <= self._cartesian_orientation_tolerance
+            ):
+                result.success = True
+                result.message = "Cartesian 목표 자세 도달"
+                result.actual = actual
+                goal_handle.succeed()
+                self.get_logger().info(result.message)
+                return result
+            if time.monotonic() - started > self._cartesian_timeout:
+                self._stop_robot()
+                result.success = False
+                result.message = (
+                    f"{self._cartesian_timeout:.1f}초 안에 Cartesian 목표에 "
+                    "도달하지 못했습니다"
+                )
+                result.actual = actual
+                goal_handle.abort()
+                return result
+            time.sleep(0.1)
+
+        self._stop_robot()
+        result.success = False
+        result.message = "ROS가 종료되었습니다"
+        goal_handle.abort()
+        return result
+
+    def _validate_locked_path(
+        self, request, start: list[float], actual: list[float]
+    ) -> None:
+        if request.lock_z:
+            z_error_m = abs(actual[2] - start[2]) / 1000.0
+            if z_error_m > self._cartesian_path_z_tolerance:
+                raise ValueError(
+                    f"고정 Z 이탈 {z_error_m * 1000.0:.3f}mm가 "
+                    "허용값을 초과했습니다"
+                )
+        if request.lock_roll_pitch:
+            roll_error = abs(wrapped_angle_difference_deg(actual[3], start[3]))
+            pitch_error = abs(wrapped_angle_difference_deg(actual[4], start[4]))
+            if max(roll_error, pitch_error) > self._cartesian_path_tilt_tolerance:
+                raise ValueError(
+                    "고정 Roll/Pitch 이탈이 허용값을 초과했습니다: "
+                    f"roll={roll_error:.3f}deg pitch={pitch_error:.3f}deg"
+                )
+
+    def _read_robot_coords(self) -> list[float]:
+        last_error: Exception | None = None
+        for _ in range(5):
+            try:
+                with self._serial_lock:
+                    coords = self._robot.get_coords()
+                position, quaternion = robot_coords_to_pose_values(coords)
+                return pose_values_to_robot_coords(position, quaternion)
+            except Exception as error:
+                last_error = error
+                time.sleep(0.1)
+        raise RuntimeError(f'get_coords 5회 실패: {last_error}')
+
+    def _pose_message_to_coords(self, message: PoseStamped) -> list[float]:
+        position, quaternion = self._pose_values(message)
+        return pose_values_to_robot_coords(position, quaternion)
+
+    @staticmethod
+    def _pose_values(
+        message: PoseStamped,
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
+        pose = message.pose
+        return (
+            (pose.position.x, pose.position.y, pose.position.z),
+            (
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ),
+        )
+
+    def _pose_from_coords(self, coords: Sequence[float]) -> PoseStamped:
+        position, quaternion = robot_coords_to_pose_values(coords)
+        message = PoseStamped()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = self._cartesian_base_frame
+        (
+            message.pose.position.x,
+            message.pose.position.y,
+            message.pose.position.z,
+        ) = position
+        (
+            message.pose.orientation.x,
+            message.pose.orientation.y,
+            message.pose.orientation.z,
+            message.pose.orientation.w,
+        ) = quaternion
+        return message
+
     def _read_and_publish_state(self) -> list[float] | None:
         try:
             with self._serial_lock:
@@ -238,6 +571,7 @@ class MyCobotTrajectoryBridge(Node):
 
     def close(self) -> None:
         self._action_server.destroy()
+        self._cartesian_action_server.destroy()
         close = getattr(self._robot, "close", None)
         if callable(close):
             close()

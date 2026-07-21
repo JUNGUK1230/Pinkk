@@ -50,10 +50,11 @@ OpenCV 카메라 좌표계는 ROS optical frame과 동일하게 X축은 영상 �
 
 ## 실제 MoveIt 실행 브리지
 
-`trajectory_bridge`는 `/joint_states`를 발행하면서 다음 action을 제공합니다.
+`trajectory_bridge`는 `/joint_states`를 발행하면서 두 action을 제공합니다.
 
 ```text
 /arm_group_controller/follow_joint_trajectory
+/robot_arm/cartesian_move
 ```
 
 이 브리지는 MoveIt trajectory의 마지막 관절 자세를 MyCobot `send_angles()`로
@@ -76,5 +77,30 @@ ros2 launch pinkk_mycobot_bridge real_execution.launch.py
 전달합니다. 캘리브레이션용 자세 이동에는 사용할 수 있지만, MoveIt이 계획한
 장애물 회피 경로를 실제 로봇이 그대로 따라가는 실행기는 아닙니다.
 
+`/robot_arm/cartesian_move`는 `pinkk_usb_insertion_interfaces/action/CartesianMove`
+형식의 `g_base` 기준 flange 목표를 받아 MyCobot `send_coords()`로 전달합니다.
+ROS의 meter/quaternion은 로봇의 mm/[rx, ry, rz] degree로 변환하며, Hand-Eye에서
+확인한 intrinsic ZYX 규약을 사용합니다. 브리지는 시작할 때 다음 조건을 모두
+확인하지 못하면 Cartesian goal을 거부합니다.
+
+- `get_coords()`와 `send_coords()` API가 존재하는가?
+- reference frame이 base(0)인가?
+- end type이 flange(0)인가?
+- 목표 frame이 `g_base`인가?
+- 이동량과 회전량이 각각 10.5 mm, 2.1도 제한 이내인가?
+- 요청한 speed와 mode가 유효한가?
+
+PBVS는 `lock_z=true`, `lock_roll_pitch=true`로 요청합니다. 실행 중 10 Hz로
+`get_coords()`를 읽어 시작 Z에서 2 mm, 시작 Roll/Pitch에서 3도 이상 벗어나면
+`stop()` 후 action을 실패 처리합니다. 최종 허용오차는 위치 1 mm, 자세 1도이며
+15초 안에 도달하지 못해도 정지합니다. 이 감시는 명령 후 이탈을 감지하는
+소프트웨어 보호이며, 펌웨어 수준의 실시간 안전 제어를 대신하지 않습니다.
+
+Cartesian action도 같은 serial 객체를 사용합니다. joint trajectory action과
+Cartesian action이 동시에 들어오면 나중 요청을 거부하므로 별도 `pymycobot`
+프로그램에서 `/dev/ttyUSB0`를 열면 안 됩니다.
+
 처음에는 `speed:=5` 또는 `speed:=10`으로 실행하고 작은 이동으로 통신과 관절
 방향을 확인합니다. 실제 MyCobot 이동 속도는 이 `speed` 파라미터가 결정합니다.
+PBVS Cartesian speed는 USB 삽입 패키지의 `pbvs_test_execution.cartesian_speed`가
+결정합니다.
