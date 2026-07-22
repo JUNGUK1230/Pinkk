@@ -418,7 +418,12 @@ def _validate_edges(
                     )
                 )
 
-        if first.direction == second.direction:
+        # T자 주차 staging처럼 두 점 모두 정지 명령이면 차량이 제자리에서
+        # 조향을 재설정할 수 있다. 이동 중 조향 변화율 제한은 적용하지 않는다.
+        if (
+            first.direction == second.direction
+            and not (first.stop_required and second.stop_required)
+        ):
             allowed_steer_change = (
                 limits.max_steer_change_rad_per_cm * spacing_cm
                 + limits.steer_change_tolerance_rad

@@ -38,6 +38,7 @@ def build_trajectory_profile(
     max_angular_speed_radps: float = 0.5,
     max_acceleration_mps2: float = 0.05,
     max_deceleration_mps2: float = 0.05,
+    additional_stop_indices: set[int] | None = None,
 ) -> list[TrajectoryPoint]:
     """Create curvature-aware speeds with mandatory stops at direction changes.
 
@@ -73,6 +74,13 @@ def build_trajectory_profile(
     # The stop is attached to the final point of the old gear segment. The next
     # point already has the new direction and accelerates away from zero.
     stop_indices = {0, len(path) - 1}
+    if additional_stop_indices is not None:
+        invalid_indices = [
+            index for index in additional_stop_indices if not 0 <= index < len(path)
+        ]
+        if invalid_indices:
+            raise ValueError(f"additional stop index is outside path: {invalid_indices}")
+        stop_indices.update(additional_stop_indices)
     stop_indices.update(
         index
         for index in range(len(path) - 1)

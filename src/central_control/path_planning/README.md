@@ -248,6 +248,20 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/plan_from_live_vision.py
 ```
 
+### T자 후면주차 방식
+
+P6~P10 같은 통로 직각 주차면은 지도 전체에서 한 번에 주차 pose를 찾지 않는다. 먼저 주차칸 입구 앞 통로의 **staging pose**까지 Hybrid A*로 접근하고, 이 지점에서 정지·조향을 재설정한 뒤 두 번째 짧은 Hybrid A*로 전진·후진 T자 maneuver를 생성한다. final pose까지의 마지막 후진 거리는 최소 **10cm**로 제한한다.
+
+- staging 앞 경로와 주차 maneuver는 각각 차량 footprint, yaw, steering, 전후진을 검사한다.
+- staging에는 연속된 두 stop point가 저장된다. 차량은 이 위치에서 정지한 뒤 조향을 바꾸고 maneuver를 시작한다.
+- 통로 접근 탐색은 후보당 3초, 최대 4개의 staging 후보로 제한한다. 모두 실패하면 이전 경로를 저장하지 않고 실패를 출력한다.
+
+회귀 테스트:
+
+```bash
+python3 scripts/test_t_parking.py
+```
+
 처리 순서는 다음과 같습니다.
 
 1. 0.5초 이내의 vision scene과 지도 범위를 검사

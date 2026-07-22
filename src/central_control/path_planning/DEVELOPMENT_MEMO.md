@@ -51,3 +51,11 @@
 - 점유된 칸은 후보에서 제외하므로 가장 먼 칸이 차 있으면 다음 거리 순위 칸으로 자동 변경된다.
 - 후보 목록은 scene JSON에 함께 저장해 planner와 화면에서 선택 근거를 확인할 수 있다.
 - 다음 단계는 `P6~P10 → C1/C2 → P1~P5 → exit` 상태 전환을 별도 episode controller로 구현하는 것이다. 아직 충전소·출구 단계는 선택하지 않는다.
+
+## 2026-07-22: T자 후면주차 planner 분리
+
+- 주차칸 입구 방향을 기준으로 15~30cm 앞 통로에 staging pose를 만든다.
+- 첫 Hybrid A*는 현재 pose에서 staging pose까지 접근하고, 두 번째 Hybrid A*는 staging에서 final pose까지 T자 전진·후진 maneuver만 만든다.
+- 두 구간 사이에는 연속 stop point를 넣어 정지 상태에서 조향을 바꿀 수 있게 했다.
+- P6 기준 회귀에서는 접근 약 200 node와 maneuver 약 80 node로, 마지막 후진 10cm 이상 조건을 통과했다.
+- 현장 start에서 통로 접근이 3초 안에 실패하면 후보를 최대 4개까지만 검사하고 fail-closed 한다. 다음 개선은 2D 통로 guide를 Hybrid 접근 탐색의 heuristic으로 직접 사용하는 것이다.

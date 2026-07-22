@@ -31,6 +31,7 @@ from hybrid_astar_planner import (  # noqa: E402
     HybridAStarResult,
 )
 from occupancy_grid import OccupancyGridMap  # noqa: E402
+from t_parking_planner import plan_t_reverse_parking  # noqa: E402
 from test_astar import resolve_map_image  # noqa: E402
 from trajectory_profile import (  # noqa: E402
     TrajectoryPoint,
@@ -513,6 +514,60 @@ def plan_and_validate(
     raise RuntimeError("; ".join(failures))
 
 
+def plan_t_parking_and_validate(
+    planner: HybridAStarPlanner,
+    profile_config: dict[str, float],
+    limits: TrajectoryValidationLimits,
+    start: Pose,
+    goal: Pose,
+    required_goal_direction: int,
+) -> tuple[
+    Pose,
+    HybridAStarResult,
+    list[TrajectoryPoint],
+    TrajectoryValidationResult,
+    Pose,
+]:
+    """통로 접근과 T자 후면주차 maneuver를 정지 지점에서 연결·검증한다."""
+    adjusted_start = adjust_pose(planner, start, "Start")
+    t_plan = plan_t_reverse_parking(
+        planner,
+        adjusted_start,
+        goal,
+        required_final_direction=required_goal_direction,
+        minimum_reverse_distance_cm=10.0,
+    )
+    trajectory = build_trajectory_profile(
+        t_plan.path,
+        wheelbase_cm=planner.wheelbase_cm,
+        max_steer_rad=max(abs(value) for value in planner.steer_set_rad),
+        additional_stop_indices=set(t_plan.stage_stop_indices),
+        **profile_config,
+    )
+    validation = validate_trajectory(
+        trajectory,
+        limits,
+        collision_checker=planner.is_pose_collision,
+        required_final_direction=required_goal_direction,
+        min_final_direction_distance_cm=10.0,
+    )
+    if not validation.valid:
+        codes = ", ".join(sorted({issue.code for issue in validation.issues}))
+        raise RuntimeError(f"T reverse parking validation failed ({codes})")
+    result = HybridAStarResult(
+        t_plan.path,
+        t_plan.total_cost,
+        True,
+        t_plan.expanded_nodes,
+        (
+            "T reverse parking: "
+            f"approach={t_plan.global_result.message}; "
+            f"maneuver={t_plan.maneuver_result.message}"
+        ),
+    )
+    return adjusted_start, result, trajectory, validation, t_plan.staging_pose
+
+
 def derive_reverse_parking_goal(
     planner: HybridAStarPlanner,
     slot_name: str,
@@ -954,29 +1009,22 @@ def main() -> int:
             f"outward clearance={entrance_clearance_cm:.1f} cm, "
             f"goal yaw={math.degrees(entrance_goal[2]):.1f} deg"
         )
-        (
-            selected_candidate,
-            adjusted_start,
-            adjusted_goal,
-            result,
-            trajectory,
-            validation,
-        ) = plan_and_validate(
-            planner,
-            profile_config,
-            limits,
-            request.start_pose_cm,
-            (
-                (
-                    "parking entrance",
-                    entrance_goal,
-                ),
-            ),
-            planning_budget_sec=args.planning_timeout_sec,
-            candidate_timeout_sec=args.candidate_timeout_sec,
-            required_goal_direction=parking_config.required_final_direction,
-            require_goal_heading=LIVE_REQUIRE_GOAL_HEADING,
-            search_nearby_goal=False,
+        adjusted_start, result, trajectory, validation, staging_pose = (
+            plan_t_parking_and_validate(
+                planner,
+                profile_config,
+                limits,
+                request.start_pose_cm,
+                entrance_goal,
+                parking_config.required_final_direction,
+            )
+        )
+        selected_candidate = "T reverse parking entrance"
+        adjusted_goal = entrance_goal
+        print(
+            "T parking staging pose: "
+            f"({staging_pose[0]:.1f}, {staging_pose[1]:.1f}, "
+            f"{math.degrees(staging_pose[2]):.1f} deg)"
         )
         save_outputs(
             request,
