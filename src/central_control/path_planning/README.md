@@ -209,7 +209,7 @@ automatic_parking:
   required_final_direction: -1
 ```
 
-기존에는 목표 12cm 앞에 고정 approach pose를 만들고 마지막 구간을 반드시 직선 후진하도록 강제했습니다. 이 조건은 실제 차체가 통과할 수 있는 주차면도 과도하게 차단할 수 있어 설정과 실행 코드에서 모두 제거했습니다. 현재 실시간 자동 계획은 두 rear-axle 목표의 중점인 **주차면 중심 위치만** 목표로 사용하며, 목표 헤딩은 강제하지 않습니다. Hybrid A*는 전진·후진 조합과 실제 차량 footprint 충돌을 계속 검사하고, 마지막 이동 방향만 `-1`로 제한합니다.
+기존에는 목표 12cm 앞에 고정 approach pose를 만들고 마지막 구간을 반드시 직선 후진하도록 강제했습니다. 이 조건은 실제 차체가 통과할 수 있는 주차면도 과도하게 차단할 수 있어 설정과 실행 코드에서 모두 제거했습니다. 현재 실시간 자동 계획은 주차칸 polygon의 **짧은 두 변**을 입구 후보로 보고, map에서 통로 여유가 더 큰 쪽을 입구로 자동 선택합니다. 차량 앞은 선택된 입구를 향하고, rear axle은 주차칸 안쪽에 놓이며 마지막 이동 방향은 `-1` 후진으로 제한합니다.
 
 자동 경로 생성기는 주차칸 이름으로 분기하지 않습니다. 모든 주차면에 차량 제원, 최소 회전반경, 조향 한계, occupancy map, 목표 pose의 동일한 조건을 적용합니다. 최종 trajectory validator는 `FINAL_DIRECTION_MISMATCH`를 검사합니다.
 
@@ -235,11 +235,11 @@ python3 scripts/test_live_vision_scene.py
 
 ### 차량 검출 후 자동 Hybrid A* 생성
 
-localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면 중심 위치에 대해 마지막 이동이 후진인 경로를 한 번 계획하고 종료합니다. 목표 yaw는 사용하지 않아 heading별 goal 후보를 반복 탐색하지 않습니다. 현재 전체 계획과 각 후보의 기본 시간 제한은 `0`(무제한)입니다. 탐색 중에는 1,000 node마다 진행 상황을 출력하며, 비정상 상태공간 폭증을 막기 위한 후보당 확장 노드 상한은 유지합니다.
+localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차칸의 자동 입구 방향을 향한 하나의 goal pose에 대해 후진주차 경로를 한 번 계획하고 종료합니다. 현재 전체 계획과 각 후보의 기본 시간 제한은 `0`(무제한)입니다. 탐색 중에는 1,000 node마다 진행 상황을 출력하며, 비정상 상태공간 폭증을 막기 위한 후보당 확장 노드 상한은 유지합니다.
 
 필요할 때만 `--planning-timeout-sec`와 `--candidate-timeout-sec`에 양수를 지정해 시간 제한을 다시 적용할 수 있습니다.
 
-클릭 기반 Hybrid A*는 목표 heading을 포함한 3cm 주변 pose 탐색을 유지합니다. 반면 실시간 자동 계획은 주차면 중심 하나만 목표로 사용해 heading 후보·주변 pose 반복 탐색을 하지 않습니다. 일반 Hybrid A* goal 도달 경로도 Reeds–Shepp 도달 경로와 동일하게 곡률 smoothing을 적용하므로 3cm primitive의 조향 변화가 0.5cm 출력에서 순간 변화로 남지 않게 검사합니다.
+클릭 기반 Hybrid A*는 목표 heading을 포함한 3cm 주변 pose 탐색을 유지합니다. 반면 실시간 자동 계획은 polygon과 map 여유로 계산한 하나의 주차칸 입구 heading만 사용하며 주변 pose 반복 탐색을 하지 않습니다. 일반 Hybrid A* goal 도달 경로도 Reeds–Shepp 도달 경로와 동일하게 곡률 smoothing을 적용하므로 3cm primitive의 조향 변화가 0.5cm 출력에서 순간 변화로 남지 않게 검사합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
@@ -250,8 +250,9 @@ python3 scripts/plan_from_live_vision.py
 
 1. 0.5초 이내의 vision scene과 지도 범위를 검사
 2. start/goal의 회전 차량 footprint가 충돌하면 30 cm 안에서 가까운 유효 pose로 보정
-3. 두 rear-axle 후보의 중점인 주차면 중심을 heading-free 목표로 생성
-4. Hybrid A*로 목표 위치까지 전진·후진 조합 탐색, 최종 이동 방향이 후진인지 확인
+3. polygon의 짧은 두 변 중 map 통로 여유가 큰 변을 주차칸 입구로 선택
+4. 차량 앞이 입구를 향하는 rear-axle goal을 만들고 Hybrid A*로 전진·후진 조합 탐색
+5. 최종 이동 방향이 후진인지 확인
 5. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
 6. footprint 충돌과 trajectory validator 통과 시에만 파일 저장
 

@@ -16,6 +16,7 @@ sys.path.append(str(PROJECT_ROOT / "src"))
 from plan_from_live_vision import (  # noqa: E402
     _nearby_goal_poses,
     adjust_pose,
+    derive_reverse_parking_goal,
     load_planner_stack,
     plan_and_validate,
     save_outputs,
@@ -31,6 +32,19 @@ def main() -> int:
         limits,
         parking_config,
     ) = load_planner_stack()
+    # 주차칸 이름별 분기 없이 polygon의 짧은 변과 통로 여유로 입구를 선택한다.
+    # 선택한 heading에서는 rear axle footprint가 반드시 유효해야 한다.
+    for slot_name in ("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "C1", "C2"):
+        entrance_goal, entrance_edge, entrance_clearance = (
+            derive_reverse_parking_goal(
+                planner,
+                slot_name,
+                grid_map.resolution_cm,
+            )
+        )
+        assert entrance_edge >= 0
+        assert entrance_clearance >= 0.0
+        assert not planner.is_pose_collision(*entrance_goal)
     # 실제 지도에서 footprint가 통과하는 직선 구간이다. 자동 입력이 클릭 없이
     # planner, smoothing, profile, validator, 파일 저장까지 연결되는지 검사한다.
     request = VisionPlanningRequest(

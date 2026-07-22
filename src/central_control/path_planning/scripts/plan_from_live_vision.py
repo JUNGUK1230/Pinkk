@@ -55,9 +55,11 @@ POSE_ADJUSTMENT_RADIUS_CM = 30.0
 # 주차면 안쪽의 작은 범위에서 동일 heading의 rear-axle goal을 다시 탐색한다.
 GOAL_SEARCH_RADIUS_CM = 3.0
 GOAL_SEARCH_STEP_CM = 1.0
-# 실시간 경로 생성은 주차면 중심 위치만 목표로 삼고 final yaw는 강제하지 않는다.
-# 시작 yaw는 차체 footprint와 전진/후진 kinematics에 반드시 필요하므로 유지한다.
-LIVE_REQUIRE_GOAL_HEADING = False
+# 실시간 경로 생성은 주차면 입구를 향하는 하나의 자동 final yaw를 사용한다.
+# 시작 yaw는 차체 footprint와 전진/후진 kinematics에 반드시 필요하다.
+LIVE_REQUIRE_GOAL_HEADING = True
+ENTRY_CLEARANCE_PROBE_CM = 20.0
+DEFAULT_PARKING_SLOTS_PATH = CENTRAL_ROOT / "config/map/parking_slots_bev.json"
 # 0은 시간 제한 없음이다. 실제 자동 주차 기본 실행은 후보별/전체 시간으로
 # 중단하지 않고, planner의 확장 노드 상한만 비정상 폭증 보호용으로 유지한다.
 DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC = 0.0
@@ -281,6 +283,7 @@ def plan_and_validate(
     candidate_timeout_sec: float = DEFAULT_CANDIDATE_TIMEOUT_SEC,
     required_goal_direction: int | None = None,
     require_goal_heading: bool = True,
+    search_nearby_goal: bool = True,
 ) -> tuple[
     str,
     Pose,
@@ -320,7 +323,7 @@ def plan_and_validate(
             )
             poses = (
                 _nearby_goal_poses(planner, nominal_goal, candidate_name)
-                if require_goal_heading
+                if require_goal_heading and search_nearby_goal
                 else ((candidate_name, nominal_goal),)
             )
             # 같은 목표 위치의 nearby pose는 불과 몇 cm 차이다. 명목 goal에서
@@ -510,21 +513,97 @@ def plan_and_validate(
     raise RuntimeError("; ".join(failures))
 
 
-def heading_free_parking_center(
-    first_goal: Pose,
-    second_goal: Pose,
-) -> Pose:
-    """서로 반대 heading의 rear-axle 목표 두 개에서 주차면 중심을 복원한다.
+def derive_reverse_parking_goal(
+    planner: HybridAStarPlanner,
+    slot_name: str,
+    resolution_cm: float,
+) -> tuple[Pose, int, float]:
+    """주차칸 입구를 향하는 후진주차 goal을 polygon에서 공통 규칙으로 만든다.
 
-    ParkingSlotMap은 주차면 중심에서 양쪽 heading으로 rear axle을 옮긴 두
-    goal pose를 제공한다. 두 위치의 중점은 heading과 무관한 동일 주차면 중심이다.
-    반환 yaw는 사용하지 않는 placeholder다.
+    주차칸의 짧은 두 변은 차량이 출입하는 입구 후보로 본다. 각 변 바깥쪽의
+    free-cell 길이를 검사해 더 열린 쪽을 입구로 선택한다. 차량의 앞은 입구를
+    향하고 rear axle은 차체 중심보다 입구 반대쪽에 있어야 하므로, 선택한
+    outward yaw를 유지한 채 rear axle을 중심에서 반대쪽으로 보정한다.
     """
-    return (
-        (first_goal[0] + second_goal[0]) / 2.0,
-        (first_goal[1] + second_goal[1]) / 2.0,
-        0.0,
+    with DEFAULT_PARKING_SLOTS_PATH.open(encoding="utf-8") as file:
+        slot_polygons = json.load(file)
+    if slot_name not in slot_polygons:
+        raise ValueError(f"parking slot is missing from config: {slot_name}")
+    with np.load(DEFAULT_REGISTRATION_PATH) as registration:
+        lidar_from_camera = np.asarray(
+            registration["affine_matrix"], dtype=np.float64
+        )
+
+    bev_points = np.asarray(slot_polygons[slot_name], dtype=np.float64)
+    if bev_points.ndim != 2 or bev_points.shape[0] < 3 or bev_points.shape[1] != 2:
+        raise ValueError(f"invalid parking polygon for {slot_name}")
+    lidar_points_cm = (
+        np.c_[bev_points, np.ones(len(bev_points))] @ lidar_from_camera.T
+    ) * resolution_cm
+    center_cm = lidar_points_cm.mean(axis=0)
+    edge_lengths = np.linalg.norm(
+        np.roll(lidar_points_cm, -1, axis=0) - lidar_points_cm, axis=1
     )
+    shortest_edge_cm = float(edge_lengths.min())
+    # 정합 반올림 오차로 서로 마주 보는 두 입구 변 길이가 약간 다를 수 있다.
+    entrance_edge_indices = np.flatnonzero(
+        edge_lengths <= shortest_edge_cm * 1.05
+    )
+    if len(entrance_edge_indices) < 2:
+        raise ValueError(f"could not identify entrance edges for {slot_name}")
+
+    rear_axle_offset_cm = (
+        planner.vehicle_length_cm / 2.0 - planner.rear_overhang_cm
+    )
+    candidates: list[tuple[float, int, Pose]] = []
+    for edge_index in entrance_edge_indices:
+        first = lidar_points_cm[edge_index]
+        second = lidar_points_cm[(edge_index + 1) % len(lidar_points_cm)]
+        outward = (first + second) / 2.0 - center_cm
+        outward_norm = float(np.linalg.norm(outward))
+        if outward_norm <= 1e-9:
+            continue
+        outward /= outward_norm
+        yaw_rad = math.atan2(float(outward[1]), float(outward[0]))
+        requested_goal = (
+            float(center_cm[0] - rear_axle_offset_cm * outward[0]),
+            float(center_cm[1] - rear_axle_offset_cm * outward[1]),
+            yaw_rad,
+        )
+        try:
+            adjusted_xy = planner.find_nearest_valid_pose(
+                requested_goal[0],
+                requested_goal[1],
+                requested_goal[2],
+                POSE_ADJUSTMENT_RADIUS_CM,
+            )
+            goal = (adjusted_xy[0], adjusted_xy[1], requested_goal[2])
+        except ValueError:
+            continue
+        free_length_cm = 0.0
+        for distance_cm in np.arange(
+            resolution_cm,
+            ENTRY_CLEARANCE_PROBE_CM + resolution_cm * 0.5,
+            resolution_cm,
+        ):
+            probe_x = int(round((center_cm[0] + outward[0] * distance_cm) / resolution_cm))
+            probe_y = int(round((center_cm[1] + outward[1] * distance_cm) / resolution_cm))
+            if not (
+                0 <= probe_x < planner.width
+                and 0 <= probe_y < planner.height
+                and planner.grid[probe_y, probe_x] < planner.obstacle_threshold
+            ):
+                break
+            free_length_cm = float(distance_cm)
+        candidates.append((free_length_cm, int(edge_index), goal))
+    if not candidates:
+        raise ValueError(f"no footprint-valid entrance goal for {slot_name}")
+
+    free_length_cm, edge_index, goal = max(
+        candidates,
+        key=lambda item: (item[0], -item[1]),
+    )
+    return goal, edge_index, free_length_cm
 
 
 def _nearby_goal_poses(
@@ -862,6 +941,19 @@ def main() -> int:
             (grid_map.width, grid_map.height),
             grid_map.resolution_cm,
         )
+        entrance_goal, entrance_edge, entrance_clearance_cm = (
+            derive_reverse_parking_goal(
+                planner,
+                request.slot_name,
+                grid_map.resolution_cm,
+            )
+        )
+        print(
+            "Reverse parking entrance: "
+            f"slot={request.slot_name}, edge={entrance_edge}, "
+            f"outward clearance={entrance_clearance_cm:.1f} cm, "
+            f"goal yaw={math.degrees(entrance_goal[2]):.1f} deg"
+        )
         (
             selected_candidate,
             adjusted_start,
@@ -876,17 +968,15 @@ def main() -> int:
             request.start_pose_cm,
             (
                 (
-                    "parking center",
-                    heading_free_parking_center(
-                        request.goal_pose_cm,
-                        request.alternative_goal_pose_cm,
-                    ),
+                    "parking entrance",
+                    entrance_goal,
                 ),
             ),
             planning_budget_sec=args.planning_timeout_sec,
             candidate_timeout_sec=args.candidate_timeout_sec,
             required_goal_direction=parking_config.required_final_direction,
             require_goal_heading=LIVE_REQUIRE_GOAL_HEADING,
+            search_nearby_goal=False,
         )
         save_outputs(
             request,

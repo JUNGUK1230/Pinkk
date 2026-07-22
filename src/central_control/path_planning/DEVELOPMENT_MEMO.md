@@ -34,3 +34,12 @@
 - Hybrid A* 내부의 시작 yaw, 조향, 차체 footprint 충돌 검사는 유지
 - 마지막 이동 방향은 후진(`direction=-1`)으로 유지
 - P5 heading-free 단일 목표 탐색은 50,000 node까지 확장했지만 해를 찾지 못했다. 목표 헤딩 제거만으로 전역 Hybrid A* 연산량 문제가 해결되지는 않는다.
+
+## 2026-07-22: 공통 후진주차 입구 규칙 적용
+
+- heading-free 목표 중심 방식은 후진 Reeds-Shepp 연결을 사용할 수 없어 자동 live planner에서 대체
+- 각 주차칸 polygon의 짧은 두 변을 입구 후보로 생성
+- occupancy map에서 바깥쪽 통로 여유가 더 큰 변을 입구로 자동 선택
+- 차량 앞은 입구를 향하고 rear axle은 주차칸 안쪽에 배치
+- 주차칸 이름별 조건문 없이 P1~P10, C1~C2 모두 footprint-valid goal을 생성하는 회귀 확인
+- P5는 하나의 입구 heading으로 축소됐지만 전역 Hybrid A*가 8초/약 3만 node 안에 해를 찾지 못했다. 속도 문제는 별도의 전역 탐색 구조 개선이 필요하다.
