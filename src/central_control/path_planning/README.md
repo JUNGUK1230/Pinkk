@@ -110,7 +110,7 @@ Camera BEV에서 start 클릭, goal 클릭, 경로 확인 후 `s`를 누르면 �
 
 ## Hybrid A* 및 헤딩 지정
 
-Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각 후보는 기본 `-30°`부터 `30°`까지 10° 간격이고, 전진과 후진을 모두 탐색합니다. 인접 primitive 사이의 조향 변화는 최대 10°로 제한하여 `-30°`에서 `+30°`로 즉시 바뀌는 경로를 생성하지 않습니다.
+Hybrid A*는 탐색 상태를 연속 `(x_cm, y_cm, yaw, direction)` pose로 확장합니다. wheelbase와 steering angle을 사용한 kinematic bicycle model로 3 cm motion primitive를 생성하므로, 2D A*처럼 움직임 방향이 즉시 45도씩 변하지 않습니다. 조향각 후보는 기본 `-30°`부터 `30°`까지 **5° 간격**이고, 전진과 후진을 모두 탐색합니다. 인접 primitive 사이의 조향 변화는 최대 10°로 제한하여 `-30°`에서 `+30°`로 즉시 바뀌는 경로를 생성하지 않습니다.
 
 탐색 성능을 위한 3 cm motion primitive와 제어기에 전달하는 경로 간격을 분리합니다. 경로를 찾은 후에 각 primitive의 조향각과 `direction`을 유지한 채 bicycle model로 다시 적분하여 **0.5 cm 간격**의 고밀도 pose를 생성합니다. 따라서 단순 직선 보간과 달리 곡선을 따라 `x`, `y`, `yaw`가 점진적으로 변합니다. 간격은 `config/planner_config.yaml`의 `path_output_step_cm`으로 조정합니다.
 
@@ -254,13 +254,48 @@ P6~P10 같은 통로 직각 주차면은 지도 전체에서 한 번에 주차 p
 
 - staging 앞 경로와 주차 maneuver는 각각 차량 footprint, yaw, steering, 전후진을 검사한다.
 - staging에는 연속된 두 stop point가 저장된다. 차량은 이 위치에서 정지한 뒤 조향을 바꾸고 maneuver를 시작한다.
-- 통로 접근 탐색은 후보당 3초, 최대 4개의 staging 후보로 제한한다. 모두 실패하면 이전 경로를 저장하지 않고 실패를 출력한다.
+- staging 연결은 위치 1cm, yaw 5° 이내로 엄격하게 맞춘다. 통로 접근 탐색은 후보당 3초, 최대 4개의 staging 후보로 제한한다. 모두 실패하면 이전 경로를 저장하지 않고 실패를 출력한다.
 
 회귀 테스트:
 
 ```bash
 python3 scripts/test_t_parking.py
 ```
+
+### ROS 2 경로 토픽 발행
+
+검증을 통과한 `output/live_hybrid_path_world_cm.json`만 ROS 2로 발행한다. publisher는 파일 변경을 감시하며 새 경로가 저장될 때마다 마지막 경로를 다시 발행한다. QoS는 `TRANSIENT_LOCAL`이므로 제어기가 나중에 시작해도 마지막 경로를 받을 수 있다.
+
+- `/pinkk/planned_path` (`nav_msgs/Path`): Pure Pursuit용 pose 경로. 좌표 단위는 **m**, frame은 `lidar_map`이다.
+- `/pinkk/planned_trajectory` (`std_msgs/Float64MultiArray`): 각 점의 `[x_m, y_m, yaw_rad, direction, target_speed_mps, steer_rad, stop_required]` 순서 제어 정보다. `direction=1`은 전진, `-1`은 후진이다.
+- `/pinkk/vehicle_pose` (`geometry_msgs/PoseStamped`): 상단 카메라가 검출한 현재 rear-axle pose다. 단위는 **m**, frame은 `lidar_map`이다. 차량 검출·heading이 모호하거나 scene이 0.5초 이상 오래되면 발행하지 않는다.
+
+```bash
+cd ~/PINKK
+source /opt/ros/<ros_distro>/setup.bash
+python3 -m src.central_control.overhead_vision.path_planning.path_publisher
+```
+
+토픽 확인:
+
+```bash
+ros2 topic echo --once /pinkk/planned_path
+ros2 topic echo --once /pinkk/planned_trajectory
+```
+
+현재 차량 위치 publisher는 localization 실행 중 별도 터미널에서 시작한다.
+
+```bash
+cd ~/PINKK
+source /opt/ros/jazzy/setup.bash
+python3 -m src.central_control.overhead_vision.path_planning.vehicle_pose_publisher
+```
+
+```bash
+ros2 topic echo /pinkk/vehicle_pose
+```
+
+경로 publisher는 제어 명령을 내리지 않는다. 실제 PP/PI 제어기는 토픽을 구독해 별도로 구동해야 한다.
 
 처리 순서는 다음과 같습니다.
 

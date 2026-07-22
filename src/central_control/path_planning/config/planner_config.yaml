@@ -15,11 +15,17 @@ hybrid_astar:
   motion_step_cm: 3.0
   steer_set_deg:
     - -30.0
+    - -25.0
     - -20.0
+    - -15.0
     - -10.0
+    - -5.0
     - 0.0
+    - 5.0
     - 10.0
+    - 15.0
     - 20.0
+    - 25.0
     - 30.0
   # 3 cm primitive 경계에서 한 번에 변할 수 있는 최대 가상 조향각
   max_steer_change_deg: 10.0

@@ -39,6 +39,7 @@ def plan_t_reverse_parking(
     required_final_direction: int = -1,
     minimum_reverse_distance_cm: float = 10.0,
     staging_goal_tolerance_cm: float = 1.0,
+    staging_goal_yaw_tolerance_deg: float = 5.0,
     approach_timeout_sec: float = 3.0,
     max_staging_candidates: int = 4,
 ) -> TParkingPlanResult:
@@ -56,6 +57,8 @@ def plan_t_reverse_parking(
         raise ValueError("minimum reverse distance must be positive")
     if approach_timeout_sec <= 0.0 or max_staging_candidates <= 0:
         raise ValueError("T parking approach limits must be positive")
+    if not 0.0 < staging_goal_yaw_tolerance_deg <= 180.0:
+        raise ValueError("staging goal yaw tolerance must be in (0, 180]")
 
     failures: list[str] = []
     for candidate_index, staging_pose in enumerate(
@@ -81,13 +84,19 @@ def plan_t_reverse_parking(
             failures.append(f"maneuver: {maneuver.message}")
             continue
 
-        # staging pose에서 오차가 남으면 두 결과를 연결할 때 yaw/spacing jump가
-        # 생긴다. 1cm 이내 exact staging 연결만 허용한다.
+        # staging pose에서 위치 또는 yaw 오차가 남으면 두 결과를 연결할 때
+        # spacing/yaw jump가 생긴다. 따라서 일반 goal(4cm, 15deg)보다 엄격한
+        # staging 목표를 사용해 analytic expansion으로 정확히 연결한다.
         original_tolerance = planner.goal_tolerance_cm
+        original_yaw_tolerance = planner.goal_yaw_tolerance_rad
         original_timeout = planner.timeout_sec
         planner.goal_tolerance_cm = min(
             original_tolerance,
             staging_goal_tolerance_cm,
+        )
+        planner.goal_yaw_tolerance_rad = min(
+            original_yaw_tolerance,
+            math.radians(staging_goal_yaw_tolerance_deg),
         )
         planner.timeout_sec = min(original_timeout, approach_timeout_sec)
         try:
@@ -102,6 +111,7 @@ def plan_t_reverse_parking(
             )
         finally:
             planner.goal_tolerance_cm = original_tolerance
+            planner.goal_yaw_tolerance_rad = original_yaw_tolerance
             planner.timeout_sec = original_timeout
         if not global_path.success:
             failures.append(f"approach: {global_path.message}")

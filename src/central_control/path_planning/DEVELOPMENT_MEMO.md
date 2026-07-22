@@ -57,5 +57,26 @@
 - 주차칸 입구 방향을 기준으로 15~30cm 앞 통로에 staging pose를 만든다.
 - 첫 Hybrid A*는 현재 pose에서 staging pose까지 접근하고, 두 번째 Hybrid A*는 staging에서 final pose까지 T자 전진·후진 maneuver만 만든다.
 - 두 구간 사이에는 연속 stop point를 넣어 정지 상태에서 조향을 바꿀 수 있게 했다.
+- staging 목표의 yaw 허용오차도 5°로 제한했다. 이전 15° 허용오차에서는 접근 경로와 maneuver 사이에 yaw jump가 생길 수 있었다.
 - P6 기준 회귀에서는 접근 약 200 node와 maneuver 약 80 node로, 마지막 후진 10cm 이상 조건을 통과했다.
 - 현장 start에서 통로 접근이 3초 안에 실패하면 후보를 최대 4개까지만 검사하고 fail-closed 한다. 다음 개선은 2D 통로 guide를 Hybrid 접근 탐색의 heuristic으로 직접 사용하는 것이다.
+
+## 2026-07-22: 검증된 trajectory ROS 2 발행
+
+- `overhead_vision/path_planning/path_publisher.py`가 `live_hybrid_path_world_cm.json`을 감시해 ROS 2 토픽으로 발행한다.
+- `/pinkk/planned_path`는 m 단위 `nav_msgs/Path`, `/pinkk/planned_trajectory`는 전후진·속도·조향·정지 정보를 포함한 7열 `Float64MultiArray`다.
+- planner가 validator를 통과해 저장한 `planner: hybrid_astar` trajectory만 발행한다. `control_ready: false` 또는 validation 정보가 없는 파일은 fail-closed로 거부한다.
+- 아직 제어기 subscriber는 연결하지 않았으며, 현재 단계는 토픽 규약·단위·발행 확인이다.
+
+## 2026-07-22: 실시간 차량 pose ROS 2 발행
+
+- `/pinkk/vehicle_pose`에 상단 카메라 localization의 rear-axle `(x_m, y_m, yaw)`를 `PoseStamped`로 발행한다.
+- `live_vision_scene.json`의 새 frame만 감시하며, planning-ready가 아니거나 0.5초보다 오래된 scene은 발행하지 않는다.
+- 경로 토픽과 현재 pose 토픽 모두 `lidar_map` frame과 m 단위를 사용해 PP/PI 제어기가 직접 비교할 수 있게 맞췄다.
+
+## 2026-07-22: Hybrid A* 조향각 해상도 5° 적용
+
+- 조향 물리 한계는 ±30°로 유지하고, 탐색 후보를 기존 10° 간격 7개에서 5° 간격 13개로 늘렸다.
+- T자 주차 maneuver에서 더 완만한 곡선 후보를 찾을 수 있다.
+- 3cm motion primitive당 최대 조향 변화 10° 제한은 유지해 조향각 순간 점프를 막는다.
+- 후보 수 증가로 탐색량은 커질 수 있으므로 T자 staging 분리와 함께 실행 시간을 계속 확인한다.
