@@ -196,7 +196,9 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 - 모든 주차면의 Camera BEV·LiDAR 중심과 차량 mask 점유율
 - 설정된 목표 주차면과 서로 180° 다른 두 rear-axle goal pose 후보
 
-현재 통합 테스트 설정은 `../config/yolo/realtime_localization.yaml`의 `target_slot_name: P5`를 사용하므로 실제 planning request는 가까운 주차면이 아니라 항상 P5를 선택합니다. P5가 점유되면 다른 자리로 자동 변경하지 않고 계획을 차단합니다. 아래 P6 내용은 후진주차 알고리즘 회귀 기록으로 유지합니다.
+현재 통합 테스트 설정은 `../config/yolo/realtime_localization.yaml`의 `parking_assignment.active_phase: entry_to_parking`을 사용합니다. `config/map/parking_points.json`의 입구 BEV 좌표를 기준으로 **P6~P10 중 비어 있는 칸을 먼 순서**로 정렬하고, 첫 후보만 planner에 전달합니다. 따라서 가장 먼 칸이 점유되면 다음 후보로 즉시 넘어갑니다. 현재 지도에서는 대체로 `P6 → P7 → P8 → P9 → P10` 순서이며, 실제 순서는 각 칸 중심과 입구 사이의 BEV 직선거리로 결정됩니다. 후보 순서는 `output/live_vision_scene.json`의 `candidate_slot_names`에 저장됩니다.
+
+`charge_to_exit` 단계의 C1/C2 충전 후 P1~P5 배정 규칙은 설정에 미리 등록해 두었지만, 에피소드 상태 전환은 아직 구현하지 않았습니다. 현 단계에서는 입구 차량의 첫 주차 배정만 동작합니다.
 
 ### P6 후진주차 구현 메모
 
@@ -269,7 +271,7 @@ localization은 scene JSON을 공개하기 직전에 동일 frame의 Camera BEV�
 
 검출 누락, stale 좌표, 모호한 헤딩, 경로 탐색 실패, smoothing 실패 또는 validator 실패 시 이전 자동 경로 파일과 overlay를 삭제합니다. 따라서 단순히 Hybrid A*가 경로를 찾았다는 이유만으로 제어용 파일이 남지 않습니다. 이번 구현은 **한 scene에서 한 번 계획하는 기본 파이프라인**이며, 지속 재계획과 제어기 전송은 아직 하지 않습니다.
 
-검증된 현재 목표(P5) 경로가 생성되면 localization 프로세스가 `live_hybrid_path_world_cm.json` 변경을 감지해 현재 창에 굵은 빨간 polyline으로 표시합니다. 차량이 저장 경로의 start에서 8cm 이상 이동하면 오래된 경로를 숨깁니다. 화면에 선이 없으면 아직 planner를 실행하지 않았거나, 경로가 validator에서 차단됐거나, 실행 중인 localization이 변경 전 설정을 읽은 상태인지 확인합니다.
+검증된 현재 자동 배정 목표 경로가 생성되면 localization 프로세스가 `live_hybrid_path_world_cm.json` 변경을 감지해 현재 창에 굵은 빨간 polyline으로 표시합니다. 차량이 저장 경로의 start에서 8cm 이상 이동하면 오래된 경로를 숨깁니다. 화면에 선이 없으면 아직 planner를 실행하지 않았거나, 경로가 validator에서 차단됐거나, 실행 중인 localization이 변경 전 설정을 읽은 상태인지 확인합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning

@@ -19,6 +19,7 @@ from overhead_vision.localization.scene_localizer import (  # noqa: E402
     AffineBevToLidar,
     Detection,
     EgoVehicleTracker,
+    ParkingAssignmentPolicy,
     ParkingSlotMap,
     SceneLocalizer,
     save_scene_observation,
@@ -160,6 +161,65 @@ def main() -> int:
         )
         assert fixed_scene.planning_request is not None
         assert fixed_scene.planning_request.slot_name == "C1"
+
+        # 입구 기준 자동 배정은 허용 칸 중 빈 자리만 남긴 뒤, 가장 먼 칸부터
+        # 후보 순서를 만든다. planner는 첫 후보만 받아 불필요한 주차칸 탐색을 줄인다.
+        entry_policy = ParkingAssignmentPolicy(
+            name="entry_to_parking",
+            reference_bev_px=(120.0, 120.0),
+            allowed_slots=("C1", "free_slot"),
+            preference="farthest",
+            candidate_limit=2,
+        )
+        assignment_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        assigned_scene = SceneLocalizer(
+            assignment_tracker,
+            parking,
+            parking_assignment=entry_policy,
+        ).observe(
+            detections,
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        assert assigned_scene.planning_request is not None
+        assert assigned_scene.planning_request.slot_name == "C1"
+        assert assigned_scene.planning_request.candidate_slot_names == (
+            "C1",
+            "free_slot",
+        )
+        assert assigned_scene.planning_request.assignment_policy == "entry_to_parking"
+
+        # 가장 먼 C1이 점유되면 다음으로 먼 free_slot으로 즉시 넘어간다.
+        occupied_c1 = detection((1200.0, 300.0), 0.99, 100.0, 70.0)
+        fallback_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        fallback_scene = SceneLocalizer(
+            fallback_tracker,
+            parking,
+            parking_assignment=entry_policy,
+        ).observe(
+            [parked_car, occupied_c1, ego],
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        assert fallback_scene.planning_request is not None
+        assert fallback_scene.planning_request.slot_name == "free_slot"
+        assert fallback_scene.planning_request.candidate_slot_names == ("free_slot",)
 
         occupied_scene = SceneLocalizer(
             fixed_tracker,

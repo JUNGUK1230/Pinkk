@@ -82,11 +82,51 @@ class ParkingSlotObservation:
 
 
 @dataclass(frozen=True)
+class ParkingAssignmentPolicy:
+    """입구·출구 기준으로 빈 주차칸 후보를 정렬하는 공통 운영 규칙."""
+
+    name: str
+    reference_bev_px: Point
+    allowed_slots: tuple[str, ...]
+    preference: str
+    candidate_limit: int
+
+    def __post_init__(self) -> None:
+        if self.preference not in ("nearest", "farthest"):
+            raise ValueError("parking preference must be nearest or farthest")
+        if self.candidate_limit <= 0:
+            raise ValueError("parking candidate limit must be positive")
+        if not self.allowed_slots:
+            raise ValueError("parking assignment must contain allowed slots")
+
+    def rank_free_slots(
+        self,
+        slots: Sequence[ParkingSlotObservation],
+    ) -> tuple[ParkingSlotObservation, ...]:
+        """점유된 칸을 제외하고 기준점 실제 BEV 거리 순으로 정렬한다."""
+        allowed = set(self.allowed_slots)
+        free_slots = [
+            slot for slot in slots if slot.name in allowed and not slot.occupied
+        ]
+        ranked = sorted(
+            free_slots,
+            key=lambda slot: math.hypot(
+                slot.center_bev_px[0] - self.reference_bev_px[0],
+                slot.center_bev_px[1] - self.reference_bev_px[1],
+            ),
+            reverse=self.preference == "farthest",
+        )
+        return tuple(ranked[: self.candidate_limit])
+
+
+@dataclass(frozen=True)
 class PlanningRequest:
     slot_name: str
     start_pose_cm: Pose
     goal_pose_cm: Pose
     alternative_goal_pose_cm: Pose
+    candidate_slot_names: tuple[str, ...] = ()
+    assignment_policy: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -96,6 +136,8 @@ class PlanningRequest:
             "alternative_goal_pose_cm": _pose_dict(
                 self.alternative_goal_pose_cm
             ),
+            "candidate_slot_names": list(self.candidate_slot_names),
+            "assignment_policy": self.assignment_policy,
         }
 
 
@@ -405,11 +447,13 @@ class SceneLocalizer:
         parking_slots: ParkingSlotMap,
         goal_heading_weight_cm: float = 14.0,
         target_slot_name: str | None = None,
+        parking_assignment: ParkingAssignmentPolicy | None = None,
     ) -> None:
         self.tracker = tracker
         self.parking_slots = parking_slots
         self.goal_heading_weight_cm = goal_heading_weight_cm
         self.target_slot_name = target_slot_name
+        self.parking_assignment = parking_assignment
 
     def observe(
         self,
@@ -467,8 +511,25 @@ class SceneLocalizer:
                     f"target parking slot is occupied: {self.target_slot_name}",
                 )
             empty_slots = [target_slot]
+            candidate_slot_names = (target_slot.name,)
+            assignment_policy = "fixed_target"
+        elif self.parking_assignment is not None:
+            empty_slots = list(self.parking_assignment.rank_free_slots(slots))
+            if not empty_slots:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    "no free parking slot in active assignment policy",
+                )
+            candidate_slot_names = tuple(slot.name for slot in empty_slots)
+            assignment_policy = self.parking_assignment.name
         else:
             empty_slots = [slot for slot in slots if not slot.occupied]
+            candidate_slot_names = tuple(slot.name for slot in empty_slots)
+            assignment_policy = None
         if not empty_slots:
             return SceneObservation(
                 frame_index,
@@ -501,15 +562,33 @@ class SceneLocalizer:
                 * abs(_angle_difference(candidates[0][2], start[2]))
             )
             ranked.append((score, slot, candidates[0], candidates[1]))
-        _, selected_slot, goal, alternative = min(ranked, key=lambda item: item[0])
-        request = PlanningRequest(selected_slot.name, start, goal, alternative)
+        if self.parking_assignment is not None and self.target_slot_name is None:
+            # 정책에서 이미 입구·출구 거리 기준 우선순위를 정했으므로, 첫 빈 칸만
+            # 선택한다. yaw 정렬 점수는 같은 칸의 두 rear-axle pose 순서에만 쓴다.
+            _, selected_slot, goal, alternative = ranked[0]
+        else:
+            _, selected_slot, goal, alternative = min(
+                ranked, key=lambda item: item[0]
+            )
+        request = PlanningRequest(
+            selected_slot.name,
+            start,
+            goal,
+            alternative,
+            candidate_slot_names,
+            assignment_policy,
+        )
         return SceneObservation(
             frame_index,
             observed_at,
             vehicle,
             slots,
             request,
-            "planning input ready",
+            (
+                "planning input ready"
+                if assignment_policy is None
+                else f"planning input ready ({assignment_policy})"
+            ),
         )
 
 

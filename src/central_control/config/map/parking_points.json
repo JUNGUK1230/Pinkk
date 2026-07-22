@@ -1,0 +1,10 @@
+{
+  "entrance": {
+    "type": "entrance",
+    "center_bev": [100.0, 120.0]
+  },
+  "exit": {
+    "type": "exit",
+    "center_bev": [93.33333333333333, 676.0]
+  }
+}

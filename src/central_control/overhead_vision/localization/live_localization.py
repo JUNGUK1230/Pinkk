@@ -25,6 +25,7 @@ if __package__:
         AffineBevToLidar,
         Detection,
         EgoVehicleTracker,
+        ParkingAssignmentPolicy,
         ParkingSlotMap,
         SceneLocalizer,
         SceneObservation,
@@ -40,6 +41,7 @@ else:
         AffineBevToLidar,
         Detection,
         EgoVehicleTracker,
+        ParkingAssignmentPolicy,
         ParkingSlotMap,
         SceneLocalizer,
         SceneObservation,
@@ -197,13 +199,53 @@ def build_localizer(
     target_slot_name = (
         str(target_slot_value) if target_slot_value is not None else None
     )
+    parking_assignment = load_parking_assignment(config)
     return (
         SceneLocalizer(
             tracker,
             slots,
             target_slot_name=target_slot_name,
+            parking_assignment=parking_assignment,
         ),
         transform,
+    )
+
+
+def load_parking_assignment(
+    config: dict[str, object],
+) -> ParkingAssignmentPolicy | None:
+    """현재 에피소드의 입구·출구 기반 주차칸 배정 규칙을 읽는다."""
+    raw_assignment = config.get("parking_assignment")
+    if not isinstance(raw_assignment, dict):
+        return None
+    phase_name = raw_assignment.get("active_phase")
+    phases = raw_assignment.get("phases")
+    if not isinstance(phase_name, str) or not isinstance(phases, dict):
+        raise ValueError("parking_assignment requires active_phase and phases")
+    phase = phases.get(phase_name)
+    if not isinstance(phase, dict):
+        raise ValueError(f"parking assignment phase is missing: {phase_name}")
+    reference_name = phase.get("reference_point")
+    if not isinstance(reference_name, str):
+        raise ValueError("parking assignment reference_point must be a string")
+    points_path = resolve_path(str(config["parking_points_path"]))
+    with points_path.open(encoding="utf-8") as file:
+        points = json.load(file)
+    reference = points.get(reference_name)
+    if not isinstance(reference, dict):
+        raise ValueError(f"parking reference point is missing: {reference_name}")
+    center = reference.get("center_bev")
+    if not isinstance(center, list) or len(center) != 2:
+        raise ValueError(f"parking reference has invalid center_bev: {reference_name}")
+    raw_slots = phase.get("allowed_slots")
+    if not isinstance(raw_slots, list):
+        raise ValueError("parking assignment allowed_slots must be a list")
+    return ParkingAssignmentPolicy(
+        name=phase_name,
+        reference_bev_px=(float(center[0]), float(center[1])),
+        allowed_slots=tuple(str(slot) for slot in raw_slots),
+        preference=str(phase.get("preference", "nearest")),
+        candidate_limit=int(phase.get("candidate_limit", len(raw_slots))),
     )
 
 
@@ -513,6 +555,11 @@ def print_scene(scene: SceneObservation) -> None:
             f"  Selected {request.slot_name}: start={request.start_pose_cm}, "
             f"goal={request.goal_pose_cm}"
         )
+        if request.candidate_slot_names:
+            print(
+                "  Assignment candidates: "
+                + " -> ".join(request.candidate_slot_names)
+            )
 
 
 def save_bev_image_atomic(image: np.ndarray, save_path: Path) -> None:
@@ -575,7 +622,15 @@ def main() -> int:
     print(f"Loaded YOLO segmentation: {model_path} names={model.names}")
     print(f"Scene output: {output_path}")
     print(f"Latest Camera BEV: {bev_output_path}")
-    print(f"Fixed target parking slot: {target_slot_name}")
+    if target_slot_name is not None:
+        print(f"Fixed target parking slot: {target_slot_name}")
+    elif localizer.parking_assignment is not None:
+        policy = localizer.parking_assignment
+        print(
+            "Parking assignment: "
+            f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
+            f"slots={list(policy.allowed_slots)}"
+        )
     print("h: arm manual heading click | x: clear heading | q/ESC: quit")
     heading_selector = ManualHeadingSelector(localizer.tracker, transform)
     path_overlay = PlannedPathOverlay(

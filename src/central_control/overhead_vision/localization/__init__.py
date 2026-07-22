@@ -3,6 +3,7 @@
 from .scene_localizer import (
     Detection,
     EgoVehicleTracker,
+    ParkingAssignmentPolicy,
     ParkingSlotMap,
     SceneLocalizer,
     SceneObservation,
@@ -12,6 +13,7 @@ from .scene_localizer import (
 __all__ = [
     "Detection",
     "EgoVehicleTracker",
+    "ParkingAssignmentPolicy",
     "ParkingSlotMap",
     "SceneLocalizer",
     "SceneObservation",
