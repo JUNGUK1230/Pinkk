@@ -7,7 +7,7 @@ ROS 2로 전송하지 않으며, validator를 통과한 trajectory만 파일로 
 
 import argparse
 import csv
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -29,7 +29,6 @@ sys.path.append(str(SCRIPT_DIR))
 from hybrid_astar_planner import (  # noqa: E402
     HybridAStarPlanner,
     HybridAStarResult,
-    HybridState,
 )
 from occupancy_grid import OccupancyGridMap  # noqa: E402
 from test_astar import resolve_map_image  # noqa: E402
@@ -56,8 +55,13 @@ POSE_ADJUSTMENT_RADIUS_CM = 30.0
 # 주차면 안쪽의 작은 범위에서 동일 heading의 rear-axle goal을 다시 탐색한다.
 GOAL_SEARCH_RADIUS_CM = 3.0
 GOAL_SEARCH_STEP_CM = 1.0
-DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC = 30.0
-DEFAULT_CANDIDATE_TIMEOUT_SEC = 5.0
+# 실시간 경로 생성은 주차면 중심 위치만 목표로 삼고 final yaw는 강제하지 않는다.
+# 시작 yaw는 차체 footprint와 전진/후진 kinematics에 반드시 필요하므로 유지한다.
+LIVE_REQUIRE_GOAL_HEADING = False
+# 0은 시간 제한 없음이다. 실제 자동 주차 기본 실행은 후보별/전체 시간으로
+# 중단하지 않고, planner의 확장 노드 상한만 비정상 폭증 보호용으로 유지한다.
+DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC = 0.0
+DEFAULT_CANDIDATE_TIMEOUT_SEC = 0.0
 DEFAULT_SCENE_PATH = PROJECT_ROOT / "output/live_vision_scene.json"
 DEFAULT_REGISTRATION_PATH = (
     CENTRAL_ROOT
@@ -75,10 +79,9 @@ OUTPUT_FILES = (
 
 @dataclass(frozen=True)
 class AutomaticParkingConfig:
-    """자동 주차 경로가 반드시 만족해야 하는 마지막 maneuver 조건."""
+    """주차칸 종류와 무관한 자동 주차 종단 방향 조건."""
 
     required_final_direction: int
-    min_final_direction_distance_cm: float
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,8 +101,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC,
         help=(
-            "Maximum total Hybrid A* planning time (default: 30 seconds). "
-            "Use 0 only for an explicitly unlimited diagnostic run."
+            "Maximum total Hybrid A* planning time. "
+            "The default 0 disables the time limit."
         ),
     )
     parser.add_argument(
@@ -107,8 +110,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_CANDIDATE_TIMEOUT_SEC,
         help=(
-            "Maximum time for one nearby goal candidate (default: 5 seconds). "
-            "Use 0 only for an explicitly unlimited diagnostic candidate."
+            "Maximum time for one nearby goal candidate. "
+            "The default 0 disables the time limit."
         ),
     )
     return parser.parse_args()
@@ -213,15 +216,10 @@ def load_planner_stack() -> tuple[
     parking_config = AutomaticParkingConfig(
         required_final_direction=int(
             automatic_config["required_final_direction"]
-        ),
-        min_final_direction_distance_cm=float(
-            automatic_config["min_final_direction_distance_cm"]
-        ),
+        )
     )
     if parking_config.required_final_direction not in (-1, 1):
         raise ValueError("automatic parking direction must be -1 or 1")
-    if parking_config.min_final_direction_distance_cm <= 0.0:
-        raise ValueError("automatic parking final distance must be positive")
     return grid_map, planner, profile_config, limits, parking_config
 
 
@@ -282,7 +280,7 @@ def plan_and_validate(
     planning_budget_sec: float = DEFAULT_TOTAL_PLANNING_TIMEOUT_SEC,
     candidate_timeout_sec: float = DEFAULT_CANDIDATE_TIMEOUT_SEC,
     required_goal_direction: int | None = None,
-    min_final_direction_distance_cm: float = 0.0,
+    require_goal_heading: bool = True,
 ) -> tuple[
     str,
     Pose,
@@ -291,7 +289,7 @@ def plan_and_validate(
     list[TrajectoryPoint],
     TrajectoryValidationResult,
 ]:
-    """두 goal heading과 주변 pose 중 검증된 첫 경로를 반환한다.
+    """목표 위치 후보 중 검증된 첫 경로를 반환한다.
 
     두 timeout은 독립적이다. 0은 명시적인 진단 실행에서만 무제한을 뜻한다.
     """
@@ -313,18 +311,23 @@ def plan_and_validate(
     attempted_counts: dict[str, int] = {}
     for candidate_name, raw_goal in goal_candidates:
         try:
-            nominal_goal = adjust_pose(planner, raw_goal, candidate_name)
-            poses = _nearby_goal_poses(planner, nominal_goal, candidate_name)
-            # 같은 heading의 nearby pose는 불과 몇 cm 차이다. 명목 goal에서
-            # 만든 expensive 2D cost-to-go를 재사용해 후보당 Dijkstra를 없앤다.
-            heuristic_goal = _parking_approach_pose(
-                nominal_goal,
-                required_goal_direction,
-                min_final_direction_distance_cm,
+            # Heading-free 목표는 특정 차체 각도로 주차면 중심을 보정하지 않는다.
+            # planner가 내부 yaw 상태 중 충돌 없는 도착 자세를 직접 선택한다.
+            nominal_goal = (
+                adjust_pose(planner, raw_goal, candidate_name)
+                if require_goal_heading
+                else raw_goal
             )
+            poses = (
+                _nearby_goal_poses(planner, nominal_goal, candidate_name)
+                if require_goal_heading
+                else ((candidate_name, nominal_goal),)
+            )
+            # 같은 목표 위치의 nearby pose는 불과 몇 cm 차이다. 명목 goal에서
+            # 만든 expensive 2D cost-to-go를 재사용해 후보당 Dijkstra를 없앤다.
             cost_map = planner.build_holonomic_cost_to_goal(
-                heuristic_goal[0],
-                heuristic_goal[1],
+                nominal_goal[0],
+                nominal_goal[1],
             )
             prepared_candidates.append((candidate_name, poses, cost_map))
             candidate_failures[candidate_name] = []
@@ -332,10 +335,8 @@ def plan_and_validate(
         except (TypeError, ValueError) as error:
             failures.append(f"{candidate_name}: {error}")
 
-    # 두 heading의 명목 goal을 먼저 확인한다. 이어서 선호 목표의 가까운
-    # nearby pose 두 개를 먼저 보되 alternative에도 같은 수의 기회를 보장하고,
-    # 나머지는 번갈아 탐색한다. P6의 유력 primary를 빠르게 풀면서도 전체
-    # timeout 때문에 alternative가 완전히 굶는 상황을 막는다.
+    # 두 heading의 명목 goal을 먼저 확인한다. 이어서 각 heading의 가까운
+    # nearby pose에 같은 수의 기회를 주고 나머지도 번갈아 탐색한다.
     ordered_attempts: list[tuple[str, str, Pose, np.ndarray, int]] = []
     for candidate_name, poses, cost_map in prepared_candidates:
         if poses:
@@ -411,50 +412,11 @@ def plan_and_validate(
                 max(0.1, remaining_sec),
             )
         planner.timeout_sec = effective_candidate_timeout
-        planning_goal = _parking_approach_pose(
-            adjusted_goal,
-            required_goal_direction,
-            min_final_direction_distance_cm,
-        )
-        if planner.is_pose_collision(*planning_goal):
-            candidate_failures[candidate_name].append(
-                "parking approach pose has an invalid footprint"
-            )
-            print(
-                "  candidate skipped: parking approach footprint collision "
-                f"at {planning_goal}"
-            )
-            planner.timeout_sec = configured_timeout_sec
-            continue
-        final_collision_cm = _first_final_maneuver_collision_cm(
-            planner,
-            planning_goal,
-            adjusted_goal,
-            required_goal_direction,
-            min_final_direction_distance_cm,
-        )
-        if final_collision_cm is not None:
-            candidate_failures[candidate_name].append(
-                "final parking maneuver footprint collision at "
-                f"{final_collision_cm:.2f} cm"
-            )
-            print(
-                "  candidate skipped: final parking maneuver footprint "
-                f"collision at {final_collision_cm:.2f} cm"
-            )
-            planner.timeout_sec = configured_timeout_sec
-            continue
         print(
             "Planning candidate "
             f"{goal_label} ({attempted_counts[candidate_name]}/"
             f"{candidate_pose_count})..."
         )
-        if planning_goal != adjusted_goal:
-            print(
-                "  parking approach: "
-                f"{planning_goal} -> final {adjusted_goal} "
-                f"(direction={required_goal_direction})"
-            )
         candidate_started_at = time.monotonic()
 
         def report_progress(
@@ -471,18 +433,16 @@ def plan_and_validate(
         try:
             result = planner.plan(
                 adjusted_start,
-                planning_goal,
+                adjusted_goal,
                 holonomic_cost_to_goal=cost_map,
                 progress_callback=report_progress,
                 progress_interval_nodes=1000,
                 require_smoothed_path=True,
-                # 후진 주차는 approach에 전진으로 도착해 완전히 정지한 뒤
-                # 기어를 바꾸고 마지막 직선 후진 구간을 시작한다.
-                required_goal_direction=(
-                    -required_goal_direction
-                    if required_goal_direction is not None
-                    else None
-                ),
+                # 주차칸 이름이나 고정 후진거리를 사용하지 않고 목표 pose까지
+                # 직접 탐색한다. 실시간 모드에서는 final yaw를 강제하지 않지만
+                # 마지막 이동 방향은 자동 주차 조건(후진)으로 제한한다.
+                required_goal_direction=required_goal_direction,
+                require_goal_heading=require_goal_heading,
             )
         except (TypeError, ValueError) as error:
             candidate_failures[candidate_name].append(str(error))
@@ -499,18 +459,6 @@ def plan_and_validate(
             candidate_failures[candidate_name].append(result.message)
             continue
         try:
-            result = _append_final_parking_maneuver(
-                planner,
-                result,
-                planning_goal,
-                adjusted_goal,
-                required_goal_direction,
-                min_final_direction_distance_cm,
-            )
-        except ValueError as error:
-            candidate_failures[candidate_name].append(str(error))
-            continue
-        try:
             trajectory = build_trajectory_profile(
                 result.path,
                 wheelbase_cm=planner.wheelbase_cm,
@@ -524,9 +472,6 @@ def plan_and_validate(
                 limits,
                 collision_checker=planner.is_pose_collision,
                 required_final_direction=required_goal_direction,
-                min_final_direction_distance_cm=(
-                    min_final_direction_distance_cm
-                ),
             )
         except (TypeError, ValueError) as error:
             candidate_failures[candidate_name].append(str(error))
@@ -565,117 +510,21 @@ def plan_and_validate(
     raise RuntimeError("; ".join(failures))
 
 
-def _parking_approach_pose(
-    goal: Pose,
-    required_direction: int | None,
-    distance_cm: float,
+def heading_free_parking_center(
+    first_goal: Pose,
+    second_goal: Pose,
 ) -> Pose:
-    """종단 직선 maneuver를 시작할 rear-axle approach pose를 반환한다."""
-    if required_direction is None or distance_cm <= 0.0:
-        return goal
+    """서로 반대 heading의 rear-axle 목표 두 개에서 주차면 중심을 복원한다.
+
+    ParkingSlotMap은 주차면 중심에서 양쪽 heading으로 rear axle을 옮긴 두
+    goal pose를 제공한다. 두 위치의 중점은 heading과 무관한 동일 주차면 중심이다.
+    반환 yaw는 사용하지 않는 placeholder다.
+    """
     return (
-        goal[0] - required_direction * distance_cm * math.cos(goal[2]),
-        goal[1] - required_direction * distance_cm * math.sin(goal[2]),
-        goal[2],
+        (first_goal[0] + second_goal[0]) / 2.0,
+        (first_goal[1] + second_goal[1]) / 2.0,
+        0.0,
     )
-
-
-def _append_final_parking_maneuver(
-    planner: HybridAStarPlanner,
-    result: HybridAStarResult,
-    approach: Pose,
-    goal: Pose,
-    required_direction: int | None,
-    distance_cm: float,
-) -> HybridAStarResult:
-    """approach에서 정지 후 목표까지 직선 전진/후진 구간을 연결한다."""
-    if required_direction is None or distance_cm <= 0.0:
-        return result
-    if not result.path:
-        raise ValueError("parking approach path is empty")
-    endpoint = result.path[-1]
-    position_error_cm = math.hypot(
-        endpoint.x_cm - approach[0],
-        endpoint.y_cm - approach[1],
-    )
-    yaw_error_rad = abs(planner._angle_difference(endpoint.yaw_rad, approach[2]))
-    if position_error_cm > 0.05 or yaw_error_rad > math.radians(0.1):
-        raise ValueError(
-            "parking approach did not end at the exact pose: "
-            f"position_error={position_error_cm:.3f} cm, "
-            f"yaw_error={math.degrees(yaw_error_rad):.3f} deg"
-        )
-
-    final_path = list(result.path)
-    sample_count = max(1, math.ceil(distance_cm / planner.path_output_step_cm))
-    for sample_index in range(1, sample_count + 1):
-        travelled_cm = min(
-            sample_index * distance_cm / sample_count,
-            distance_cm,
-        )
-        state = HybridState(
-            approach[0]
-            + required_direction * travelled_cm * math.cos(goal[2]),
-            approach[1]
-            + required_direction * travelled_cm * math.sin(goal[2]),
-            goal[2],
-            required_direction,
-            0.0,
-        )
-        if planner.is_pose_collision(state.x_cm, state.y_cm, state.yaw_rad):
-            raise ValueError(
-                "final parking maneuver footprint collision at "
-                f"{travelled_cm:.2f} cm"
-            )
-        final_path.append(state)
-
-    terminal_distance_cm = planner.terminal_direction_distance_cm(
-        final_path,
-        required_direction,
-    )
-    if terminal_distance_cm + 1e-6 < distance_cm:
-        raise ValueError(
-            f"final parking maneuver is only {terminal_distance_cm:.2f} cm"
-        )
-    additional_cost = distance_cm * (
-        planner.reverse_penalty if required_direction < 0 else 1.0
-    )
-    if endpoint.direction != required_direction:
-        additional_cost += planner.gear_switch_penalty
-    return replace(
-        result,
-        path=final_path,
-        total_cost=result.total_cost + additional_cost,
-        message=(
-            result.message
-            + f"; final parking maneuver {distance_cm:.1f} cm "
-            + ("reverse" if required_direction < 0 else "forward")
-        ),
-    )
-
-
-def _first_final_maneuver_collision_cm(
-    planner: HybridAStarPlanner,
-    approach: Pose,
-    goal: Pose,
-    required_direction: int | None,
-    distance_cm: float,
-) -> float | None:
-    """Hybrid 탐색 전에 마지막 직선 maneuver의 최초 충돌 위치를 찾는다."""
-    if required_direction is None or distance_cm <= 0.0:
-        return None
-    sample_count = max(1, math.ceil(distance_cm / planner.path_output_step_cm))
-    for sample_index in range(sample_count + 1):
-        travelled_cm = sample_index * distance_cm / sample_count
-        if planner.is_pose_collision(
-            approach[0]
-            + required_direction * travelled_cm * math.cos(goal[2]),
-            approach[1]
-            + required_direction * travelled_cm * math.sin(goal[2]),
-            goal[2],
-        ):
-            return travelled_cm
-    return None
 
 
 def _nearby_goal_poses(
@@ -832,9 +681,6 @@ def save_outputs(
             {
                 "required_final_direction": (
                     parking_config.required_final_direction
-                ),
-                "min_final_direction_distance_cm": (
-                    parking_config.min_final_direction_distance_cm
                 ),
             }
             if parking_config is not None
@@ -1029,15 +875,18 @@ def main() -> int:
             limits,
             request.start_pose_cm,
             (
-                ("primary goal", request.goal_pose_cm),
-                ("alternative goal", request.alternative_goal_pose_cm),
+                (
+                    "parking center",
+                    heading_free_parking_center(
+                        request.goal_pose_cm,
+                        request.alternative_goal_pose_cm,
+                    ),
+                ),
             ),
             planning_budget_sec=args.planning_timeout_sec,
             candidate_timeout_sec=args.candidate_timeout_sec,
             required_goal_direction=parking_config.required_final_direction,
-            min_final_direction_distance_cm=(
-                parking_config.min_final_direction_distance_cm
-            ),
+            require_goal_heading=LIVE_REQUIRE_GOAL_HEADING,
         )
         save_outputs(
             request,

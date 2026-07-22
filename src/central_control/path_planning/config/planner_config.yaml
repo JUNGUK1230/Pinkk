@@ -6,9 +6,9 @@ planner:
   prevent_corner_cutting: true
 
 hybrid_astar:
-  # 폭 10 cm 차량 rectangle 외부에 추가로 확보할 장애물 안전거리.
-  # 폭 20 cm 주차면 진입 여유를 유지하기 위해 양쪽 2 cm를 적용한다.
-  footprint_safety_margin_cm: 2.0
+  # 회전된 12 x 10 cm 차량 footprint 자체로 실제 벽 충돌을 검사한다.
+  # 좁은 주차면 시험에서는 추가 obstacle 팽창 없이 실차 외곽만 적용한다.
+  footprint_safety_margin_cm: 0.0
   yaw_resolution_deg: 10.0
   # 탐색은 3 cm primitive로 유지하고, 제어용 결과만 0.5 cm 간격으로 재샘플링한다.
   path_output_step_cm: 0.5
@@ -39,7 +39,7 @@ hybrid_astar:
   # 14 cm 물리 한계보다 완만한 18 cm analytic 곡선을 만들기 위한 여유값
   analytic_turning_radius_margin_cm: 4.0
   path_smoothing_enabled: true
-  # C1 장거리 경로에서 조향 변화가 완만해지도록 control knot을 넓힌다.
+  # 장거리 경로에서도 조향 변화가 완만해지도록 control knot을 넓힌다.
   smoothing_knot_spacing_cm: 6.0
 
 cost:
@@ -70,4 +70,3 @@ trajectory_validation:
 # 일반 클릭 Hybrid A* 테스트에는 강제하지 않고 live planner에서만 적용한다.
 automatic_parking:
   required_final_direction: -1
-  min_final_direction_distance_cm: 12.0

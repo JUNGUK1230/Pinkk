@@ -1,6 +1,6 @@
 vehicle:
   length_cm: 12.0
-  # 실차 측정 폭. 중심선 5 cm + Hybrid 안전마진 2 cm로 벽과 약 7 cm를 확보한다.
+  # 실차 측정 폭. Hybrid A*는 이 실제 차체 외곽 자체로 벽 충돌을 검사한다.
   width_cm: 10.0
   wheelbase_cm: 8.0
   # Hybrid A* pose는 뒷바퀴 축 중심이며, rear overhang부터 차체 전체를 검사한다.

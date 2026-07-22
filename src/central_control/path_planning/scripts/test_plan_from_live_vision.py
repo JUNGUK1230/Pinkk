@@ -76,8 +76,8 @@ def main() -> int:
     assert nearby_goals[0][0] == "primary goal"
     assert any("offset" in label for label, _ in nearby_goals[1:])
 
-    # 최신 현장 수동 heading 좌표에서 inflated 탐색 경로의 clearance를
-    # 확보해 smoothing과 최종 steering-rate 검증을 통과해야 한다.
+    # 최신 현장 수동 heading 좌표에서 실제 차체 footprint 충돌 없이
+    # smoothing과 최종 steering-rate 검증을 통과해야 한다.
     c1_result = plan_and_validate(
         planner,
         profile_config,
@@ -95,21 +95,14 @@ def main() -> int:
         ),
         planning_budget_sec=0.0,
         required_goal_direction=parking_config.required_final_direction,
-        min_final_direction_distance_cm=(
-            parking_config.min_final_direction_distance_cm
-        ),
     )
-    assert c1_result[0] == "alternative goal"
+    assert c1_result[0] in ("primary goal", "alternative goal")
     assert c1_result[5].valid
     assert c1_result[5].metrics.max_abs_steer_deg <= 30.0
     assert c1_result[4][-1].direction == -1
-    assert (
-        planner.terminal_direction_distance_cm(c1_result[3].path, -1)
-        >= parking_config.min_final_direction_distance_cm - 1e-6
-    )
 
-    # P6은 primary heading의 12 cm approach가 벽과 충돌하므로 안전한
-    # alternative heading을 선택하고 전진 approach 후 직선 후진해야 한다.
+    # 고정 직선 approach 없이도 P6 목표 자세에 마지막 후진 방향으로
+    # 도달하고 전체 trajectory 검증을 통과해야 한다.
     p6_result = plan_and_validate(
         planner,
         profile_config,
@@ -126,17 +119,10 @@ def main() -> int:
             ),
         ),
         required_goal_direction=parking_config.required_final_direction,
-        min_final_direction_distance_cm=(
-            parking_config.min_final_direction_distance_cm
-        ),
     )
-    assert p6_result[0] == "alternative goal"
+    assert p6_result[0] in ("primary goal", "alternative goal")
     assert p6_result[5].valid
     assert p6_result[4][-1].direction == -1
-    assert (
-        planner.terminal_direction_distance_cm(p6_result[3].path, -1)
-        >= parking_config.min_final_direction_distance_cm - 1e-6
-    )
 
     with tempfile.TemporaryDirectory() as directory:
         output_dir = Path(directory)

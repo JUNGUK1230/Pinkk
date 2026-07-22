@@ -28,7 +28,7 @@ Python 기반 자율주행 주차 경로계획 모듈입니다. LiDAR occupancy 
 
 2D A*는 차량을 크기가 없는 하나의 점으로 보므로, 원본 occupancy grid만 사용하면 벽과 주차선 바로 옆으로 경로가 생성될 수 있습니다. 이를 방지하기 위해 차량 반폭과 안전 마진을 고려한 obstacle inflation을 적용합니다.
 
-현재 2D A* 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. Hybrid A*는 차량 크기를 inflation으로 대신하지 않고, 실제 회전된 rectangle footprint와 **1 cm** 추가 안전마진을 사용합니다.
+현재 2D A* 테스트의 기본 inflation radius는 **7 cm**입니다. 원본 grid는 유지하고, 원형 타원 kernel로 장애물을 팽창한 별도 grid에서 A*를 수행합니다. Hybrid A*는 차량 크기를 inflation으로 대신하지 않고 실제 회전된 rectangle footprint를 사용합니다. 좁은 실차 주차면 시험에서는 별도 팽창을 더하지 않도록 `footprint_safety_margin_cm: 0.0`이며, 차량 외곽이 원본 장애물에 닿는 pose는 그대로 충돌 처리합니다.
 
 ## 요구 환경
 
@@ -171,7 +171,7 @@ cd ~/PINKK/src/central_control/path_planning
 python3 scripts/test_trajectory_validator.py
 ```
 
-차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×8 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 차량 반폭 4 cm와 안전마진 1 cm를 합해 직선 벽에서 경로 중심선까지 명목상 5 cm를 확보합니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
+차량 pose의 기준점은 **뒷바퀴 축 중심**입니다. 실차 측정값을 반영한 차량 `12×10 cm`, wheelbase `8 cm`, rear overhang `2 cm`로 회전된 직사각형이 덮는 모든 occupancy cell을 검사합니다. 현재 추가 안전마진은 0cm이므로 직선 벽에서 경로 중심선까지 필요한 최소 거리는 차량 반폭인 5cm입니다. motion primitive 중간도 0.5 cell 이하 간격으로 검사하므로, 회전 중 차체 모서리가 벽을 건너뛰는 경로를 차단합니다. 클릭한 start/goal이 기준점으로는 free여도 차체가 장애물을 침범하면 30 cm 반경 내의 가장 가까운 footprint-valid pose로 보정합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
@@ -207,25 +207,15 @@ python3 scripts/click_hybrid_astar_on_camera_bev.py
 ```yaml
 automatic_parking:
   required_final_direction: -1
-  min_final_direction_distance_cm: 12.0
 ```
 
-단순히 마지막 state만 후진으로 강제하면 3cm motion primitive 하나만 후진한 경로가 생성될 수 있습니다. 현재 구현은 목표 heading을 따라 목표 12cm 앞에 approach pose를 만들고 다음 두 단계로 계획합니다.
+기존에는 목표 12cm 앞에 고정 approach pose를 만들고 마지막 구간을 반드시 직선 후진하도록 강제했습니다. 이 조건은 실제 차체가 통과할 수 있는 주차면도 과도하게 차단할 수 있어 설정과 실행 코드에서 모두 제거했습니다. 현재 실시간 자동 계획은 두 rear-axle 목표의 중점인 **주차면 중심 위치만** 목표로 사용하며, 목표 헤딩은 강제하지 않습니다. Hybrid A*는 전진·후진 조합과 실제 차량 footprint 충돌을 계속 검사하고, 마지막 이동 방향만 `-1`로 제한합니다.
 
-1. Hybrid A*와 Reeds–Shepp로 approach pose에 **전진 방향**으로 정확히 도착
-2. 정지·기어 전환 후 목표까지 12cm 직선 후진
-
-approach pose 또는 최종 직선 후진 footprint가 장애물과 충돌하면 해당 heading은 사용하지 않습니다. P6 primary heading의 12cm approach는 벽과 충돌하므로 안전한 alternative heading을 자동 선택합니다. 동일 P6 현장 좌표 회귀에서는 약 **0.38초**, 313점으로 경로를 생성했고 마지막 연속 후진 12cm와 최종 validator를 통과했습니다. C1도 같은 방식의 alternative heading 후진주차 회귀를 통과했습니다.
-
-최종 trajectory validator는 `FINAL_DIRECTION_MISMATCH`와 `FINAL_DIRECTION_DISTANCE`를 별도로 검사합니다. 따라서 planner 결과가 있어도 마지막 방향이 후진이 아니거나 연속 후진거리가 12cm 미만이면 CSV·JSON과 overlay를 저장하지 않습니다.
+자동 경로 생성기는 주차칸 이름으로 분기하지 않습니다. 모든 주차면에 차량 제원, 최소 회전반경, 조향 한계, occupancy map, 목표 pose의 동일한 조건을 적용합니다. 최종 trajectory validator는 `FINAL_DIRECTION_MISMATCH`를 검사합니다.
 
 ### P5 진입 차단 진단 메모
 
-2026-07-21 P5 현장 좌표에서는 Hybrid A* 속도가 아니라 occupancy 안전영역이 원인으로 경로가 차단됐습니다. Camera BEV의 P5 polygon을 LiDAR grid로 변환하면 내부 셀 중 원본 obstacle 비율이 약 **23.1%**, 2cm inflation 이후 약 **53.3%**입니다. 현재 차량 footprint와 2cm 안전마진으로는 P5 중심 주변 ±8cm 안에 충돌 없는 12cm 후진 corridor가 없습니다.
-
-안전마진을 1cm로 낮추면 일부 corridor pose는 생기지만 approach 도달 경로는 전체 30초 안에 만들어지지 않았으므로, 마진 축소만으로 해결되지 않았습니다. 설정된 2cm 안전값을 임의로 낮추지 않고 유지합니다. P5를 사용하려면 LiDAR map에서 주차면 내부를 막는 구조물이 실제 장애물인지 확인하고, 주행 가능한 바닥·주차선이 obstacle로 들어간 경우 occupancy map을 정리한 뒤 다시 정합해야 합니다.
-
-마지막 직선 후진 corridor는 이제 Hybrid A*를 시작하기 전에 전 구간 footprint 검사합니다. 막힌 후보는 5초 timeout을 반복하지 않고 `candidate skipped: final parking maneuver footprint collision`로 즉시 차단됩니다.
+2026-07-21 초기 진단에서는 2cm 추가 inflation과 12cm 고정 직선 후진 corridor가 결합되어 좁은 주차면을 과도하게 차단했습니다. 현재는 추가 margin을 0cm로 낮추고 고정 corridor 코드를 제거했습니다. 변경 후 동일 회귀에서 P10은 약 **0.21초**, P6은 약 **0.16초**, C1은 약 **0.56초**에 마지막 후진 방향을 만족하는 경로를 생성했습니다. P8/P9는 footprint 충돌 즉시 차단 상태에서는 벗어났지만 짧은 후보 제한 안에 조향 스무딩을 통과하지 못해 탐색·스무딩 개선 대상으로 남아 있습니다.
 
 경로계획 쪽의 `load_vision_planning_request()`는 `planning_ready=true`인 최신 scene만 읽습니다. 기본 허용 나이는 **0.5초**이며 파일이 오래됐거나, ego 선택·차량 앞뒤가 모호하거나, start/goal이 지도 밖이면 `VisionSceneUnavailable`로 입력을 거부합니다. 카메라 프로세스와 별도로 아래 명령을 실행하면 실제로 전달될 start/goal을 확인할 수 있습니다.
 
@@ -245,9 +235,11 @@ python3 scripts/test_live_vision_scene.py
 
 ### 차량 검출 후 자동 Hybrid A* 생성
 
-localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면의 두 heading에서 충돌 없는 후진주차 approach를 찾은 뒤 한 번 계획하고 종료합니다. 전체 계획은 기본 30초, 각 후보는 기본 5초로 제한됩니다.
+localization 프로세스가 실행 중일 때 아래 스크립트는 최대 10초 동안 fresh `planning_ready` scene을 기다립니다. 차량이 발견되면 현재 rear-axle pose를 start로 사용하고, 선택된 빈 주차면 중심 위치에 대해 마지막 이동이 후진인 경로를 한 번 계획하고 종료합니다. 목표 yaw는 사용하지 않아 heading별 goal 후보를 반복 탐색하지 않습니다. 현재 전체 계획과 각 후보의 기본 시간 제한은 `0`(무제한)입니다. 탐색 중에는 1,000 node마다 진행 상황을 출력하며, 비정상 상태공간 폭증을 막기 위한 후보당 확장 노드 상한은 유지합니다.
 
-주차면 명목 중심에서 찾은 경로가 smoothing 조향각·조향 변화율을 넘으면 heading을 유지한 채 goal의 전방축·측면축 **3cm** 범위를 1cm 간격 square ring 순서로 탐색합니다. 차량 footprint가 유효하고 최종 validator를 통과한 가장 가까운 pose만 선택합니다. 일반 Hybrid A* goal 도달 경로도 Reeds–Shepp 도달 경로와 동일하게 곡률 smoothing을 적용하므로 3cm primitive의 조향 변화가 0.5cm 출력에서 순간 변화로 남지 않게 검사합니다.
+필요할 때만 `--planning-timeout-sec`와 `--candidate-timeout-sec`에 양수를 지정해 시간 제한을 다시 적용할 수 있습니다.
+
+클릭 기반 Hybrid A*는 목표 heading을 포함한 3cm 주변 pose 탐색을 유지합니다. 반면 실시간 자동 계획은 주차면 중심 하나만 목표로 사용해 heading 후보·주변 pose 반복 탐색을 하지 않습니다. 일반 Hybrid A* goal 도달 경로도 Reeds–Shepp 도달 경로와 동일하게 곡률 smoothing을 적용하므로 3cm primitive의 조향 변화가 0.5cm 출력에서 순간 변화로 남지 않게 검사합니다.
 
 ```bash
 cd ~/PINKK/src/central_control/path_planning
@@ -258,11 +250,10 @@ python3 scripts/plan_from_live_vision.py
 
 1. 0.5초 이내의 vision scene과 지도 범위를 검사
 2. start/goal의 회전 차량 footprint가 충돌하면 30 cm 안에서 가까운 유효 pose로 보정
-3. 목표 12cm 앞의 충돌 없는 후진주차 approach pose 선택
-4. Hybrid A* 및 Reeds–Shepp로 approach에 전진 도착
-5. 정지 후 12cm 직선 후진 maneuver 연결
-6. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
-7. 종단 후진 방향·거리 포함 trajectory validator 통과 시에만 파일 저장
+3. 두 rear-axle 후보의 중점인 주차면 중심을 heading-free 목표로 생성
+4. Hybrid A*로 목표 위치까지 전진·후진 조합 탐색, 최종 이동 방향이 후진인지 확인
+5. 0.5 cm 이하 간격의 곡률 smoothing과 속도 프로파일 생성
+6. footprint 충돌과 trajectory validator 통과 시에만 파일 저장
 
 출력 파일:
 

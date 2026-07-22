@@ -249,8 +249,9 @@ class HybridAStarPlanner:
         require_smoothed_path: bool = False,
         required_goal_direction: int | None = None,
         min_final_direction_distance_cm: float = 0.0,
+        require_goal_heading: bool = True,
     ) -> HybridAStarResult:
-        """Plan from a continuous start pose to a position-and-heading goal pose."""
+        """Plan to a goal position, optionally enforcing its terminal heading."""
         if progress_interval_nodes <= 0:
             raise ValueError("progress interval must be positive")
         if required_goal_direction not in (None, -1, 1):
@@ -271,7 +272,13 @@ class HybridAStarPlanner:
         self._validate_pose(
             "start", start_state.x_cm, start_state.y_cm, start_state.yaw_rad
         )
-        self._validate_pose("goal", goal[0], goal[1], goal_yaw)
+        if require_goal_heading:
+            self._validate_pose("goal", goal[0], goal[1], goal_yaw)
+        elif not (
+            0.0 <= goal[0] < self.width * self.resolution_cm
+            and 0.0 <= goal[1] < self.height * self.resolution_cm
+        ):
+            raise ValueError(f"goal position is outside the planning map: {goal[:2]}")
         if holonomic_cost_to_goal is None:
             self._holonomic_cost_to_goal = self._build_holonomic_cost_to_goal(
                 goal[0],
@@ -287,7 +294,11 @@ class HybridAStarPlanner:
         open_heap: list[tuple[float, int, tuple[int, int, int, int, int]]] = []
         heapq.heappush(
             open_heap,
-            (self._heuristic(start_state, goal), next(counter), start_key),
+            (
+                self._heuristic(start_state, goal, require_goal_heading),
+                next(counter),
+                start_key,
+            ),
         )
         states = {start_key: start_state}
         parents: dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]] = {}
@@ -323,13 +334,16 @@ class HybridAStarPlanner:
                 continue
             current = states[current_key]
 
+            # Reeds-Shepp analytic expansion needs a concrete terminal heading.
+            # Heading-free mode accepts every collision-free terminal yaw instead.
             analytic_path = (
                 self.try_analytic_expansion(
                     current,
                     goal,
                     required_goal_direction=required_goal_direction,
                 )
-                if expanded_nodes % self.analytic_expansion_interval_nodes == 0
+                if require_goal_heading
+                and expanded_nodes % self.analytic_expansion_interval_nodes == 0
                 else None
             )
             if analytic_path is not None:
@@ -372,6 +386,7 @@ class HybridAStarPlanner:
                 goal[1],
                 goal_yaw,
                 required_goal_direction,
+                require_goal_heading,
             ):
                 sparse_path = self._reconstruct(states, parents, current_key)
                 raw_hybrid_path = self._densify_path(sparse_path)
@@ -429,7 +444,9 @@ class HybridAStarPlanner:
                 states[neighbor_key] = neighbor
                 parents[neighbor_key] = current_key
                 g_score[neighbor_key] = tentative_cost
-                priority = tentative_cost + self._heuristic(neighbor, goal)
+                priority = tentative_cost + self._heuristic(
+                    neighbor, goal, require_goal_heading
+                )
                 heapq.heappush(open_heap, (priority, next(counter), neighbor_key))
 
         return HybridAStarResult([], math.inf, False, expanded_nodes, "open set exhausted")
@@ -494,7 +511,10 @@ class HybridAStarPlanner:
         return x_bin, y_bin, yaw_bin, state.direction, steer_bin
 
     def _heuristic(
-        self, state: HybridState, goal: tuple[float, float, float]
+        self,
+        state: HybridState,
+        goal: tuple[float, float, float],
+        require_goal_heading: bool = True,
     ) -> float:
         distance = math.hypot(goal[0] - state.x_cm, goal[1] - state.y_cm)
         if self._holonomic_cost_to_goal is not None:
@@ -506,7 +526,11 @@ class HybridAStarPlanner:
                 )
                 if math.isfinite(obstacle_aware_distance):
                     distance = max(distance, obstacle_aware_distance)
-        yaw_error = abs(self._angle_difference(goal[2], state.yaw_rad))
+        yaw_error = (
+            abs(self._angle_difference(goal[2], state.yaw_rad))
+            if require_goal_heading
+            else 0.0
+        )
         # 2D cost-to-go가 실제 통로를 안내하고, heading 항은 목표 근처에서만
         # 방향 수렴을 돕는다. 차체 footprint 충돌은 기존 Hybrid 확장에서 검사한다.
         return 1.1 * distance + 0.2 * self.wheelbase_cm * yaw_error
@@ -579,12 +603,16 @@ class HybridAStarPlanner:
         goal_y: float,
         goal_yaw: float,
         required_direction: int | None = None,
+        require_goal_heading: bool = True,
     ) -> bool:
         return (
             math.hypot(goal_x - state.x_cm, goal_y - state.y_cm)
             <= self.goal_tolerance_cm
-            and abs(self._angle_difference(goal_yaw, state.yaw_rad))
-            <= self.goal_yaw_tolerance_rad
+            and (
+                not require_goal_heading
+                or abs(self._angle_difference(goal_yaw, state.yaw_rad))
+                <= self.goal_yaw_tolerance_rad
+            )
             and (
                 required_direction is None
                 or state.direction == required_direction

@@ -80,6 +80,18 @@ def main() -> int:
     assert segment_lengths
     assert max(segment_lengths) <= free_planner.path_output_step_cm + 1e-6
 
+    # 목표 yaw가 반대여도 heading-free mode는 위치와 최종 후진 방향만 검사한다.
+    # 시작 yaw는 bicycle model과 차체 footprint에 필요하므로 그대로 사용한다.
+    heading_free_result = free_planner.plan(
+        (20.0, 20.0, 0.0),
+        (50.0, 20.0, math.pi),
+        required_goal_direction=-1,
+        require_goal_heading=False,
+    )
+    assert heading_free_result.success, heading_free_result.message
+    assert heading_free_result.path[-1].direction == -1
+    assert abs(heading_free_result.path[-1].yaw_rad) < math.radians(1.0)
+
     # 시간 제한과 별도로 상태공간 폭증을 확장 노드 상한에서 차단해야 한다.
     free_planner.max_expanded_nodes = 1
     capped_result = free_planner.plan(
@@ -93,6 +105,10 @@ def main() -> int:
     print("Hybrid A* footprint regression passed")
     print(f"Path poses: {len(result.path)}")
     print(f"Expanded nodes: {result.expanded_nodes}")
+    print(
+        "Heading-free goal regression: "
+        f"expanded={heading_free_result.expanded_nodes}"
+    )
     print(f"Total cost: {result.total_cost:.3f}")
     print(f"Maximum output spacing: {max(segment_lengths):.3f} cm")
     return 0
