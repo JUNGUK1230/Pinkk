@@ -80,3 +80,41 @@
 - T자 주차 maneuver에서 더 완만한 곡선 후보를 찾을 수 있다.
 - 3cm motion primitive당 최대 조향 변화 10° 제한은 유지해 조향각 순간 점프를 막는다.
 - 후보 수 증가로 탐색량은 커질 수 있으므로 T자 staging 분리와 함께 실행 시간을 계속 확인한다.
+
+## 2026-07-22: central_control 활성 파이프라인 기준 파일 정리
+
+- 실시간 YOLO localization, T자 후진주차 Hybrid A*, trajectory validator,
+  ROS 2 경로·차량 pose publisher와 관련 회귀 테스트는 현재 위치에 유지했다.
+- 상단 카메라 렌즈 보정, BEV homography, Camera–LiDAR 정합 코드와 NPZ,
+  지도 및 모델 파일도 현재 위치에 유지했다.
+- 예전 클릭식 2D/Hybrid A* 테스트, 초기 YOLO prototype, 미구현 뼈대 모듈,
+  `live_*`가 아닌 과거 결과 이미지·좌표 파일은 삭제하지 않고
+  `central_control/backup/legacy_20260722`로 이동했다.
+- 실시간 planner가 예전 `test_astar.py`에서 가져오던 지도 이미지 선택 함수를
+  `plan_from_live_vision.py` 내부로 옮겨 legacy test에 대한 실행 의존성을 제거했다.
+- 이후 새 기능은 활성 파이프라인에 추가하고, 일회성 실험 파일은 같은 백업 정책으로
+  분리해 운영 코드와 섞이지 않도록 한다.
+
+## 2026-07-22: README 역할 분리
+
+- 작업 범위의 최상위인 `central_control/README.md`에는 환경 설치, 실제 실행
+  순서, 중앙제어 알고리즘의 짧은 흐름만 남겼다.
+- `central_control` 내부 하위 README는 실행 이력과 장문의 알고리즘 설명을
+  제거하고, 해당 폴더에 실제로 존재하는 파일·하위 폴더 역할로 통일했다.
+- 이전 `~/project` 경로, 삭제된 실행 shell, 클릭 기반 테스트, 과거 P5·2cm
+  inflation 설명처럼 현재 코드와 맞지 않는 안내를 제거했다.
+- 실험 판단과 수치 변경 이력은 README가 아니라 이 `DEVELOPMENT_MEMO.md`에서
+  계속 관리한다.
+- 저장소 루트, `robot_arm`, `vehicle_control`, ROS package setup은 담당 범위가
+  아니므로 수정 전 상태로 복원했다.
+
+## 2026-07-22: path_planning 잔여 파일 정리
+
+- 활성 코드에서 참조하지 않는 `astar_planner.py`, `coordinate_transform.py`,
+  `path_postprocess.py`, `map_config.yaml`은 과거 2D A* 테스트 복구 가능성을 위해
+  `central_control/backup/legacy_20260722/path_planning`으로 이동했다.
+- `src/__init__.py`에서는 위 legacy API export를 제거하고 현재 Hybrid A* 관련
+  API만 노출하도록 정리했다.
+- Python이 언제든 다시 생성할 수 있는 `__pycache__` 34개는 백업하지 않고
+  삭제했다.
+- 활성 경로계획 폴더는 cache 제외 30개에서 26개로 줄었다.

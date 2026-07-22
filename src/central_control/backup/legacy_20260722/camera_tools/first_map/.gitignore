@@ -1,0 +1,3 @@
+# 대용량 BEV 촬영본과 CVAT 프레임은 이 PC의 legacy 백업에만 보관한다.
+/bev_recordings/
+/bev_dataset/

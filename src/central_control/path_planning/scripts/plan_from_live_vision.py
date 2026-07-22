@@ -32,7 +32,6 @@ from hybrid_astar_planner import (  # noqa: E402
 )
 from occupancy_grid import OccupancyGridMap  # noqa: E402
 from t_parking_planner import plan_t_reverse_parking  # noqa: E402
-from test_astar import resolve_map_image  # noqa: E402
 from trajectory_profile import (  # noqa: E402
     TrajectoryPoint,
     build_trajectory_profile,
@@ -85,6 +84,27 @@ class AutomaticParkingConfig:
     """주차칸 종류와 무관한 자동 주차 종단 방향 조건."""
 
     required_final_direction: int
+
+
+def resolve_map_image(pgm_path: Path, yaml_path: Path) -> Path:
+    """PGM이 없으면 지도 YAML의 image 항목을 기준으로 실제 이미지를 찾는다.
+
+    실시간 경로 생성기가 예전 A* 테스트 스크립트에 의존하지 않도록 지도
+    이미지 선택 로직을 이 실행 파일 안에 둔다.
+    """
+    if pgm_path.exists():
+        return pgm_path
+
+    with yaml_path.open("r", encoding="utf-8") as file:
+        image_name = (yaml.safe_load(file) or {}).get("image")
+
+    yaml_image = yaml_path.parent / image_name if image_name else None
+    if yaml_image is not None and yaml_image.exists():
+        print(f"PGM not found; using YAML map image instead: {yaml_image}")
+        return yaml_image
+
+    # OccupancyGridMap이 파일 누락 원인을 명확하게 보고하도록 원래 경로를 반환한다.
+    return pgm_path
 
 
 def parse_args() -> argparse.Namespace:
