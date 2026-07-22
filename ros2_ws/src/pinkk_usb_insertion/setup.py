@@ -32,6 +32,8 @@ setup(
             'manual_detection_node = pinkk_usb_insertion.manual_detection_node:main',
             'arm_motion_node = pinkk_usb_insertion.arm_motion_node:main',
             'usb_insertion_node = pinkk_usb_insertion.usb_insertion_node:main',
+            'cartesian_smoke_test = '
+            'pinkk_usb_insertion.cartesian_smoke_test_node:main',
         ],
     },
 )

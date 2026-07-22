@@ -133,7 +133,7 @@ PBVS 실제 실행은 설정 파일과 별도로 launch 인자
 
 첫 시험에서는 포트나 차량 가까이에서 실행하지 않습니다.
 
-- [ ] 현재 pose를 읽어 X 또는 Y만 1 mm 바꾸는 명시적 시험 클라이언트 작성
+- [x] 현재 pose를 읽어 X 또는 Y만 0.1~10 mm 바꾸는 승인형 시험 클라이언트 작성
 - [ ] X +1 mm, X -1 mm 시험
 - [ ] Y +1 mm, Y -1 mm 시험
 - [ ] 매 시험 후 원래 관측 pose 복귀
@@ -422,9 +422,17 @@ PBVS 단발 시험도 launch 인자를 명시적으로 열기 전에는 실행�
 스위치의 책임이 다르므로 하나를 활성화했다고 다른 실행 권한까지 얻은 것으로
 해석하지 않습니다.
 
+로봇 PC 브리지는 별도의 최종 게이트를 가집니다.
+
+```text
+cartesian_execution_enabled=false  → Cartesian action goal 거부
+cartesian_execution_enabled=true   → 제한 검사를 통과한 goal만 send_coords 실행
+```
+
 체크리스트:
 
 - [ ] 시험 목적에 필요한 최소 스위치만 활성화
+- [ ] 로봇 PC `cartesian_execution_enabled`는 실기 시험 중에만 활성화
 - [ ] PBVS 접근 시험 중 `insertion_enabled=false` 유지
 - [ ] 새 실행 기능은 기본값 `false`로 추가
 - [ ] 실행 종료 후 안전 스위치를 다시 `false`로 복원

@@ -292,6 +292,27 @@ ros2 topic pub --once /robot_arm/pbvs/step_command \
 ros2 topic echo /robot_arm/pbvs/execution_status
 ```
 
+PBVS를 연결하기 전에 새 브리지 자체를 검증할 때는 `cartesian_smoke_test`를
+사용합니다. 이 도구는 현재 TF에서 X 또는 Y만 변경하며 기본값은 DRY RUN입니다.
+
+```bash
+ros2 run pinkk_usb_insertion cartesian_smoke_test \
+  --axis x --distance-mm 1
+```
+
+현재 pose와 목표 pose가 예상대로이고 로봇 주변이 비어 있을 때만 동일 명령에 실제
+실행 승인 두 개를 추가합니다.
+
+```bash
+ros2 run pinkk_usb_insertion cartesian_smoke_test \
+  --axis x --distance-mm 1 \
+  --speed 5 --execute --confirm MOVE
+```
+
+로봇 PC 브리지도 `cartesian_execution_enabled:=true`로 실행 중이어야 합니다.
+목표가 거부되면 우회하지 말고 브리지의 실행 게이트, 최대 이동량, frame과
+base/flange API 확인 로그를 점검합니다.
+
 실행기는 현재 TF와 목표를 다시 비교하여 XY 10 mm, Z 변화 0.5 mm, 자세 변화
 0.5도 제한을 검사합니다. 목표까지 최대 1 mm 간격의 고정-Z·고정자세 Cartesian
 waypoint를 만들고, 각 점에서 MoveIt 충돌검사 IK와 관절 점프 5도 제한을 모두

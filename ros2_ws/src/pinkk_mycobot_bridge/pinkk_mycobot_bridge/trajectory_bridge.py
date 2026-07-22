@@ -79,8 +79,9 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("goal_tolerance_deg", 2.0)
         self.declare_parameter("max_execution_seconds", 60.0)
+        self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
-        self.declare_parameter("cartesian_position_tolerance_m", 0.001)
+        self.declare_parameter("cartesian_position_tolerance_m", 0.0005)
         self.declare_parameter("cartesian_orientation_tolerance_deg", 1.0)
         self.declare_parameter("cartesian_max_translation_m", 0.0105)
         self.declare_parameter("cartesian_max_rotation_deg", 2.1)
@@ -97,6 +98,9 @@ class MyCobotTrajectoryBridge(Node):
         )
         self._max_execution_seconds = float(
             self.get_parameter("max_execution_seconds").value
+        )
+        self._cartesian_execution_enabled = bool(
+            self.get_parameter("cartesian_execution_enabled").value
         )
         self._cartesian_base_frame = str(
             self.get_parameter("cartesian_base_frame").value
@@ -184,9 +188,12 @@ class MyCobotTrajectoryBridge(Node):
             f"실제 실행 브리지 준비: port={port}, baud={baud}, speed={self._speed}, "
             f"action={self.ACTION_NAME}"
         )
-        cartesian_mode = "준비" if self._cartesian_ready else "사용 불가"
+        api_mode = "API 준비" if self._cartesian_ready else "API 사용 불가"
+        execution_mode = (
+            "실행 허용" if self._cartesian_execution_enabled else "실행 차단"
+        )
         self.get_logger().warning(
-            f"Cartesian send_coords action {cartesian_mode}: "
+            f"Cartesian send_coords action {api_mode}, {execution_mode}: "
             f"action={self.CARTESIAN_ACTION_NAME}, max_step="
             f"{self._cartesian_max_translation * 1000.0:.1f}mm"
         )
@@ -324,6 +331,8 @@ class MyCobotTrajectoryBridge(Node):
 
     def _cartesian_goal_callback(self, goal_request: CartesianMove.Goal) -> GoalResponse:
         try:
+            if not self._cartesian_execution_enabled:
+                raise ValueError("cartesian_execution_enabled=false")
             if not self._cartesian_ready:
                 raise ValueError(
                     "로봇 Cartesian API와 base/flange 좌표계가 확인되지 않았습니다"

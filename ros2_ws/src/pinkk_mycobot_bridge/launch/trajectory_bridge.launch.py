@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -11,6 +12,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("baud", default_value="1000000"),
             DeclareLaunchArgument("speed", default_value="10"),
             DeclareLaunchArgument("goal_tolerance_deg", default_value="2.0"),
+            DeclareLaunchArgument(
+                "cartesian_execution_enabled", default_value="false"
+            ),
             DeclareLaunchArgument(
                 "cartesian_max_translation_m", default_value="0.0105"
             ),
@@ -27,8 +31,12 @@ def generate_launch_description() -> LaunchDescription:
                         "goal_tolerance_deg": LaunchConfiguration("goal_tolerance_deg"),
                         "publish_rate_hz": 10.0,
                         "max_execution_seconds": 60.0,
+                        "cartesian_execution_enabled": ParameterValue(
+                            LaunchConfiguration("cartesian_execution_enabled"),
+                            value_type=bool,
+                        ),
                         "cartesian_base_frame": "g_base",
-                        "cartesian_position_tolerance_m": 0.001,
+                        "cartesian_position_tolerance_m": 0.0005,
                         "cartesian_orientation_tolerance_deg": 1.0,
                         "cartesian_max_translation_m": LaunchConfiguration(
                             "cartesian_max_translation_m"

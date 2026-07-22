@@ -67,6 +67,23 @@ OpenCV 카메라 좌표계는 ROS optical frame과 동일하게 X축은 영상 �
 ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py speed:=10
 ```
 
+위 기본 명령은 joint action은 기존 방식으로 유지하지만 새 Cartesian action의 실제
+`send_coords()` 실행은 차단합니다. 브리지 로그에는 다음이 표시됩니다.
+
+```text
+Cartesian send_coords action API 준비, 실행 차단
+```
+
+Cartesian 실기 시험에서만 다음처럼 최종 실행 게이트를 명시적으로 엽니다. 첫
+시험은 브리지 자체의 이동 상한도 1.5 mm로 낮춥니다.
+
+```bash
+ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py \
+  speed:=5 \
+  cartesian_execution_enabled:=true \
+  cartesian_max_translation_m:=0.0015
+```
+
 노트북:
 
 ```bash
@@ -86,13 +103,14 @@ ROS의 meter/quaternion은 로봇의 mm/[rx, ry, rz] degree로 변환하며, Han
 - `get_coords()`와 `send_coords()` API가 존재하는가?
 - reference frame이 base(0)인가?
 - end type이 flange(0)인가?
+- `cartesian_execution_enabled=true`를 명시했는가?
 - 목표 frame이 `g_base`인가?
 - 이동량과 회전량이 각각 10.5 mm, 2.1도 제한 이내인가?
 - 요청한 speed와 mode가 유효한가?
 
 PBVS는 `lock_z=true`, `lock_roll_pitch=true`로 요청합니다. 실행 중 10 Hz로
 `get_coords()`를 읽어 시작 Z에서 2 mm, 시작 Roll/Pitch에서 3도 이상 벗어나면
-`stop()` 후 action을 실패 처리합니다. 최종 허용오차는 위치 1 mm, 자세 1도이며
+`stop()` 후 action을 실패 처리합니다. 최종 허용오차는 위치 0.5 mm, 자세 1도이며
 15초 안에 도달하지 못해도 정지합니다. 이 감시는 명령 후 이탈을 감지하는
 소프트웨어 보호이며, 펌웨어 수준의 실시간 안전 제어를 대신하지 않습니다.
 
