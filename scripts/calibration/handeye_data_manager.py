@@ -222,6 +222,187 @@ def sample_count(path: Path) -> int:
     return len(samples)
 
 
+def quaternion_to_matrix(rotation: dict[str, Any]) -> np.ndarray:
+    try:
+        quaternion = np.array([float(rotation[axis]) for axis in "xyzw"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("sample quaternion 형식 오류") from error
+    norm = float(np.linalg.norm(quaternion))
+    if norm <= 1e-12 or not np.isfinite(quaternion).all():
+        raise ValueError("sample quaternion 값 오류")
+    x, y, z, w = quaternion / norm
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
+
+
+def matrix_to_quaternion(matrix: np.ndarray) -> np.ndarray:
+    """Return a normalized quaternion in ROS xyzw order."""
+    candidates = np.array(
+        [
+            1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2],
+            1.0 - matrix[0, 0] + matrix[1, 1] - matrix[2, 2],
+            1.0 - matrix[0, 0] - matrix[1, 1] + matrix[2, 2],
+            1.0 + np.trace(matrix),
+        ]
+    )
+    index = int(np.argmax(candidates))
+    value = max(float(candidates[index]), 0.0)
+    component = 0.5 * np.sqrt(value)
+    if component <= 1e-12:
+        raise ValueError("계산된 rotation을 quaternion으로 변환할 수 없습니다")
+    denominator = 4.0 * component
+    if index == 0:
+        quaternion = np.array(
+            [
+                component,
+                (matrix[0, 1] + matrix[1, 0]) / denominator,
+                (matrix[0, 2] + matrix[2, 0]) / denominator,
+                (matrix[2, 1] - matrix[1, 2]) / denominator,
+            ]
+        )
+    elif index == 1:
+        quaternion = np.array(
+            [
+                (matrix[0, 1] + matrix[1, 0]) / denominator,
+                component,
+                (matrix[1, 2] + matrix[2, 1]) / denominator,
+                (matrix[0, 2] - matrix[2, 0]) / denominator,
+            ]
+        )
+    elif index == 2:
+        quaternion = np.array(
+            [
+                (matrix[0, 2] + matrix[2, 0]) / denominator,
+                (matrix[1, 2] + matrix[2, 1]) / denominator,
+                component,
+                (matrix[1, 0] - matrix[0, 1]) / denominator,
+            ]
+        )
+    else:
+        quaternion = np.array(
+            [
+                (matrix[2, 1] - matrix[1, 2]) / denominator,
+                (matrix[0, 2] - matrix[2, 0]) / denominator,
+                (matrix[1, 0] - matrix[0, 1]) / denominator,
+                component,
+            ]
+        )
+    quaternion /= np.linalg.norm(quaternion)
+    if quaternion[3] < 0:
+        quaternion *= -1
+    return quaternion
+
+
+def compute_run(arguments: argparse.Namespace) -> int:
+    """Recover a calibration directly from a run's preserved samples."""
+    try:
+        import cv2
+    except ImportError as error:
+        raise RuntimeError("OpenCV를 불러올 수 없습니다") from error
+    if not hasattr(cv2, "calibrateHandEye"):
+        raise RuntimeError(
+            f"현재 OpenCV {getattr(cv2, '__version__', 'unknown')}에는 "
+            "calibrateHandEye가 없습니다"
+        )
+
+    run = resolve_run(arguments.run)
+    samples_path = run / "samples.samples"
+    calibration_path = run / "calibration.calib"
+    if not samples_path.is_file():
+        raise FileNotFoundError(f"run에 samples가 없습니다: {run.name}")
+    if calibration_path.exists():
+        raise ValueError(
+            f"기존 calibration을 덮어쓰지 않습니다: {calibration_path}"
+        )
+
+    document = yaml.safe_load(samples_path.read_text(encoding="utf-8"))
+    samples = document.get("samples", []) if isinstance(document, dict) else []
+    if not isinstance(samples, list) or len(samples) < 3:
+        raise ValueError(f"계산할 sample이 3개 이상 필요합니다: {samples_path}")
+
+    robot_rotations: list[np.ndarray] = []
+    robot_translations: list[np.ndarray] = []
+    tracking_rotations: list[np.ndarray] = []
+    tracking_translations: list[np.ndarray] = []
+    for index, sample in enumerate(samples, start=1):
+        try:
+            robot = sample["robot"]
+            tracking = sample["tracking"]
+            robot_rotations.append(quaternion_to_matrix(robot["rotation"]))
+            tracking_rotations.append(quaternion_to_matrix(tracking["rotation"]))
+            robot_translations.append(
+                np.array([float(robot["translation"][axis]) for axis in "xyz"])
+            )
+            tracking_translations.append(
+                np.array([float(tracking["translation"][axis]) for axis in "xyz"])
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"sample {index} transform 형식 오류") from error
+
+    rotation, translation = cv2.calibrateHandEye(
+        robot_rotations,
+        robot_translations,
+        tracking_rotations,
+        tracking_translations,
+        method=cv2.CALIB_HAND_EYE_TSAI,
+    )
+    rotation = np.asarray(rotation, dtype=float).reshape(3, 3)
+    translation = np.asarray(translation, dtype=float).reshape(3)
+    quaternion = matrix_to_quaternion(rotation)
+
+    metadata_path = run / "metadata.json"
+    metadata = read_json(metadata_path)
+    frames = metadata.get("collection", {}).get("frames", {})
+    easy_name = metadata.get("collection", {}).get(
+        "easy_handeye_name", "pinkk_eye_in_hand"
+    )
+    calibration = {
+        "parameters": {
+            "name": easy_name,
+            "calibration_type": "eye_in_hand",
+            "robot_base_frame": frames.get("robot_base", "g_base"),
+            "robot_effector_frame": frames.get(
+                "robot_effector", "joint6_flange"
+            ),
+            "tracking_base_frame": frames.get(
+                "tracking_base", "camera_optical_frame"
+            ),
+            "tracking_marker_frame": frames.get(
+                "tracking_marker", "charuco_board"
+            ),
+            "freehand_robot_movement": True,
+            "move_group_namespace": "/",
+            "move_group": "manipulator",
+        },
+        "transform": {
+            "translation": dict(zip("xyz", map(float, translation))),
+            "rotation": dict(zip("xyzw", map(float, quaternion))),
+        },
+    }
+    calibration_path.write_text(
+        yaml.safe_dump(calibration, sort_keys=False),
+        encoding="utf-8",
+    )
+    metadata.setdefault("collection", {})["algorithm"] = "OpenCV/Tsai-Lenz"
+    metadata["recovered_from_samples_at"] = iso_now()
+    metadata["recovery_opencv"] = {
+        "version": str(cv2.__version__),
+        "module": str(cv2.__file__),
+    }
+    write_json(metadata_path, metadata)
+    print(
+        f"{len(samples)}개 sample로 계산 완료: {calibration_path}\n"
+        f"OpenCV={cv2.__version__} ({cv2.__file__})"
+    )
+    return archive_run(argparse.Namespace(run=str(run), easy_name=""))
+
+
 def create_run(arguments: argparse.Namespace) -> int:
     created = now()
     run_id = f"{created.strftime('%Y%m%d_%H%M%S')}_{slugify(arguments.label)}"
@@ -526,6 +707,12 @@ def build_parser() -> argparse.ArgumentParser:
     archive.add_argument("--easy-name", default="")
     archive.set_defaults(handler=archive_run)
 
+    compute = subparsers.add_parser(
+        "compute-run", help="보존된 samples로 calibration 복구 계산"
+    )
+    compute.add_argument("run")
+    compute.set_defaults(handler=compute_run)
+
     listing = subparsers.add_parser("list", help="저장된 run 목록")
     listing.set_defaults(handler=list_runs)
 
@@ -564,7 +751,7 @@ def main() -> int:
     arguments = build_parser().parse_args()
     try:
         return int(arguments.handler(arguments))
-    except (FileNotFoundError, ValueError, KeyError) as error:
+    except (FileNotFoundError, ValueError, KeyError, RuntimeError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return 2
 

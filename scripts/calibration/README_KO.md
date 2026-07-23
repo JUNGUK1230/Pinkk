@@ -222,6 +222,14 @@ bash scripts/calibration/laptop_auto_handeye.sh execute 30 20 bracket_fixed
 
 성공 후 출력된 run 이름을 기록합니다. 계산이 실패하고 샘플만 저장됐다면
 metadata의 상태가 `samples_only`로 남으므로 원본 샘플은 유실되지 않습니다.
+이 경우 로봇을 다시 움직여 수집하지 말고 보존된 샘플을 계산합니다.
+
+```bash
+bash scripts/calibration/laptop_handeye_data.sh compute RUN
+```
+
+`compute`는 Easy Handeye2와 같은 OpenCV Tsai–Lenz 계산을 사용하며 기존
+`calibration.calib`은 덮어쓰지 않습니다.
 
 ## 6. 저장된 run 확인
 
@@ -400,8 +408,13 @@ Easy Handeye2 서버를 종료하고 새로 실행합니다. GUI에서 `Load Sam
 
 ### `cv2.calibrateHandEye`가 없음
 
-Easy Handeye2를 실행하는 Python/OpenCV가 `calibrateHandEye`를 제공하는지
-확인합니다. ROS 시스템 Python과 임의 pip OpenCV가 섞이지 않게 합니다.
+`laptop_start_easy_handeye.sh`는 `~/.local`의 pip OpenCV를 제외하고 ROS
+시스템 OpenCV를 검사한 뒤 서버를 시작합니다. 이미 `samples_only`가 됐다면
+재수집하지 말고 다음 명령으로 계산을 복구합니다.
+
+```bash
+bash scripts/calibration/laptop_handeye_data.sh compute RUN
+```
 
 ### 소스를 수정했는데 이전 코드가 실행됨
 

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "run_id": "20260723_150604_repeat_same_mount_01",
+  "label": "repeat_same_mount_01",
+  "created_at": "2026-07-23T15:06:04.121887+09:00",
+  "created_epoch": 1784786764.121887,
+  "status": "complete",
+  "git": {
+    "branch": "robot_arm_1828",
+    "commit": "387025b9f190e49bd3ff2bacf7fc65e093f0ccee",
+    "dirty": false
+  },
+  "system": {
+    "hostname": "juwon-Cyborg-A15-AI-B2HWFKG",
+    "ros_domain_id": "36",
+    "rmw_implementation": "rmw_fastrtps_cpp"
+  },
+  "collection": {
+    "easy_handeye_name": "pinkk_eye_in_hand",
+    "algorithm": "OpenCV/Tsai-Lenz",
+    "target_samples": 30,
+    "minimum_samples": 20,
+    "frames": {
+      "robot_base": "g_base",
+      "robot_effector": "joint6_flange",
+      "tracking_base": "camera_optical_frame",
+      "tracking_marker": "charuco_board"
+    }
+  },
+  "artifacts": {
+    "samples": {
+      "file": "samples.samples",
+      "count": 30,
+      "sha256": "709366cd924f5e63e25844b7764193ebcab32d5d0ba0241fe790f13f9d6cb98a"
+    },
+    "calibration": {
+      "file": "calibration.calib",
+      "parameters": {
+        "name": "pinkk_eye_in_hand",
+        "calibration_type": "eye_in_hand",
+        "robot_base_frame": "g_base",
+        "robot_effector_frame": "joint6_flange",
+        "tracking_base_frame": "camera_optical_frame",
+        "tracking_marker_frame": "charuco_board",
+        "freehand_robot_movement": true,
+        "move_group_namespace": "/",
+        "move_group": "manipulator"
+      },
+      "transform": {
+        "translation": {
+          "x": -0.03433332527846558,
+          "y": -0.04203083228515107,
+          "z": 0.03106610246909646
+        },
+        "rotation": {
+          "x": -0.01026283401333614,
+          "y": -0.011063524217390559,
+          "z": -0.3755125614335079,
+          "w": 0.926694442022586
+        }
+      },
+      "matrix_4x4": [
+        [
+          0.7177358292750744,
+          0.6961978934054845,
+          -0.012797366627046659,
+          -0.03433332527846558
+        ],
+        [
+          -0.6957437209549021,
+          0.7177699808873212,
+          0.027330007113825848,
+          -0.04203083228515107
+        ],
+        [
+          0.028212658978705788,
+          -0.01071203784440995,
+          0.9995445453398119,
+          0.03106610246909646
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "sha256": "a0fef9a6643bd3412db4155aa88e96e0fd0b38fe8308f13930d17a4d582cb64e"
+    },
+    "matrix": {
+      "file": "T_flange_camera.npy",
+      "sha256": "78e9a571775f57e85e03aa859f9e3e54925b664f81610841d84b576b8f30a6e1"
+    }
+  },
+  "intrinsics": {
+    "path": "src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz",
+    "sha256": "7e7cedddc34656344814d5bc4807f17b92a5b4e38093430bd62f9b27794be0be"
+  },
+  "archived_at": "2026-07-23T15:16:51.948614+09:00",
+  "archive_source": "/home/juwon/.ros2/easy_handeye2",
+  "recovered_from_samples_at": "2026-07-23T15:16:51.926493+09:00",
+  "recovery_opencv": {
+    "version": "4.6.0",
+    "module": "/usr/lib/python3/dist-packages/cv2.cpython-312-x86_64-linux-gnu.so"
+  }
+}
