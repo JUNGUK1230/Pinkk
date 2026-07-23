@@ -7,6 +7,8 @@ source "${SCRIPT_DIR}/_common.sh"
 
 SPEED="${1:-50}"
 GOAL_TOLERANCE_DEG="${2:-5.0}"
+CARTESIAN_EXECUTION_ENABLED="${3:-false}"
+CARTESIAN_MAX_TRANSLATION_M="${4:-0.0105}"
 
 source_required "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 source_required "${HOME}/venv/mycobot/bin/activate"
@@ -20,7 +22,9 @@ if [[ -d "${PYMYCOBOT_SITE}" ]]; then
 fi
 setup_ros_network
 
-echo "로봇 bridge 시작: speed=${SPEED}, tolerance=${GOAL_TOLERANCE_DEG}deg"
+echo "로봇 bridge 시작: speed=${SPEED}, tolerance=${GOAL_TOLERANCE_DEG}deg, cartesian_enabled=${CARTESIAN_EXECUTION_ENABLED}, cartesian_max=${CARTESIAN_MAX_TRANSLATION_M}m"
 exec ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py \
     speed:="${SPEED}" \
-    goal_tolerance_deg:="${GOAL_TOLERANCE_DEG}"
+    goal_tolerance_deg:="${GOAL_TOLERANCE_DEG}" \
+    cartesian_execution_enabled:="${CARTESIAN_EXECUTION_ENABLED}" \
+    cartesian_max_translation_m:="${CARTESIAN_MAX_TRANSLATION_M}"

@@ -86,6 +86,15 @@ ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py \
   cartesian_max_translation_m:=0.0015
 ```
 
+저장소 스크립트를 사용할 때 같은 명령은 다음과 같습니다.
+
+```bash
+bash scripts/calibration/robot_start_bridge.sh 5 5.0 true 0.0015
+```
+
+인자는 차례대로 joint speed, joint tolerance, Cartesian 실행 허용, Cartesian 최대
+translation입니다. 세 번째 인자를 생략하면 Cartesian 실행은 기본 차단됩니다.
+
 노트북:
 
 ```bash

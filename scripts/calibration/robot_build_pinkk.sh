@@ -10,9 +10,13 @@ source_required "${HOME}/venv/mycobot/bin/activate"
 source_required "${HOME}/mycobot_moveit_ws/install/setup.bash"
 
 cd "${HOME}/mycobot_moveit_ws"
-echo "로봇 PC용 Pinkk bridge를 install_pinkk에 빌드합니다"
+echo "로봇 PC용 Pinkk interface와 bridge를 install_pinkk에 빌드합니다"
 exec colcon --log-base log_pinkk build \
     --build-base build_pinkk \
     --install-base install_pinkk \
-    --base-paths "${REPO_ROOT}/ros2_ws/src/pinkk_mycobot_bridge" \
-    --packages-select pinkk_mycobot_bridge
+    --base-paths \
+        "${REPO_ROOT}/ros2_ws/src/pinkk_usb_insertion_interfaces" \
+        "${REPO_ROOT}/ros2_ws/src/pinkk_mycobot_bridge" \
+    --packages-select \
+        pinkk_usb_insertion_interfaces \
+        pinkk_mycobot_bridge
