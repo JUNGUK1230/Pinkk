@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-07-23T16:03:16.920383+09:00",
+  "frames": {
+    "robot_base": "g_base",
+    "robot_effector": "joint6_flange",
+    "tracking_base": "camera_optical_frame",
+    "tracking_marker": "charuco_board"
+  },
+  "old": {
+    "calibration_path": "/home/juwon/Desktop/Pinkk-robot-arm/src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/calibration.calib",
+    "pose_count": 12,
+    "mean_translation_m": {
+      "x": 0.28554001402967516,
+      "y": -0.13590076180110933,
+      "z": -0.05861028331778672
+    },
+    "mean_quaternion_xyzw": {
+      "x": 0.006632070028423357,
+      "y": 0.9984945206592443,
+      "z": -0.021261084624467838,
+      "w": 0.05012658118399111
+    },
+    "mean_rpy_deg": {
+      "roll": -177.5925568289982,
+      "pitch": 5.76129733716651,
+      "yaw": 179.3600445077938
+    },
+    "position_rms_mm": 2.043642902116914,
+    "position_max_mm": 3.728302909399267,
+    "rotation_rms_deg": 0.4108286745617533,
+    "rotation_max_deg": 0.7278167905684642
+  },
+  "new": {
+    "calibration_path": "/home/juwon/Desktop/Pinkk-robot-arm/src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260723_150604_repeat_same_mount_01/calibration.calib",
+    "pose_count": 12,
+    "mean_translation_m": {
+      "x": 0.29030013903343693,
+      "y": -0.12941993111784753,
+      "z": -0.06014244115140439
+    },
+    "mean_quaternion_xyzw": {
+      "x": 0.007191947398146011,
+      "y": 0.998482561738428,
+      "z": -0.008766246371447994,
+      "w": 0.05388879959178567
+    },
+    "mean_rpy_deg": {
+      "roll": -179.03574008656926,
+      "pitch": 6.185061216034146,
+      "yaw": 179.2267229343503
+    },
+    "position_rms_mm": 2.2203977686807304,
+    "position_max_mm": 3.5912637720761853,
+    "rotation_rms_deg": 0.45461674828154863,
+    "rotation_max_deg": 0.7510697595229474
+  },
+  "calibration_transform_difference": {
+    "translation_mm": 2.840999113075437,
+    "rotation_deg": 1.5153595551797152
+  },
+  "interpretation": "고정된 보드의 g_base 기준 자세 산포가 작을수록 일관성이 좋은 캘리브레이션입니다."
+}
