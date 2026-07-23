@@ -1,232 +1,159 @@
-# Pinkk Hand-eye 자동화와 좌표 정확도 검증
+# pinkk_handeye_automation
 
-카메라 내부 캘리브레이션부터 결과 파일 선택까지의 대표 흐름은
-[`../../../src/robot_arm/robot_camera/CALIBRATION_GUIDE_KO.md`](../../../src/robot_arm/robot_camera/CALIBRATION_GUIDE_KO.md)를
-먼저 확인합니다.
+ROS2 MoveIt을 이용해 Eye-in-hand 샘플을 자동 수집하고 두 calibration 결과를
+동일한 로봇 자세에서 비교하는 패키지입니다.
 
-이 ROS 2 패키지에는 성격이 다른 두 실험 도구가 들어 있습니다.
+실제 터미널 실행과 데이터 관리 순서는
+[`scripts/calibration/README_KO.md`](../../../scripts/calibration/README_KO.md)를
+따릅니다. 이 문서는 노드의 동작과 직접 launch 방법만 설명합니다.
 
-| 실행 파일 | 목적 | 상태 |
-|---|---|---|
-| `auto_collect` | ChArUco 관측 자세 이동과 Easy Handeye2 샘플 자동 수집 | 캘리브레이션 도구 |
-| `compare_calibrations` | 같은 자동 자세에서 두 Hand-eye 결과의 보드 자세 산포 비교 | 캘리브레이션 검증 도구 |
-| `usb_pre_approach` | Hand-eye·SolvePnP·TF 좌표가 실제 로봇 위치와 맞는지 확인 | 정확도 검증용 실험 |
+## 실행 파일
 
-`usb_pre_approach`는 이름에 `approach`가 있지만 실제 USB 삽입 프로그램이
-아닙니다. 그리퍼/충전기 TCP, 충돌 회피, 힘 제어, PBVS/IBVS가 아직 포함되지
-않았으므로 측정 좌표의 오차를 눈으로 확인하는 용도로만 사용합니다.
+| 실행 파일 | 역할 |
+|---|---|
+| `auto_collect` | 자동 관측 자세 이동, Easy Handeye2 수집·계산·저장 |
+| `compare_calibrations` | 동일한 자세에서 두 결과의 고정 보드 산포 비교 |
+| `usb_pre_approach` | 과거 수동 USB 검증용 레거시 노드 |
 
-실제 로봇·MoveIt·Hand-eye TF·카메라 터미널 구성은
-[`../pinkk_mycobot_bridge/HAND_EYE_HANDOFF_KO.md`](../pinkk_mycobot_bridge/HAND_EYE_HANDOFF_KO.md)의
-USB 포트 수동 검출 절을 참고합니다.
+최종 USB 자동 인식과 PBVS는 `pinkk_usb_insertion` 패키지가 담당합니다.
 
-## 1. Hand-eye 자동 캘리브레이션
+## 자동 수집
 
-현재 `g_base -> joint6_flange`를 기준 자세로 저장한 뒤, local X/Y/Z 회전을
-조합한 후보 자세를 생성합니다.
+시작 시점의 `g_base → joint6_flange` 위치를 기준으로 local Roll/Pitch/Yaw를
+변경한 최대 30개의 관측 자세를 만듭니다.
 
 ```text
 MoveIt IK
 → FollowJointTrajectory 이동
 → 정지 대기
-→ 유효 ChArUco TF 확인
+→ 최신 ChArUco TF 확인
 → Easy Handeye2 TakeSample
-→ 계산 및 저장
+→ samples 저장
+→ Tsai-Lenz 계산
+→ calibration 저장
+→ 시작 자세 복귀
 ```
 
-ChArUco TF는 코너 25개 이상, 재투영 오차 0.7 px 이하일 때만 유효합니다.
-후보 30개 중 유효 샘플 목표는 15개이며 최소 12개 이상일 때만 결과를
-계산합니다.
-
-이동 없는 IK 검사:
-
-```bash
-ros2 launch pinkk_handeye_automation auto_calibrate.launch.py
-```
-
-실제 자동 수집:
-
-```bash
-ros2 launch pinkk_handeye_automation auto_calibrate.launch.py execute:=true
-```
-
-샘플 수 변경:
-
-```bash
-ros2 launch pinkk_handeye_automation auto_calibrate.launch.py \
-  execute:=true target_samples:=18 minimum_samples:=15
-```
-
-실제 운용에서는 위 launch를 직접 실행하기보다 다음 wrapper를 사용합니다. 실행
-전 새 run 폴더를 만들고, 종료 후 Easy Handeye2의 원본 samples와 calibration을
-Git 추적 폴더로 자동 보관합니다.
-
-```bash
-bash scripts/calibration/laptop_auto_handeye.sh check 30 20
-bash scripts/calibration/laptop_auto_handeye.sh execute 30 20 bracket_fixed
-```
-
-Easy Handeye2 서버 메모리에 기존 샘플이 있으면 자동 수집을 거부하므로 서로 다른
-run의 샘플이 섞이지 않습니다.
-
-## 2. 두 Hand-eye 결과 자동 자세 비교
-
-ChArUco 보드를 고정한 채 자동 수집과 같은 회전 자세로 이동하고 다음 두 계산을
-같은 원본 TF에 적용합니다.
+목표 회전의 IK나 검출이 실패하면 같은 회전 방향을 유지하며 다음 비율로
+축소합니다.
 
 ```text
-T_base_board_old = T_base_flange × T_flange_camera_old × T_camera_board
-T_base_board_new = T_base_flange × T_flange_camera_new × T_camera_board
+100% → 75% → 50% → 35%
 ```
 
-두 calibration TF를 동시에 publish하지 않으므로 TF 충돌이 없습니다. 위치
-산포(mm)와 회전 산포(deg)가 작은 결과가 자세 변화에 더 일관적입니다.
+새 수집을 시작할 때 Easy Handeye2 서버 메모리에 기존 샘플이 있으면 실행을
+중단합니다. 서로 다른 run의 샘플을 자동으로 섞지 않습니다.
+
+직접 launch:
 
 ```bash
-ros2 launch pinkk_handeye_automation compare_calibrations.launch.py \
-  old_calib_path:=/경로/old.calib \
-  new_calib_path:=/경로/new.calib
+# 이동 없는 검사
+ros2 launch pinkk_handeye_automation auto_calibrate.launch.py \
+  execute:=false target_samples:=30 minimum_samples:=20
+
+# 실제 이동과 계산
+ros2 launch pinkk_handeye_automation auto_calibrate.launch.py \
+  execute:=true target_samples:=30 minimum_samples:=20
 ```
 
-위 명령은 IK만 검사합니다. 실제 이동과 CSV/JSON 저장은
-`execute:=true`를 추가합니다. Easy Handeye2 서버 및 Hand-eye static TF
-publisher는 종료하고, bridge·MoveIt·ChArUco TF만 실행해야 합니다.
+직접 launch는 Easy Handeye2 홈 폴더까지만 저장합니다. Git 추적 run 폴더까지
+자동 보관하려면 운영 wrapper를 사용합니다.
 
-실제 운용 wrapper는 run 이름을 받아 비교 결과를
-`handeye_calibration_1828/data/comparisons/`에 자동 보관합니다.
+```bash
+bash scripts/calibration/laptop_auto_handeye.sh execute 30 20 LABEL
+```
+
+## 두 결과 비교
+
+ChArUco 보드를 고정한 상태에서 old/new에 동일한 원본 TF를 적용합니다.
+
+```text
+T_base_board_old =
+  T_base_flange × T_flange_camera_old × T_camera_board
+
+T_base_board_new =
+  T_base_flange × T_flange_camera_new × T_camera_board
+```
+
+두 Hand-eye static TF를 동시에 publish하지 않으므로 TF 이름 충돌이 없습니다.
+카메라 검출 시각의 로봇 TF를 사용해 시간 정렬하며, 각 자세에서 서로 다른
+ChArUco timestamp를 10회 측정합니다.
+
+직접 launch:
+
+```bash
+# 이동 없는 IK 검사
+ros2 launch pinkk_handeye_automation compare_calibrations.launch.py \
+  execute:=false \
+  old_calib_path:=/path/old.calib \
+  new_calib_path:=/path/new.calib
+
+# 실제 비교
+ros2 launch pinkk_handeye_automation compare_calibrations.launch.py \
+  execute:=true \
+  old_calib_path:=/path/old.calib \
+  new_calib_path:=/path/new.calib \
+  output_csv:=/path/measurements.csv
+```
+
+운영 wrapper는 run 선택자를 받아 결과를 Git 추적 `data/comparisons/` 폴더에
+자동 보관합니다.
 
 ```bash
 bash scripts/calibration/laptop_compare_handeye.sh execute 30 OLD_RUN NEW_RUN
 ```
 
-## 3. USB 좌표 정확도 검증 실험
+## 비교 결과
 
-### 3.1 검증하려는 좌표 체인
+CSV는 각 자세의 old/new 보드 좌표와 자세 내부 측정 산포를 기록합니다. 요약
+JSON은 다음 값을 기록합니다.
 
-```text
-T_base_usb
-= T_base_flange × T_flange_camera × T_camera_usb
-```
+- `position_rms_mm`
+- `position_max_mm`
+- `rotation_rms_deg`
+- `rotation_max_deg`
+- 두 calibration 행렬 사이 translation/rotation 차이
 
-- `T_base_flange`: 실제 관절각과 URDF FK
-- `T_flange_camera`: Hand-eye 결과
-- `T_camera_usb`: 내부 파라미터와 수동 네 점 SolvePnP
+고정 보드의 위치·회전 산포가 전반적으로 작은 결과가 자세 변화에 더
+일관적입니다. 이 검사는 절대 위치 정확도를 단독으로 보장하지 않습니다.
 
-실험 목표는 이 체인으로 얻은 USB X/Y/Z/Yaw가 실제 USB 위치와 얼마나 맞는지
-확인하는 것입니다.
+## 주요 파라미터
 
-### 3.2 현재 고정 시험값
+### `auto_collect`
 
-| 항목 | 값 | 의미 |
+| 파라미터 | 기본값 | 의미 |
 |---|---:|---|
-| 초기 관절각 | `[-1.66, -8.08, -36.65, -39.9, 0, 45]°` | USB 관측 자세 |
-| transit Z | `150 mm` | 높은 Z에서 XY IK가 실패해 먼저 이동하는 중간 높이 |
-| 최종 Z | `USB Z + 100 mm` | flange 기준 검증 종료 높이 |
-| Roll/Pitch | `-180° / 0°` | 아래쪽을 보는 시험 자세 |
-| Yaw offset | `+129.782°` | 고정 클릭 축과 그리퍼 정렬 관계 |
-| XY 분할 | 없음 | 목표 XY를 한 번에 전송 |
-| 회전 분할 | 실행 시 `180°` | 목표 회전을 한 번에 전송 |
-| 최종 Z 분할 | `10 mm` | 마지막 접근만 상대적으로 천천히 확인 |
+| `execute` | `false` | 실제 이동 허용 |
+| `target_samples` | `15` | 목표 유효 샘플 |
+| `minimum_samples` | `12` | 계산 최소 샘플 |
+| `settle_seconds` | `1.5` | 이동 후 정지 대기 |
+| `detection_timeout_seconds` | `8.0` | 자세별 검출 대기 |
+| `max_tf_age_seconds` | `0.4` | ChArUco TF 최대 나이 |
+| `motion_seconds` | `4.0` | trajectory 계획 시간 |
+| `motion_retry_count` | `2` | 동일 목표 재시도 |
+| `return_home` | `true` | 종료 시 시작 자세 복귀 |
 
-Yaw offset은 USB 위치를 다시 측정할 때마다 바꾸는 값이 아닙니다. 클릭 좌표축,
-카메라·그리퍼 장착 또는 충전기 고정 방향이 바뀔 때만 다시 측정합니다.
+운영 wrapper 기본값은 목표 30, 최소 20입니다.
 
-### 3.3 USB 클릭 규칙
+### `compare_calibrations`
 
-화면의 가로·세로가 아니라 USB의 물리적 변을 기준으로 합니다.
+| 파라미터 | 기본값 | 의미 |
+|---|---:|---|
+| `execute` | `false` | 실제 비교 이동 허용 |
+| `pose_limit` | `30` | 사용할 자동 자세 수 |
+| `measurement_count` | `10` | 자세별 고유 TF 측정 수 |
+| `settle_seconds` | `1.5` | 이동 후 정지 대기 |
+| `detection_timeout_seconds` | `8.0` | 연속 측정 대기 |
+| `old_calib_path` | 필수 | 기준 `.calib` |
+| `new_calib_path` | 필수 | 후보 `.calib` |
+| `output_csv` | 자동 | 자세별 결과 파일 |
 
-```text
-1→2: USB 긴 변 11.5 mm
-2→3: 인접한 짧은 변 4.5 mm
-3→4→1: 같은 방향으로 나머지 둘레
-```
+## 실행 전 요구 조건
 
-Yaw 방향까지 반복하려면 같은 물리적 시작 모서리를 사용해야 합니다. 한쪽에
-작은 표시를 붙이고 그 점을 항상 1번으로 사용하는 방법이 가장 확실합니다.
+- 로봇 PC bridge
+- 로봇 PC ChArUco TF
+- 노트북 MoveIt/RViz
+- 자동 수집 시에만 Easy Handeye2 서버
+- Domain 36과 동일한 Fast DDS 설정
 
-카메라 기준 SolvePnP 깊이는 실제 렌즈–USB 거리 약 260 mm와 비슷해야 합니다.
-깊이가 크게 다르면 로봇을 이동하지 않습니다.
-
-### 3.4 표준 실행 순서
-
-초기 관측 자세 이동:
-
-```bash
-ros2 run pinkk_handeye_automation usb_pre_approach observe --execute
-```
-
-로봇 정지 후 `manual_usb_tf` 화면에서 기존 결과를 지우고 다시 선택합니다.
-
-```text
-r → f → 물리적 긴 변부터 네 점 클릭
-```
-
-TF 확인:
-
-```bash
-ros2 run tf2_ros tf2_echo camera_optical_frame usb_port
-ros2 run tf2_ros tf2_echo g_base usb_port
-```
-
-로봇을 움직이지 않는 IK/경로 검사:
-
-```bash
-ros2 run pinkk_handeye_automation usb_pre_approach run \
-  --transit-z-mm 150 \
-  --standoff-mm 100 \
-  --angle-step-deg 180 \
-  --final-z-step-mm 10
-```
-
-모든 단계의 IK가 성공한 경우에만 실제 검증 이동을 실행합니다.
-
-```bash
-ros2 run pinkk_handeye_automation usb_pre_approach run \
-  --transit-z-mm 150 \
-  --standoff-mm 100 \
-  --angle-step-deg 180 \
-  --final-z-step-mm 10 \
-  --execute
-```
-
-예상 단계 수:
-
-```text
-TRANSIT_Z=1
-XY=1
-ROT=1
-Z=거리/10 mm
-```
-
-실제 MyCobot 속도는 로봇 PC의 bridge에서 정합니다.
-
-```bash
-ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py \
-  speed:=50 goal_tolerance_deg:=5.0
-```
-
-`usb_pre_approach`의 `--motion-seconds`는 현재 bridge에서 실제 속도보다 목표 도달
-timeout 계산에 주로 사용됩니다.
-
-### 2.5 현재 실험의 한계
-
-- `joint6_flange`를 목표점으로 사용하며 그리퍼/충전기 TCP 오프셋이 없습니다.
-- 충돌 검사는 기본적으로 비활성화되어 있습니다.
-- XY와 transit Z는 한 관절 목표로 보내므로 완전한 Cartesian 직선을 보장하지
-  않습니다.
-- 마지막 Z는 작은 IK 목표들로 직선을 근사하며 연속 servo 제어가 아닙니다.
-- 이동 후 기존 `camera_optical_frame -> usb_port`는 오래된 관측이므로 반드시
-  다시 클릭해야 합니다.
-- 실제 삽입에는 TCP 보정, 힘/접촉 감지와 PBVS/IBVS 폐루프가 추가로 필요합니다.
-
-## 3. 결과 해석
-
-이 실험에서 확인할 것은 “USB에 삽입했는가”가 아니라 다음 항목입니다.
-
-- SolvePnP 깊이가 실제 거리와 일치하는가
-- RViz의 USB 위치가 실제 작업대 위치와 일치하는가
-- 목표 XY 이동 후 flange가 USB 중심 근처에 오는가
-- 고정 Yaw offset으로 반복 측정해도 같은 방향 정렬이 나오는가
-- 위치를 바꿨을 때 오차가 특정 방향으로 누적되는가
-
-이 결과를 기록한 뒤 TCP와 PBVS/IBVS 단계로 넘어갑니다.
+비교 중에는 Easy Handeye2 서버와 Hand-eye static TF publisher를 종료합니다.

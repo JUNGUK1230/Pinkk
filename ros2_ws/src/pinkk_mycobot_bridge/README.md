@@ -1,30 +1,32 @@
 # Pinkk MyCobot ROS 2 브리지
 
-현재 구성 상태와 다음 작업의 상세 절차는
+캘리브레이션 관련 실행과 진단은
 [`HAND_EYE_HANDOFF_KO.md`](HAND_EYE_HANDOFF_KO.md)를 참고합니다.
 
-첫 번째 연동 단계는 안전을 위해 읽기 전용으로 구성되어 있습니다. 로봇 PC는
-`MyCobot280.get_angles()`로 실제 관절각을 읽어 `/joint_states`를 발행하며,
-로봇 이동 API는 호출하지 않습니다. MoveIt과 RViz는 가짜 ros2_control 하드웨어
-없이 노트북에서 실행합니다.
+현재 표준은 `trajectory_bridge`가 실제 관절각을 `/joint_states`로 발행하고
+MoveIt의 `FollowJointTrajectory` 목표를 로봇에 전달하는 구성입니다.
+`joint_state_bridge`와 `planning_only`는 읽기 전용 진단이 필요할 때만 사용합니다.
 
 노트북과 로봇 PC에서 동일한 ROS 네트워크 설정을 사용합니다.
 
 ```bash
 export ROS_DOMAIN_ID=36
 export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ```
 
 로봇 PC:
 
 ```bash
-ros2 launch pinkk_mycobot_bridge joint_state_bridge.launch.py
+cd ~/Pinkk-robot-arm
+bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
 노트북:
 
 ```bash
-ros2 launch pinkk_mycobot_bridge planning_only.launch.py
+cd ~/Desktop/Pinkk-robot-arm
+bash scripts/calibration/laptop_start_moveit.sh
 ```
 
 브리지와 동시에 `sync_plan`, `sync_plan_arduino`, Jupyter 로봇 제어 코드 또는
