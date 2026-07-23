@@ -233,6 +233,7 @@ class CalibrationComparator(Node):
         self.declare_parameter("new_calib_path", "")
         self.declare_parameter("output_csv", "")
         self.declare_parameter("pose_limit", 30)
+        self.declare_parameter("target_valid_poses", 0)
         self.declare_parameter("settle_seconds", 1.5)
         self.declare_parameter("detection_timeout_seconds", 8.0)
         self.declare_parameter("max_tf_age_seconds", 0.4)
@@ -257,6 +258,10 @@ class CalibrationComparator(Node):
             else Path.home() / f"handeye_comparison_{timestamp}.csv"
         )
         self.pose_limit = int(self.get_parameter("pose_limit").value)
+        configured_target = int(
+            self.get_parameter("target_valid_poses").value
+        )
+        self.target_valid_poses = configured_target or self.pose_limit
         self.settle_seconds = float(self.get_parameter("settle_seconds").value)
         self.detection_timeout = float(
             self.get_parameter("detection_timeout_seconds").value
@@ -272,6 +277,10 @@ class CalibrationComparator(Node):
         if not 1 <= self.pose_limit <= len(OBSERVATION_ROTATIONS_DEG):
             raise ValueError(
                 f"pose_limit은 1~{len(OBSERVATION_ROTATIONS_DEG)} 범위여야 합니다"
+            )
+        if not 1 <= self.target_valid_poses <= self.pose_limit:
+            raise ValueError(
+                "target_valid_poses는 1 이상 pose_limit 이하여야 합니다"
             )
         if self.measurement_count < 1:
             raise ValueError("measurement_count는 1 이상이어야 합니다")
@@ -615,7 +624,9 @@ class CalibrationComparator(Node):
             return
 
         self.get_logger().warning(
-            "5초 후 실제 비교 이동을 시작합니다. ChArUco 보드는 완전히 고정하세요"
+            "5초 후 실제 비교 이동을 시작합니다. ChArUco 보드는 완전히 고정하세요. "
+            f"목표 유효 자세={self.target_valid_poses}, "
+            f"자세당 측정={self.measurement_count}회"
         )
         time.sleep(5.0)
         seed = home_joints
@@ -682,13 +693,20 @@ class CalibrationComparator(Node):
                     measured = True
                     self.get_logger().info(
                         f"자세 {index:02d} 측정 완료: "
-                        f"{len(old_measurements)}회 × old/new"
+                        f"{len(old_measurements)}회 × old/new "
+                        f"(유효 {len(old_pose_values)}/{self.target_valid_poses})"
                     )
                     break
                 if not measured:
                     self.get_logger().warning(
                         f"자세 {index:02d}의 모든 축소 관측 시도가 실패했습니다"
                     )
+                if len(old_pose_values) >= self.target_valid_poses:
+                    self.get_logger().info(
+                        f"목표 유효 자세 {self.target_valid_poses}개를 채워 "
+                        "남은 후보를 시도하지 않습니다"
+                    )
+                    break
         finally:
             if self.return_home:
                 self.get_logger().info("초기 홈 자세로 복귀합니다")
@@ -706,7 +724,7 @@ class CalibrationComparator(Node):
         new_summary = summarize_transforms(new_pose_values)
         self.get_logger().info(
             "비교 완료 "
-            f"(유효 자세 {len(old_pose_values)}개): "
+            f"(유효 자세 {len(old_pose_values)}/{self.target_valid_poses}개): "
             f"OLD position={old_summary['position_rms_mm']:.2f} mm, "
             f"rotation={old_summary['rotation_rms_deg']:.2f} deg / "
             f"NEW position={new_summary['position_rms_mm']:.2f} mm, "

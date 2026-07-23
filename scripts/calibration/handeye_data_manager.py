@@ -567,6 +567,8 @@ def create_comparison(arguments: argparse.Namespace) -> int:
         "old_calibration": str(old.relative_to(REPO_ROOT)),
         "new_calibration": str(new.relative_to(REPO_ROOT)),
         "pose_limit": arguments.pose_limit,
+        "target_valid_poses": arguments.target_valid_poses,
+        "measurement_count": arguments.measurement_count,
         "git_commit": git_value("rev-parse", "HEAD"),
     }
     write_json(comparison / "metadata.json", metadata)
@@ -590,11 +592,18 @@ def finalize_comparison(arguments: argparse.Namespace) -> int:
         return 4
     with csv_path.open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
+    pose_count = len({row["pose_index"] for row in rows})
+    target_valid_poses = int(metadata.get("target_valid_poses", 0))
+    status = (
+        "complete"
+        if target_valid_poses <= 0 or pose_count >= target_valid_poses
+        else "partial"
+    )
     metadata.update(
         {
-            "status": "complete",
+            "status": status,
             "finalized_at": iso_now(),
-            "pose_count": len({row["pose_index"] for row in rows}),
+            "pose_count": pose_count,
             "artifacts": {
                 "measurements": {
                     "file": csv_path.name,
@@ -722,6 +731,8 @@ def build_parser() -> argparse.ArgumentParser:
     comparison.add_argument("--old", required=True)
     comparison.add_argument("--new", required=True)
     comparison.add_argument("--pose-limit", type=int, default=30)
+    comparison.add_argument("--target-valid-poses", type=int, default=0)
+    comparison.add_argument("--measurement-count", type=int, default=10)
     comparison.set_defaults(handler=create_comparison)
 
     finalize = subparsers.add_parser(

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "comparison_id": "20260723_151845_20260715_baseline_old_vs_20260723_150604_repeat_same_mount_01",
+  "created_at": "2026-07-23T15:18:45.845565+09:00",
+  "status": "complete",
+  "old_calibration": "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/calibration.calib",
+  "new_calibration": "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260723_150604_repeat_same_mount_01/calibration.calib",
+  "pose_limit": 30,
+  "git_commit": "82b819fb5a9e12e0c7a8fd8a1738473938745c27",
+  "finalized_at": "2026-07-23T15:38:17.541188+09:00",
+  "pose_count": 8,
+  "artifacts": {
+    "measurements": {
+      "file": "measurements.csv",
+      "sha256": "ed637e61b715872da4a94968e75c5e57a1077dc72aaa74f926061d45888afaf6"
+    },
+    "summary": {
+      "file": "measurements.summary.json",
+      "sha256": "918b0c67166b368472bb09066dccb6fcad8dec6adcb411c1cde5b7a640be95d5"
+    }
+  }
+}

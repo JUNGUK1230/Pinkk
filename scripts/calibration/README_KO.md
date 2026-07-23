@@ -271,18 +271,27 @@ ChArUco 보드는 수집 때와 같은 위치에 고정합니다.
 이동 없는 검사:
 
 ```bash
-bash scripts/calibration/laptop_compare_handeye.sh check 30 \
-  20260715_baseline_old 20260723_150000_bracket_fixed
+bash scripts/calibration/laptop_compare_handeye.sh check 15 \
+  20260715_baseline_old 20260723_150000_bracket_fixed 5
 ```
 
 실제 비교:
 
 ```bash
-bash scripts/calibration/laptop_compare_handeye.sh execute 30 \
-  20260715_baseline_old 20260723_150000_bracket_fixed
+bash scripts/calibration/laptop_compare_handeye.sh execute 15 \
+  20260715_baseline_old 20260723_150000_bracket_fixed 5
 ```
 
 run은 전체 이름 또는 유일하게 구분되는 일부 문자열을 사용할 수 있습니다.
+두 번째 인자는 앞에서 시도할 자세 수가 아니라 **목표 유효 자세 수**입니다.
+노드는 최대 30개 후보를 순회하고 ChArUco 측정에 성공한 자세가 목표 수에
+도달하면 즉시 종료합니다. 마지막 인자는 자세당 반복 측정 횟수이며 권장값은
+5회입니다. 실행 시간을 줄인 권장 비교는 다음과 같습니다.
+
+```bash
+bash scripts/calibration/laptop_compare_handeye.sh execute 15 \
+  OLD_RUN NEW_RUN 5
+```
 
 한 번의 로봇 이동과 동일한 원본 TF에 두 행렬을 적용합니다.
 

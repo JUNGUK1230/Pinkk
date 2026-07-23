@@ -12,6 +12,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("new_calib_path"),
             DeclareLaunchArgument("output_csv", default_value=""),
             DeclareLaunchArgument("pose_limit", default_value="30"),
+            DeclareLaunchArgument("target_valid_poses", default_value="0"),
             DeclareLaunchArgument("measurement_count", default_value="10"),
             DeclareLaunchArgument("settle_seconds", default_value="1.5"),
             DeclareLaunchArgument("detection_timeout_seconds", default_value="8.0"),
@@ -27,6 +28,9 @@ def generate_launch_description() -> LaunchDescription:
                         "new_calib_path": LaunchConfiguration("new_calib_path"),
                         "output_csv": LaunchConfiguration("output_csv"),
                         "pose_limit": LaunchConfiguration("pose_limit"),
+                        "target_valid_poses": LaunchConfiguration(
+                            "target_valid_poses"
+                        ),
                         "measurement_count": LaunchConfiguration("measurement_count"),
                         "settle_seconds": LaunchConfiguration("settle_seconds"),
                         "detection_timeout_seconds": LaunchConfiguration(
