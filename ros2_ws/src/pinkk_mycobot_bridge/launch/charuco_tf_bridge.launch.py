@@ -30,7 +30,7 @@ def generate_launch_description() -> LaunchDescription:
                 "target_frame": "charuco_board",
                 "camera_width": 640,
                 "camera_height": 480,
-                "min_corners": 35,
+                "min_corners": 25,
                 "max_reprojection_error_px": 0.7,
             }
         ],

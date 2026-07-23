@@ -72,7 +72,7 @@ Easy Handeye2의 Eye-in-hand 설정값:
 - marker: 11 mm
 - dictionary: `DICT_4X4_1000`
 - OpenCV legacy ChArUco pattern: enabled
-- 유효 검출: corners 35개 이상, reprojection error 0.7 px 이하
+- 유효 검출: corners 25개 이상, reprojection error 0.7 px 이하
 
 내부 캘리브레이션 파일:
 
@@ -89,7 +89,7 @@ Easy Handeye2의 Eye-in-hand 설정값:
 5. 로봇 주변의 충돌 물체를 치우고 비상 정지 수단을 준비한다.
 6. 자동 이동을 처음 시험할 때 속도는 5~10%로 제한한다.
 
-보드가 영상 전체에 모두 보일 필요는 없지만, 각 자세에서 최소 35개 이상의
+보드가 영상 전체에 모두 보일 필요는 없지만, 각 자세에서 최소 25개 이상의
 ChArUco corner와 0.7 px 이하 reprojection error가 안정적으로 유지되어야 한다.
 
 ## 5. 로봇 PC 시작 절차

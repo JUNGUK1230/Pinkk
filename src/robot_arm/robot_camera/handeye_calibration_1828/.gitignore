@@ -1,2 +1,4 @@
 data/*
 !data/.gitkeep
+!data/easy_handeye2/
+!data/easy_handeye2/**
