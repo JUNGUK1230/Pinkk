@@ -15,7 +15,7 @@ setup(
         (f"share/{PACKAGE_NAME}", ["package.xml", "README.md"]),
         (f"share/{PACKAGE_NAME}/launch", glob("launch/*.launch.py")),
     ],
-    install_requires=["setuptools"],
+    install_requires=["numpy", "PyYAML", "setuptools"],
     zip_safe=True,
     maintainer="juwon",
     maintainer_email="juwon@example.com",
@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "auto_collect = pinkk_handeye_automation.auto_collect:main",
+            "compare_calibrations = pinkk_handeye_automation.compare_calibrations:main",
             "usb_pre_approach = pinkk_handeye_automation.usb_pre_approach:main",
         ],
     },

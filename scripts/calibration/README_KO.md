@@ -133,6 +133,59 @@ bash scripts/calibration/laptop_auto_handeye.sh execute 20 15
 
 `20`은 목표 유효 샘플 수, `15`는 계산을 허용하는 최소 유효 샘플 수입니다.
 
+### A-6. 기존/신규 Hand-eye 결과를 같은 자동 자세에서 비교
+
+이 비교는 새 샘플을 추가하거나 `.calib` 파일을 덮어쓰지 않습니다. 고정된
+ChArUco 보드를 30개 자세에서 관측하고, 같은 원본 TF에 기존/신규 행렬을 각각
+적용해 `g_base` 기준 보드 자세의 산포를 계산합니다. 위치 산포(mm)와 회전
+산포(deg)가 작은 결과가 자세가 바뀌어도 더 일관적인 결과입니다.
+
+다음 세 프로세스만 유지합니다.
+
+```text
+로봇 PC: bridge + ChArUco TF
+노트북: MoveIt/RViz
+```
+
+Easy Handeye2 서버와 기존/신규 Hand-eye static TF publisher는 모두 종료합니다.
+ChArUco 보드는 비교가 끝날 때까지 절대 움직이지 않습니다.
+
+먼저 이동 없는 IK 검사:
+
+```bash
+cd ~/Desktop/Pinkk-robot-arm
+export ROS_DOMAIN_ID=38
+bash scripts/calibration/laptop_compare_handeye.sh check 30
+```
+
+IK 결과를 확인한 뒤 실제 비교:
+
+```bash
+bash scripts/calibration/laptop_compare_handeye.sh execute 30
+```
+
+기본 비교 파일은 저장소에 보관된 다음 두 결과입니다.
+
+```text
+OLD: pinkk_eye_in_hand_20260715.calib
+NEW: pinkk_eye_in_hand_30samples_20260723.calib
+```
+
+결과는 기본적으로 노트북 홈에 저장됩니다.
+
+```text
+~/handeye_comparison_YYYYMMDD_HHMMSS.csv
+~/handeye_comparison_YYYYMMDD_HHMMSS.summary.json
+```
+
+CSV에는 각 자세의 old/new 보드 좌표가 들어가며, JSON에는 전체 자세의 위치
+RMS/최대 산포와 회전 RMS/최대 산포가 들어갑니다. 별도 파일을 비교하려면:
+
+```bash
+bash scripts/calibration/laptop_compare_handeye.sh check 30 \
+  /경로/old.calib /경로/new.calib
+```
+
 ## B. USB 좌표 정확도 검증
 
 ### B-1. 로봇 PC 터미널 1 — bridge

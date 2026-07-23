@@ -9,6 +9,7 @@
 | 실행 파일 | 목적 | 상태 |
 |---|---|---|
 | `auto_collect` | ChArUco 관측 자세 이동과 Easy Handeye2 샘플 자동 수집 | 캘리브레이션 도구 |
+| `compare_calibrations` | 같은 자동 자세에서 두 Hand-eye 결과의 보드 자세 산포 비교 | 캘리브레이션 검증 도구 |
 | `usb_pre_approach` | Hand-eye·SolvePnP·TF 좌표가 실제 로봇 위치와 맞는지 확인 | 정확도 검증용 실험 |
 
 `usb_pre_approach`는 이름에 `approach`가 있지만 실제 USB 삽입 프로그램이
@@ -56,9 +57,32 @@ ros2 launch pinkk_handeye_automation auto_calibrate.launch.py \
   execute:=true target_samples:=18 minimum_samples:=15
 ```
 
-## 2. USB 좌표 정확도 검증 실험
+## 2. 두 Hand-eye 결과 자동 자세 비교
 
-### 2.1 검증하려는 좌표 체인
+ChArUco 보드를 고정한 채 자동 수집과 같은 회전 자세로 이동하고 다음 두 계산을
+같은 원본 TF에 적용합니다.
+
+```text
+T_base_board_old = T_base_flange × T_flange_camera_old × T_camera_board
+T_base_board_new = T_base_flange × T_flange_camera_new × T_camera_board
+```
+
+두 calibration TF를 동시에 publish하지 않으므로 TF 충돌이 없습니다. 위치
+산포(mm)와 회전 산포(deg)가 작은 결과가 자세 변화에 더 일관적입니다.
+
+```bash
+ros2 launch pinkk_handeye_automation compare_calibrations.launch.py \
+  old_calib_path:=/경로/old.calib \
+  new_calib_path:=/경로/new.calib
+```
+
+위 명령은 IK만 검사합니다. 실제 이동과 CSV/JSON 저장은
+`execute:=true`를 추가합니다. Easy Handeye2 서버 및 Hand-eye static TF
+publisher는 종료하고, bridge·MoveIt·ChArUco TF만 실행해야 합니다.
+
+## 3. USB 좌표 정확도 검증 실험
+
+### 3.1 검증하려는 좌표 체인
 
 ```text
 T_base_usb
@@ -72,7 +96,7 @@ T_base_usb
 실험 목표는 이 체인으로 얻은 USB X/Y/Z/Yaw가 실제 USB 위치와 얼마나 맞는지
 확인하는 것입니다.
 
-### 2.2 현재 고정 시험값
+### 3.2 현재 고정 시험값
 
 | 항목 | 값 | 의미 |
 |---|---:|---|
@@ -88,7 +112,7 @@ T_base_usb
 Yaw offset은 USB 위치를 다시 측정할 때마다 바꾸는 값이 아닙니다. 클릭 좌표축,
 카메라·그리퍼 장착 또는 충전기 고정 방향이 바뀔 때만 다시 측정합니다.
 
-### 2.3 USB 클릭 규칙
+### 3.3 USB 클릭 규칙
 
 화면의 가로·세로가 아니라 USB의 물리적 변을 기준으로 합니다.
 
@@ -104,7 +128,7 @@ Yaw 방향까지 반복하려면 같은 물리적 시작 모서리를 사용해�
 카메라 기준 SolvePnP 깊이는 실제 렌즈–USB 거리 약 260 mm와 비슷해야 합니다.
 깊이가 크게 다르면 로봇을 이동하지 않습니다.
 
-### 2.4 표준 실행 순서
+### 3.4 표준 실행 순서
 
 초기 관측 자세 이동:
 
