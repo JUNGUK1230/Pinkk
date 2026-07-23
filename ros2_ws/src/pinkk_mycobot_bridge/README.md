@@ -33,7 +33,7 @@ ros2 launch pinkk_mycobot_bridge planning_only.launch.py
 
 ## ChArUco 타깃 TF
 
-카메라 노드는 기존 calib.io 11×8 보드 설정을 사용합니다. ChArUco 코너가 35개
+카메라 노드는 기존 calib.io 11×8 보드 설정을 사용합니다. ChArUco 코너가 25개
 이상이고 재투영 오차가 0.7 px 이하인 유효 검출만 다음 TF로 발행합니다.
 
 ```text

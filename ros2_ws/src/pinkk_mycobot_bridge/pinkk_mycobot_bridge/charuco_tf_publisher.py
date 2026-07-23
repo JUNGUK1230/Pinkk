@@ -91,7 +91,7 @@ class CharucoTfPublisher(Node):
         self.declare_parameter("target_frame", "charuco_board")
         self.declare_parameter("camera_width", 640)
         self.declare_parameter("camera_height", 480)
-        self.declare_parameter("min_corners", 35)
+        self.declare_parameter("min_corners", 25)
         self.declare_parameter("max_reprojection_error_px", 0.7)
         self.declare_parameter("show_preview", True)
 
