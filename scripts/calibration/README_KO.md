@@ -8,6 +8,9 @@
 USB TF 정확도 검증**이라는 두 실행 흐름이 있습니다. USB 검증 이동은 실제 USB
 삽입 절차가 아닙니다.
 
+최종 통합 작업 브랜치는 `robot_arm_1828`입니다. Hand-eye 실행 이력과 활성값,
+USB/YOLO/PBVS 설정도 이 브랜치에서 함께 관리합니다.
+
 ## 처음 한 번: pull 후 로컬 패키지 다시 빌드
 
 소스가 바뀌어도 ROS 2가 이전 설치본을 실행할 수 있으므로 `git pull` 뒤에는
@@ -122,16 +125,37 @@ bash scripts/calibration/laptop_start_easy_handeye.sh
 
 ```bash
 cd ~/Desktop/Pinkk-robot-arm
-bash scripts/calibration/laptop_auto_handeye.sh check 20 15
+bash scripts/calibration/laptop_auto_handeye.sh check 30 20
 ```
 
 IK 후보를 확인한 다음 실제 수집:
 
 ```bash
-bash scripts/calibration/laptop_auto_handeye.sh execute 20 15
+bash scripts/calibration/laptop_auto_handeye.sh execute 30 20 bracket_fixed
 ```
 
-`20`은 목표 유효 샘플 수, `15`는 계산을 허용하는 최소 유효 샘플 수입니다.
+`30`은 목표 유효 샘플 수, `20`은 계산을 허용하는 최소 유효 샘플 수,
+`bracket_fixed`는 이번 실행을 구분하는 이름입니다. 현재 자동 자세 목록은 최대
+30개이므로 목표를 30보다 크게 지정하지 않습니다.
+
+`execute`를 시작할 때 다음 폴더가 먼저 만들어집니다.
+
+```text
+src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/
+  YYYYMMDD_HHMMSS_bracket_fixed/
+```
+
+수집이 끝나면 Easy Handeye2 홈 폴더에서 다음 파일을 자동 보관합니다.
+
+```text
+metadata.json
+samples.samples
+calibration.calib
+T_flange_camera.npy
+```
+
+계산이 실패해도 새로 저장된 샘플이 있으면 `samples_only` 상태로 남습니다. 기존
+run은 덮어쓰거나 삭제하지 않습니다.
 
 ### A-6. 기존/신규 Hand-eye 결과를 같은 자동 자세에서 비교
 
@@ -164,18 +188,21 @@ IK 결과를 확인한 뒤 실제 비교:
 bash scripts/calibration/laptop_compare_handeye.sh execute 30
 ```
 
-기본 비교 파일은 저장소에 보관된 다음 두 결과입니다.
+기본 비교 run은 저장소에 보관된 다음 두 결과입니다.
 
 ```text
-OLD: pinkk_eye_in_hand_20260715.calib
-NEW: pinkk_eye_in_hand_30samples_20260723.calib
+OLD: 20260715_baseline_old
+NEW: 20260723_auto_30samples
 ```
 
-결과는 기본적으로 노트북 홈에 저장됩니다.
+결과는 기본적으로 저장소에 영구 보관됩니다.
 
 ```text
-~/handeye_comparison_YYYYMMDD_HHMMSS.csv
-~/handeye_comparison_YYYYMMDD_HHMMSS.summary.json
+src/robot_arm/robot_camera/handeye_calibration_1828/data/comparisons/
+  YYYYMMDD_HHMMSS_<old>_vs_<new>/
+    metadata.json
+    measurements.csv
+    measurements.summary.json
 ```
 
 CSV에는 각 자세의 old/new 보드 좌표가 들어가며, JSON에는 전체 자세의 위치
@@ -183,7 +210,49 @@ RMS/최대 산포와 회전 RMS/최대 산포가 들어갑니다. 별도 파일�
 
 ```bash
 bash scripts/calibration/laptop_compare_handeye.sh check 30 \
-  /경로/old.calib /경로/new.calib
+  20260715_baseline_old 20260723_auto_30samples
+
+bash scripts/calibration/laptop_compare_handeye.sh execute 30 \
+  20260715_baseline_old 20260723_auto_30samples
+```
+
+run은 전체 폴더 이름 대신 유일하게 구분되는 일부 문자열도 사용할 수 있습니다.
+
+### A-7. 결과 목록과 활성값 선택
+
+저장된 결과 목록:
+
+```bash
+bash scripts/calibration/laptop_handeye_data.sh list
+```
+
+검증에서 선택한 run을 전체 시스템 활성값으로 적용:
+
+```bash
+bash scripts/calibration/laptop_handeye_data.sh activate 20260715_baseline_old
+bash scripts/calibration/laptop_handeye_data.sh show-active
+```
+
+`activate`는 다음 파일을 한 번에 동기화합니다.
+
+```text
+data/active/calibration.calib
+data/active/T_flange_camera.npy
+data/T_flange_camera.npy
+data/T_flange_camera_easy_handeye.npy
+ros2_ws/src/pinkk_usb_insertion/config/handeye.yaml
+```
+
+활성값을 static TF로 발행:
+
+```bash
+bash scripts/calibration/laptop_publish_handeye_tf.sh
+```
+
+특정 run을 활성화하지 않고 임시 발행할 수도 있습니다.
+
+```bash
+bash scripts/calibration/laptop_publish_handeye_tf.sh 20260723_auto_30samples
 ```
 
 ## B. USB 좌표 정확도 검증

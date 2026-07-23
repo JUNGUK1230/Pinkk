@@ -13,17 +13,19 @@ from pinkk_handeye_automation.compare_calibrations import (
 )
 
 
-DATA_DIR = (
+RUNS_DIR = (
     Path(__file__).resolve().parents[4]
-    / "src/robot_arm/robot_camera/handeye_calibration_1828/data/easy_handeye2"
+    / "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs"
 )
 
 
 class TestCalibrationMath(unittest.TestCase):
     def test_repository_calibration_difference(self) -> None:
-        old, _ = load_calibration(DATA_DIR / "pinkk_eye_in_hand_20260715.calib")
+        old, _ = load_calibration(
+            RUNS_DIR / "20260715_baseline_old/calibration.calib"
+        )
         new, _ = load_calibration(
-            DATA_DIR / "pinkk_eye_in_hand_30samples_20260723.calib"
+            RUNS_DIR / "20260723_auto_30samples/calibration.calib"
         )
         delta = np.linalg.inv(old) @ new
         self.assertAlmostEqual(

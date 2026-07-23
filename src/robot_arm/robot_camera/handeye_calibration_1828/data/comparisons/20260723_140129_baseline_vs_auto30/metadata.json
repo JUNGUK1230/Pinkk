@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "comparison_id": "20260723_140129_baseline_vs_auto30",
+  "created_at": "2026-07-23T14:09:45.516599+09:00",
+  "status": "complete",
+  "old_run": "20260715_baseline_old",
+  "new_run": "20260723_auto_30samples",
+  "pose_limit": 30,
+  "valid_pose_count": 29,
+  "missing_pose_indices": [
+    3
+  ],
+  "result": {
+    "more_consistent": "20260715_baseline_old",
+    "old_position_rms_mm": 3.7662083371909576,
+    "new_position_rms_mm": 5.72725434179315,
+    "old_rotation_rms_deg": 0.8714867782494875,
+    "new_rotation_rms_deg": 1.2446974758108083
+  },
+  "finalized_at": "2026-07-23T14:36:43.230109+09:00",
+  "pose_count": 29,
+  "artifacts": {
+    "measurements": {
+      "file": "measurements.csv",
+      "sha256": "4d071b4db92b19196a4854db166094edb27e38fa5292c3499bb48ced84f21402"
+    },
+    "summary": {
+      "file": "measurements.summary.json",
+      "sha256": "4e4f46c6929d25f22c295b18bc7469fbcaa6ad0e0318d2f9ec99381984138f5f"
+    }
+  }
+}

@@ -16,6 +16,7 @@ setup(
         (f"share/{PACKAGE_NAME}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["numpy", "PyYAML", "setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="juwon",
     maintainer_email="juwon@example.com",

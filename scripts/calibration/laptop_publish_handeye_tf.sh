@@ -5,15 +5,21 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
+SELECTOR="${1:-active}"
+DATA_MANAGER="${SCRIPT_DIR}/handeye_data_manager.py"
+
 setup_ros_workspace
-echo "현재 활성 Easy Handeye2 결과를 static TF로 발행합니다"
+read -r TX TY TZ QX QY QZ QW < <(
+    /usr/bin/python3 "${DATA_MANAGER}" values "${SELECTOR}"
+)
+echo "Hand-eye static TF 발행: selector=${SELECTOR}"
 exec ros2 run tf2_ros static_transform_publisher \
-    --x -0.032326655 \
-    --y -0.040054972 \
-    --z 0.030691236 \
-    --qx -0.008700106 \
-    --qy 0.002006141 \
-    --qz -0.374364741 \
-    --qw 0.927238548 \
+    --x "${TX}" \
+    --y "${TY}" \
+    --z "${TZ}" \
+    --qx "${QX}" \
+    --qy "${QY}" \
+    --qz "${QZ}" \
+    --qw "${QW}" \
     --frame-id joint6_flange \
     --child-frame-id camera_optical_frame

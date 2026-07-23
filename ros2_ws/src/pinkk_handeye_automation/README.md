@@ -57,6 +57,18 @@ ros2 launch pinkk_handeye_automation auto_calibrate.launch.py \
   execute:=true target_samples:=18 minimum_samples:=15
 ```
 
+실제 운용에서는 위 launch를 직접 실행하기보다 다음 wrapper를 사용합니다. 실행
+전 새 run 폴더를 만들고, 종료 후 Easy Handeye2의 원본 samples와 calibration을
+Git 추적 폴더로 자동 보관합니다.
+
+```bash
+bash scripts/calibration/laptop_auto_handeye.sh check 30 20
+bash scripts/calibration/laptop_auto_handeye.sh execute 30 20 bracket_fixed
+```
+
+Easy Handeye2 서버 메모리에 기존 샘플이 있으면 자동 수집을 거부하므로 서로 다른
+run의 샘플이 섞이지 않습니다.
+
 ## 2. 두 Hand-eye 결과 자동 자세 비교
 
 ChArUco 보드를 고정한 채 자동 수집과 같은 회전 자세로 이동하고 다음 두 계산을
@@ -79,6 +91,13 @@ ros2 launch pinkk_handeye_automation compare_calibrations.launch.py \
 위 명령은 IK만 검사합니다. 실제 이동과 CSV/JSON 저장은
 `execute:=true`를 추가합니다. Easy Handeye2 서버 및 Hand-eye static TF
 publisher는 종료하고, bridge·MoveIt·ChArUco TF만 실행해야 합니다.
+
+실제 운용 wrapper는 run 이름을 받아 비교 결과를
+`handeye_calibration_1828/data/comparisons/`에 자동 보관합니다.
+
+```bash
+bash scripts/calibration/laptop_compare_handeye.sh execute 30 OLD_RUN NEW_RUN
+```
 
 ## 3. USB 좌표 정확도 검증 실험
 

@@ -40,6 +40,7 @@ JOINT_NAMES = (
 ACTION_NAME = "/arm_group_controller/follow_joint_trajectory"
 IK_SERVICE = "/compute_ik"
 TAKE_SAMPLE_SERVICE = "/easy_handeye2/calibration/take_sample"
+GET_SAMPLE_LIST_SERVICE = "/easy_handeye2/calibration/get_sample_list"
 SAVE_SAMPLES_SERVICE = "/easy_handeye2/calibration/save_samples"
 COMPUTE_SERVICE = "/easy_handeye2/calibration/compute_calibration"
 SAVE_CALIBRATION_SERVICE = "/easy_handeye2/calibration/save_calibration"
@@ -139,6 +140,9 @@ class AutoHandeyeCollector(Node):
         self._action = ActionClient(self, FollowJointTrajectory, ACTION_NAME)
         self._ik = self.create_client(GetPositionIK, IK_SERVICE)
         self._take_sample = self.create_client(TakeSample, TAKE_SAMPLE_SERVICE)
+        self._get_sample_list = self.create_client(
+            TakeSample, GET_SAMPLE_LIST_SERVICE
+        )
         self._save_samples = self.create_client(SaveSamples, SAVE_SAMPLES_SERVICE)
         self._compute = self.create_client(ComputeCalibration, COMPUTE_SERVICE)
         self._save_calibration = self.create_client(
@@ -172,12 +176,23 @@ class AutoHandeyeCollector(Node):
         for client, name in (
             (self._ik, IK_SERVICE),
             (self._take_sample, TAKE_SAMPLE_SERVICE),
+            (self._get_sample_list, GET_SAMPLE_LIST_SERVICE),
             (self._save_samples, SAVE_SAMPLES_SERVICE),
             (self._compute, COMPUTE_SERVICE),
             (self._save_calibration, SAVE_CALIBRATION_SERVICE),
         ):
             if not client.wait_for_service(timeout_sec=10.0):
                 raise RuntimeError(f"service가 없습니다: {name}")
+
+        existing = self._wait_future(
+            self._get_sample_list.call_async(TakeSample.Request()), 5.0
+        )
+        existing_count = len(existing.samples.samples)
+        if existing_count:
+            raise RuntimeError(
+                f"Easy Handeye 서버 메모리에 기존 샘플 {existing_count}개가 있습니다. "
+                "새 run과 섞지 않도록 서버를 재시작하고 Load Samples를 누르지 마세요"
+            )
 
         deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:

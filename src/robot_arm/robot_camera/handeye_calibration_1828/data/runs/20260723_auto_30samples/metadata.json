@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "run_id": "20260723_auto_30samples",
+  "label": "자동 자세 30 samples",
+  "created_at": "2026-07-23T11:58:11+09:00",
+  "created_epoch": 0,
+  "status": "complete",
+  "imported": true,
+  "collection": {
+    "easy_handeye_name": "pinkk_eye_in_hand_30samples_20260723",
+    "target_samples": 50,
+    "minimum_samples": 30,
+    "available_observation_poses": 30,
+    "frames": {
+      "robot_base": "g_base",
+      "robot_effector": "joint6_flange",
+      "tracking_base": "camera_optical_frame",
+      "tracking_marker": "charuco_board"
+    }
+  },
+  "artifacts": {
+    "samples": {
+      "file": "samples.samples",
+      "count": 30,
+      "sha256": "345e4e0952a09e071d541fe916e4ce44a5530ecdea499d997be00aa4f6bab649"
+    },
+    "calibration": {
+      "file": "calibration.calib",
+      "parameters": {
+        "name": "pinkk_eye_in_hand_30samples_20260723",
+        "calibration_type": "eye_in_hand",
+        "robot_base_frame": "g_base",
+        "robot_effector_frame": "joint6_flange",
+        "tracking_base_frame": "camera_optical_frame",
+        "tracking_marker_frame": "charuco_board",
+        "freehand_robot_movement": true,
+        "move_group_namespace": "/",
+        "move_group": "manipulator"
+      },
+      "transform": {
+        "translation": {
+          "x": -0.038412887849400626,
+          "y": -0.025814951287423615,
+          "z": 0.04185549380800871
+        },
+        "rotation": {
+          "x": -0.0006638315729358418,
+          "y": 0.010258159179405202,
+          "z": -0.42261741194386604,
+          "w": 0.9062498842039988
+        }
+      },
+      "matrix_4x4": [
+        [
+          0.6425785865842372,
+          0.7659803418935577,
+          0.01915400469960585,
+          -0.038412887849400626
+        ],
+        [
+          -0.7660075806533316,
+          0.6427881648990228,
+          -0.007467358795208751,
+          -0.025814951287423615
+        ],
+        [
+          -0.018031817574322765,
+          -0.009873747939625012,
+          0.9997886589957855,
+          0.04185549380800871
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "sha256": "dee8d8252e5384792f9cf4f310410f7d9f005abedef7c803b53b3f0ef7719696"
+    },
+    "matrix": {
+      "file": "T_flange_camera.npy",
+      "sha256": "f49eed2dc90ad362f22cb354adc343d463d5ea323cb2cb519517faf4bbb22144"
+    }
+  },
+  "notes": [
+    "요청 목표는 50이었지만 자동 자세 목록이 30개라 실제 저장 샘플은 30개",
+    "OpenCV Tsai-Lenz 결과"
+  ],
+  "archived_at": "2026-07-23T14:29:09.710296+09:00",
+  "archive_source": "/home/juwon/.ros2/easy_handeye2"
+}

@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/_common.sh"
 setup_handeye_workspace
 echo "Easy Handeye2 서버 시작: pinkk_eye_in_hand"
 echo "계산이 끝날 때까지 기존 Hand-eye static TF는 따로 실행하지 마세요"
+echo "새 run은 빈 메모리에서 시작합니다. GUI의 Load Samples를 누르지 마세요."
 exec ros2 launch easy_handeye2 calibrate.launch.py \
     name:=pinkk_eye_in_hand \
     calibration_type:=eye_in_hand \

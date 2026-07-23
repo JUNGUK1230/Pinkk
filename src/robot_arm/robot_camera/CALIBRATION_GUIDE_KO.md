@@ -23,13 +23,15 @@ USB 좌표로 로봇을 이동하는 현재 실험은 캘리브레이션 결과�
 | 종류 | 현재 기준 파일 | 용도 |
 |---|---|---|
 | 카메라 내부 파라미터 | `camera_calibration/results/intrinsics.npz` | 왜곡 보정과 모든 PnP |
-| 활성 Hand-eye | `handeye_calibration_1828/data/T_flange_camera.npy` | camera 좌표를 flange로 변환 |
-| Easy Handeye2 보관본 | `handeye_calibration_1828/data/T_flange_camera_easy_handeye.npy` | 현재 활성 결과의 원본 |
+| 활성 Hand-eye 원본 | `handeye_calibration_1828/data/active/calibration.calib` | 현재 선택한 Easy Handeye2 결과 |
+| 활성 Hand-eye 행렬 | `handeye_calibration_1828/data/active/T_flange_camera.npy` | camera 좌표를 flange로 변환 |
+| 실행 이력 | `handeye_calibration_1828/data/runs/` | 샘플·결과·실행 환경 영구 보관 |
+| 비교 이력 | `handeye_calibration_1828/data/comparisons/` | 자세별 CSV와 요약 JSON |
 | 수동 ChArUco 비교본 | `handeye_calibration_1828/data/T_flange_camera_manual_charuco.npy` | 두 방법의 오차 비교 |
 
-현재 `T_flange_camera.npy`와 `T_flange_camera_easy_handeye.npy`는 동일합니다. 즉,
-프로젝트의 활성 Hand-eye 결과는 **ROS2 Easy Handeye2 결과**입니다. 수동 ChArUco
-결과는 덮어쓰지 않고 비교본으로 유지합니다.
+기존 코드 호환을 위해 `data/T_flange_camera.npy`도 활성값과 동기화합니다. 활성
+결과를 바꿀 때 파일을 직접 복사하지 않고
+`scripts/calibration/laptop_handeye_data.sh activate RUN`을 사용합니다.
 
 ## 3. 폴더 역할
 
@@ -87,8 +89,10 @@ robot bridge와 MoveIt 준비
 → 자동 자세 IK DRY RUN
 → 유효 샘플 자동 수집
 → Easy Handeye2 계산/저장
-→ 활성 T_flange_camera로 복사
-→ 고정 보드 및 USB TF 검증
+→ 날짜별 run 폴더 자동 보관
+→ 이전 run과 고정 보드 자동 자세 비교
+→ 검증 결과가 좋은 run을 명시적으로 activate
+→ 전체 USB/PBVS 시스템 설정 동기화
 ```
 
 자동 수집 명령과 USB 검증 명령:
@@ -99,6 +103,9 @@ robot bridge와 MoveIt 준비
 
 이미 계산된 결과로 USB 좌표 정확도를 검증하는 현재 표준 실행 스크립트:
 [`../../../scripts/calibration/README_KO.md`](../../../scripts/calibration/README_KO.md)
+
+Hand-eye `.samples`, `.calib`, `.npy`, 비교 `.csv/.json`은 Git ignore 대상이
+아닙니다. 실험 이력은 `data/runs/`와 `data/comparisons/`에 계속 추가합니다.
 
 ## 6. 수동 Hand-eye 경로
 

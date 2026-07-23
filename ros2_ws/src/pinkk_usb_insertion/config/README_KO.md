@@ -28,11 +28,19 @@ child: camera_optical_frame
 동일한 변환입니다.
 
 ```text
-src/robot_arm/robot_camera/handeye_calibration_1828/data/T_flange_camera.npy
+src/robot_arm/robot_camera/handeye_calibration_1828/data/active/T_flange_camera.npy
 ```
 
 카메라 브래킷 위치나 각도가 바뀌면 다시 측정합니다. 충전기 TCP가 바뀌는 것은
 Hand-eye 재보정 조건이 아닙니다.
+
+검증된 run을 선택할 때 YAML을 직접 수정하지 않습니다.
+
+```bash
+bash scripts/calibration/laptop_handeye_data.sh activate RUN
+```
+
+이 명령이 활성 `.calib`, NPY와 이 YAML을 같은 값으로 동기화합니다.
 
 ## `tool_transform.yaml`
 

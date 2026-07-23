@@ -1,0 +1,20 @@
+parameters:
+  name: pinkk_eye_in_hand
+  calibration_type: eye_in_hand
+  robot_base_frame: g_base
+  robot_effector_frame: joint6_flange
+  tracking_base_frame: camera_optical_frame
+  tracking_marker_frame: charuco_board
+  freehand_robot_movement: true
+  move_group_namespace: /
+  move_group: manipulator
+transform:
+  translation:
+    x: -0.03232665499936334
+    y: -0.040054971670837186
+    z: 0.030691235580366204
+  rotation:
+    x: -0.008700105907432497
+    y: 0.0020061408200591213
+    z: -0.374364740526967
+    w: 0.9272385478432109

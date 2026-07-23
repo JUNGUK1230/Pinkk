@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-07-23T14:09:45.516599+09:00",
+  "frames": {
+    "robot_base": "g_base",
+    "robot_effector": "joint6_flange",
+    "tracking_base": "camera_optical_frame",
+    "tracking_marker": "charuco_board"
+  },
+  "old": {
+    "calibration_path": "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/calibration.calib",
+    "pose_count": 29,
+    "mean_translation_m": {
+      "x": 0.2857814577265647,
+      "y": -0.13498260068670384,
+      "z": -0.06041448563399217
+    },
+    "mean_quaternion_xyzw": {
+      "x": 0.006953625125687569,
+      "y": 0.9986827182233574,
+      "z": -0.02120088345449153,
+      "w": 0.046206038137527675
+    },
+    "mean_rpy_deg": {
+      "roll": -177.59956661684066,
+      "pitch": 5.312348710723608,
+      "yaw": 179.31351282767983
+    },
+    "position_rms_mm": 3.7662083371909576,
+    "position_max_mm": 7.603877008993666,
+    "rotation_rms_deg": 0.8714867782494875,
+    "rotation_max_deg": 1.9658897892954514
+  },
+  "new": {
+    "calibration_path": "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260723_auto_30samples/calibration.calib",
+    "pose_count": 29,
+    "mean_translation_m": {
+      "x": 0.28848480550766203,
+      "y": -0.11838753230216008,
+      "z": -0.06982690855221448
+    },
+    "mean_quaternion_xyzw": {
+      "x": -0.045638611880981395,
+      "y": 0.9972428183339835,
+      "z": -0.029004234187106896,
+      "w": 0.05081961025126183
+    },
+    "mean_rpy_deg": {
+      "roll": -176.39980700869296,
+      "pitch": 5.664981019200165,
+      "yaw": -174.58121377625707
+    },
+    "position_rms_mm": 5.72725434179315,
+    "position_max_mm": 9.745980001010395,
+    "rotation_rms_deg": 1.2446974758108083,
+    "rotation_max_deg": 2.6486519827773125
+  },
+  "calibration_transform_difference": {
+    "translation_mm": 19.09086358964387,
+    "rotation_deg": 6.17330972405931
+  },
+  "interpretation": "고정된 보드의 g_base 기준 자세 산포가 작을수록 일관성이 좋은 캘리브레이션입니다."
+}
