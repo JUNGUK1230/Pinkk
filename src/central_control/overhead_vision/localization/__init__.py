@@ -2,20 +2,28 @@
 
 from .scene_localizer import (
     Detection,
+    ChargeAssignment,
+    ChargeEpisodeCoordinator,
     EgoVehicleTracker,
     ParkingAssignmentPolicy,
     ParkingSlotMap,
     SceneLocalizer,
     SceneObservation,
+    TrackedVehicleObservation,
+    VehicleStateManager,
     save_scene_observation,
 )
 
 __all__ = [
     "Detection",
+    "ChargeAssignment",
+    "ChargeEpisodeCoordinator",
     "EgoVehicleTracker",
     "ParkingAssignmentPolicy",
     "ParkingSlotMap",
     "SceneLocalizer",
     "SceneObservation",
+    "TrackedVehicleObservation",
+    "VehicleStateManager",
     "save_scene_observation",
 ]

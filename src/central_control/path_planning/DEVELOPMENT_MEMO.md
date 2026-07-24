@@ -1,5 +1,42 @@
 # 경로계획 중간 메모
 
+## 2026-07-24: Camera 화면·Hybrid A*·ROS 직접 발행 통합
+
+- Camera localization 창에서 수동 heading을 지정하면 별도 작업 스레드가
+  파일 대기 없이 Hybrid A*를 바로 시작하도록 통합했다.
+- planner가 성공하면 검증 trajectory를 메모리에서 현재 BEV 위에 빨간 선으로
+  표시하고 `/pinkk/planned_path`, `/pinkk/planned_trajectory`로 직접 발행한다.
+- 같은 프로세스가 최신 rear-axle pose를 `/pinkk/vehicle_pose`로 발행한다.
+- 기본 설정은 `write_runtime_files: false`다. 따라서
+  `live_hybrid_path_world_cm.csv`, Camera CSV, JSON, overlay PNG를 생성하지
+  않으며, 기존 file watcher publisher도 실행할 필요가 없다.
+- `p` 키는 같은 차량·목표에 대해 재계획을 요청한다. 기존
+  `plan_from_live_vision.py`는 파일 기반 단독 진단·회귀용으로 유지한다.
+
+## 2026-07-24: FIFO 충전 Episode 배정
+
+- `entry_or_transit`와 `waiting_for_charge` 차량을 `first_seen` 기준으로
+  정렬해 먼저 들어온 차량을 충전 대상으로 선택한다.
+- 충전칸 우선순위는 C2 → C1이며, 두 칸 모두 점유되면 가장 오래 기다린
+  차량을 `waiting_for_charge_slot`으로 기록한다.
+- 배정은 프레임마다 바뀌지 않도록 차량과 목표 칸이 유효한 동안 유지한다.
+- 배정된 track_id가 현재 ego와 다르면 planner 입력을 막아 다른 차량이
+  먼저 이동하는 것을 방지한다. 배정 ego면 active phase와 무관하게 C2/C1
+  목표를 기존 Hybrid A* 입력으로 전달한다.
+- 충전 완료 이벤트, 실제 경로 발행 완료 확인, P1~P5·출구 전환은 아직
+  연결하지 않았다. 다음 단계에서 외부 이벤트를 받아 상태 전이를 추가한다.
+
+## 2026-07-24: track_id 기반 차량 운영 상태
+
+- `tracked_vehicles`를 scene JSON에 추가해 모든 ByteTrack 차량의 BEV·LiDAR
+  위치와 운영 상태를 기록한다.
+- 차량 중심이 P6~P10에 있으면 `waiting_for_charge`, C1·C2면 `charging`,
+  P1~P5면 `charged_waiting_exit`, 나머지는 `entry_or_transit`으로 분류한다.
+- 차량이 짧게 가려져도 기본 2초 동안 마지막 상태를 `visible=false`로
+  유지하며, TTL 이후에만 record를 제거한다.
+- 이번 단계는 상태 관측만 담당한다. 충전 완료 신호, 입차 순서 대기열,
+  다차량 자동 경로 발행은 다음 단계에서 이 상태 목록을 입력으로 구현한다.
+
 ## 2026-07-24: YOLO 차량 ID 추적
 
 - 실시간 YOLO `predict()`를 ByteTrack 기반 `track(persist=True)`로 전환했다.

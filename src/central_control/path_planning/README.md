@@ -26,7 +26,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `scripts/plan_from_live_vision.py` | 최신 YOLO scene으로 T자 후진주차 경로를 한 번 생성하고 검증 결과를 저장합니다. |
+| `scripts/plan_from_live_vision.py` | 파일 기반 단독 진단용으로 최신 YOLO scene을 읽어 T자 후진주차 경로를 한 번 생성하고 검증 결과를 저장합니다. 통합 실행은 이 파일의 planner 함수를 메모리에서 재사용합니다. |
 | `scripts/read_live_vision_scene.py` | 현재 planner에 전달될 차량 pose와 주차면 goal을 출력합니다. |
 | `scripts/test_live_vision_scene.py` | ego 선택, 수동 heading, 주차면 점유 및 stale scene 차단을 회귀 검사합니다. |
 | `scripts/test_t_parking.py` | staging과 마지막 후진을 포함한 T자 주차 경로를 회귀 검사합니다. |
@@ -35,17 +35,13 @@
 | `scripts/test_trajectory_validator.py` | 정상·비정상 trajectory의 안전 차단 조건을 검사합니다. |
 | `scripts/test_path_publisher.py` | 경로·차량 pose ROS message 변환과 stale 차단을 검사합니다. |
 
-## 실시간 출력 파일
+## 통합 실행과 진단 출력
 
-| 파일 | 역할 |
+| 항목 | 역할 |
 |---|---|
-| `output/live_vision_scene.json` | YOLO가 생성한 최신 차량 pose, 주차면 상태 및 planning request입니다. |
-| `output/live_camera_bev.png` | scene과 같은 frame의 최신 Camera BEV입니다. |
-| `output/live_hybrid_path_world_cm.csv` | 제어용 Hybrid trajectory를 표 형식으로 저장합니다. |
-| `output/live_hybrid_path_camera_bev.csv` | 같은 trajectory의 Camera BEV pixel 좌표입니다. |
-| `output/live_hybrid_path_world_cm.json` | publisher가 읽는 검증된 trajectory와 planner metadata입니다. |
-| `output/live_hybrid_path_on_camera_bev.png` | 최신 Camera BEV 위에 경로와 start·goal을 표시한 이미지입니다. |
-| `output/live_hybrid_planning_status.json` | 최근 계획 성공 여부와 실패 원인을 저장합니다. |
+| 기본 통합 실행 | Camera localization 창에서 heading 지정 후 Hybrid A*를 시작하고, 검증 trajectory를 `/pinkk/planned_path`, `/pinkk/planned_trajectory`로 직접 발행합니다. 별도 trajectory 파일은 저장하지 않습니다. |
+| `/pinkk/vehicle_pose` | 같은 프로세스가 최신 rear-axle pose를 직접 발행합니다. |
+| `output/live_*.csv/json/png` | 파일 기반 진단 스크립트 또는 `write_runtime_files: true`일 때만 생성하는 선택적 결과입니다. 제어기 연동에는 사용하지 않습니다. |
 
 ## 문서
 

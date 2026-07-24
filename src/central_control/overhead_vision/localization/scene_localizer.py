@@ -1,6 +1,6 @@
 """YOLO BEV mask를 차량 pose와 주차면 goal 좌표로 변환한다."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import math
 from pathlib import Path
@@ -87,6 +87,36 @@ class ParkingSlotObservation:
 
 
 @dataclass(frozen=True)
+class TrackedVehicleObservation:
+    """한 ByteTrack 차량의 최신 위치와 주차 운영 상태."""
+
+    track_id: int
+    confidence: float
+    center_bev_px: Point
+    center_lidar_px: Point
+    position_cm: Point
+    assigned_slot_name: str | None
+    state: str
+    first_seen_unix_sec: float
+    last_seen_unix_sec: float
+    visible: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "track_id": self.track_id,
+            "confidence": self.confidence,
+            "center_bev_px": list(self.center_bev_px),
+            "center_lidar_px": list(self.center_lidar_px),
+            "position_cm": list(self.position_cm),
+            "assigned_slot_name": self.assigned_slot_name,
+            "state": self.state,
+            "first_seen_unix_sec": self.first_seen_unix_sec,
+            "last_seen_unix_sec": self.last_seen_unix_sec,
+            "visible": self.visible,
+        }
+
+
+@dataclass(frozen=True)
 class ParkingAssignmentPolicy:
     """운영 단계에 따라 빈 주차칸 후보를 정렬하는 공통 배정 규칙."""
 
@@ -162,6 +192,24 @@ class PlanningRequest:
 
 
 @dataclass(frozen=True)
+class ChargeAssignment:
+    """FIFO 충전 대기열에서 선택된 차량과 목표 충전칸."""
+
+    vehicle_track_id: int | None
+    target_slot_name: str | None
+    status: str
+    candidate_track_ids: tuple[int, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "vehicle_track_id": self.vehicle_track_id,
+            "target_slot_name": self.target_slot_name,
+            "status": self.status,
+            "candidate_track_ids": list(self.candidate_track_ids),
+        }
+
+
+@dataclass(frozen=True)
 class SceneObservation:
     frame_index: int
     observed_at_unix_sec: float
@@ -169,6 +217,9 @@ class SceneObservation:
     parking_slots: tuple[ParkingSlotObservation, ...]
     planning_request: PlanningRequest | None
     status: str
+    # 현재 보이는 차량과 짧은 가림 구간의 차량을 track_id별로 보관한다.
+    tracked_vehicles: tuple[TrackedVehicleObservation, ...] = ()
+    charge_assignment: ChargeAssignment | None = None
 
     @property
     def planning_ready(self) -> bool:
@@ -182,6 +233,14 @@ class SceneObservation:
             "status": self.status,
             "planning_ready": self.planning_ready,
             "vehicle": self.vehicle.to_dict() if self.vehicle else None,
+            "tracked_vehicles": [
+                vehicle.to_dict() for vehicle in self.tracked_vehicles
+            ],
+            "charge_assignment": (
+                self.charge_assignment.to_dict()
+                if self.charge_assignment is not None
+                else None
+            ),
             "parking_slots": [slot.to_dict() for slot in self.parking_slots],
             "planning_request": (
                 self.planning_request.to_dict()
@@ -475,6 +534,186 @@ class ParkingSlotMap:
             )
         return tuple(observations)
 
+    def slot_name_for_point(self, point: Point) -> str | None:
+        """차량 중심이 포함된 주차칸을 찾아 차량별 상태 분류에 사용한다."""
+        for name, polygon in self.polygons.items():
+            if cv2.pointPolygonTest(
+                polygon.astype(np.float32),
+                (float(point[0]), float(point[1])),
+                False,
+            ) >= 0.0:
+                return name
+        return None
+
+
+class VehicleStateManager:
+    """track_id별 위치·주차 상태를 짧은 가림 구간까지 유지한다."""
+
+    def __init__(
+        self,
+        transform: AffineBevToLidar,
+        track_ttl_sec: float = 2.0,
+    ) -> None:
+        if track_ttl_sec <= 0.0:
+            raise ValueError("track_ttl_sec must be positive")
+        self.transform = transform
+        self.track_ttl_sec = track_ttl_sec
+        self._records: dict[int, TrackedVehicleObservation] = {}
+
+    def observe(
+        self,
+        detections: Sequence[Detection],
+        parking_slots: ParkingSlotMap,
+        observed_at_unix_sec: float,
+    ) -> tuple[TrackedVehicleObservation, ...]:
+        """현재 검출과 최근 record를 합쳐 차량 운영 상태 목록을 반환한다."""
+        visible_ids: set[int] = set()
+        for detection in detections:
+            if detection.class_name != "car" or detection.track_id is None:
+                continue
+            center_bev = _polygon_center(detection.polygon_bev)
+            center_lidar = self.transform.point_to_lidar(center_bev)
+            position_cm = (
+                center_lidar[0] * self.transform.resolution_cm,
+                center_lidar[1] * self.transform.resolution_cm,
+            )
+            slot_name = parking_slots.slot_name_for_point(center_bev)
+            previous = self._records.get(detection.track_id)
+            record = TrackedVehicleObservation(
+                track_id=detection.track_id,
+                confidence=detection.confidence,
+                center_bev_px=center_bev,
+                center_lidar_px=center_lidar,
+                position_cm=position_cm,
+                assigned_slot_name=slot_name,
+                state=self._state_for_slot(slot_name),
+                first_seen_unix_sec=(
+                    previous.first_seen_unix_sec
+                    if previous is not None
+                    else observed_at_unix_sec
+                ),
+                last_seen_unix_sec=observed_at_unix_sec,
+                visible=True,
+            )
+            self._records[detection.track_id] = record
+            visible_ids.add(detection.track_id)
+
+        active_records: list[TrackedVehicleObservation] = []
+        expired_ids: list[int] = []
+        for track_id, record in self._records.items():
+            if observed_at_unix_sec - record.last_seen_unix_sec > self.track_ttl_sec:
+                expired_ids.append(track_id)
+                continue
+            if track_id not in visible_ids:
+                record = replace(record, visible=False)
+                self._records[track_id] = record
+            active_records.append(record)
+        for track_id in expired_ids:
+            del self._records[track_id]
+        return tuple(sorted(active_records, key=lambda record: record.track_id))
+
+    @staticmethod
+    def _state_for_slot(slot_name: str | None) -> str:
+        if slot_name is None:
+            return "entry_or_transit"
+        if slot_name in {"P6", "P7", "P8", "P9", "P10"}:
+            return "waiting_for_charge"
+        if slot_name in {"C1", "C2"}:
+            return "charging"
+        if slot_name in {"P1", "P2", "P3", "P4", "P5"}:
+            return "charged_waiting_exit"
+        return "parked_other"
+
+
+class ChargeEpisodeCoordinator:
+    """차량 상태 목록에서 FIFO 충전 대상과 C2→C1 목표를 선택한다."""
+
+    def __init__(self, charge_slot_priority: Sequence[str] = ("C2", "C1")) -> None:
+        if not charge_slot_priority:
+            raise ValueError("charge_slot_priority must not be empty")
+        self.charge_slot_priority = tuple(charge_slot_priority)
+        self._assignment: ChargeAssignment | None = None
+
+    def observe(
+        self,
+        vehicles: Sequence[TrackedVehicleObservation],
+        slots: Sequence[ParkingSlotObservation],
+    ) -> ChargeAssignment | None:
+        """동일 배정을 유지하면서 빈 충전칸이 생기면 가장 오래 기다린 차를 고른다."""
+        by_id = {vehicle.track_id: vehicle for vehicle in vehicles}
+        slots_by_name = {slot.name: slot for slot in slots}
+        candidates = tuple(
+            sorted(
+                (
+                    vehicle
+                    for vehicle in vehicles
+                    if vehicle.state in {"entry_or_transit", "waiting_for_charge"}
+                ),
+                key=lambda vehicle: (vehicle.first_seen_unix_sec, vehicle.track_id),
+            )
+        )
+        candidate_ids = tuple(vehicle.track_id for vehicle in candidates)
+
+        # 배정된 차가 실제 충전칸에 도착하면 charging 상태로 유지한다.
+        if self._assignment is not None:
+            assigned = by_id.get(self._assignment.vehicle_track_id)
+            if (
+                assigned is not None
+                and assigned.state == "charging"
+                and assigned.assigned_slot_name == self._assignment.target_slot_name
+            ):
+                self._assignment = ChargeAssignment(
+                    assigned.track_id,
+                    assigned.assigned_slot_name,
+                    "charging",
+                    candidate_ids,
+                )
+                return self._assignment
+
+            # 배정 차와 목표가 모두 아직 유효하면 다음 프레임에도 동일하게
+            # 유지해 프레임별로 다른 차량·충전칸으로 흔들리지 않게 한다.
+            target = slots_by_name.get(self._assignment.target_slot_name)
+            if (
+                assigned is not None
+                and assigned.track_id in candidate_ids
+                and target is not None
+                and not target.occupied
+            ):
+                self._assignment = ChargeAssignment(
+                    assigned.track_id,
+                    target.name,
+                    "assigned_to_charge",
+                    candidate_ids,
+                )
+                return self._assignment
+            self._assignment = None
+
+        if not candidates:
+            return None
+        free_charge_slot = next(
+            (
+                slots_by_name[name]
+                for name in self.charge_slot_priority
+                if name in slots_by_name and not slots_by_name[name].occupied
+            ),
+            None,
+        )
+        if free_charge_slot is None:
+            self._assignment = ChargeAssignment(
+                candidates[0].track_id,
+                None,
+                "waiting_for_charge_slot",
+                candidate_ids,
+            )
+        else:
+            self._assignment = ChargeAssignment(
+                candidates[0].track_id,
+                free_charge_slot.name,
+                "assigned_to_charge",
+                candidate_ids,
+            )
+        return self._assignment
+
 
 class SceneLocalizer:
     """Ego pose, 주차면 점유, 지정 또는 가까운 free goal을 생성한다."""
@@ -483,12 +722,18 @@ class SceneLocalizer:
         self,
         tracker: EgoVehicleTracker,
         parking_slots: ParkingSlotMap,
+        vehicle_state_manager: VehicleStateManager | None = None,
+        charge_coordinator: ChargeEpisodeCoordinator | None = None,
         goal_heading_weight_cm: float = 14.0,
         target_slot_name: str | None = None,
         parking_assignment: ParkingAssignmentPolicy | None = None,
     ) -> None:
         self.tracker = tracker
         self.parking_slots = parking_slots
+        self.vehicle_state_manager = vehicle_state_manager or VehicleStateManager(
+            tracker.transform
+        )
+        self.charge_coordinator = charge_coordinator
         self.goal_heading_weight_cm = goal_heading_weight_cm
         self.target_slot_name = target_slot_name
         self.parking_assignment = parking_assignment
@@ -507,6 +752,16 @@ class SceneLocalizer:
         )
         vehicle = self.tracker.update(detections)
         slots = self.parking_slots.observe(detections, image_shape)
+        tracked_vehicles = self.vehicle_state_manager.observe(
+            detections,
+            self.parking_slots,
+            observed_at,
+        )
+        charge_assignment = (
+            self.charge_coordinator.observe(tracked_vehicles, slots)
+            if self.charge_coordinator is not None
+            else None
+        )
         if vehicle is None:
             return SceneObservation(
                 frame_index,
@@ -515,6 +770,8 @@ class SceneLocalizer:
                 slots,
                 None,
                 "ego vehicle not detected",
+                tracked_vehicles,
+                charge_assignment,
             )
         if not vehicle.planning_ready:
             return SceneObservation(
@@ -524,8 +781,57 @@ class SceneLocalizer:
                 slots,
                 None,
                 "ego heading is required; press h and click the vehicle front",
+                tracked_vehicles,
+                charge_assignment,
             )
-        if self.target_slot_name is not None:
+        if (
+            charge_assignment is not None
+            and charge_assignment.status == "assigned_to_charge"
+            and vehicle.track_id != charge_assignment.vehicle_track_id
+        ):
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                (
+                    "charge assignment is waiting for "
+                    f"track_id={charge_assignment.vehicle_track_id}"
+                ),
+                tracked_vehicles,
+                charge_assignment,
+            )
+        if (
+            charge_assignment is not None
+            and charge_assignment.status == "assigned_to_charge"
+            and charge_assignment.target_slot_name is not None
+        ):
+            # 입차 단계라도 충전칸이 비어 있으면 Episode 규칙이 기존 P구역
+            # 배정보다 우선한다. 따라서 배정된 ego는 즉시 C2→C1로 이동한다.
+            target_slot = next(
+                (
+                    slot
+                    for slot in slots
+                    if slot.name == charge_assignment.target_slot_name
+                ),
+                None,
+            )
+            if target_slot is None or target_slot.occupied:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    "assigned charge slot is no longer available",
+                    tracked_vehicles,
+                    charge_assignment,
+                )
+            empty_slots = [target_slot]
+            candidate_slot_names = (target_slot.name,)
+            assignment_policy = "charge_episode_fifo"
+        elif self.target_slot_name is not None:
             target_slot = next(
                 (slot for slot in slots if slot.name == self.target_slot_name),
                 None,
@@ -538,6 +844,8 @@ class SceneLocalizer:
                     slots,
                     None,
                     f"target parking slot not found: {self.target_slot_name}",
+                    tracked_vehicles,
+                    charge_assignment,
                 )
             if target_slot.occupied:
                 return SceneObservation(
@@ -547,6 +855,8 @@ class SceneLocalizer:
                     slots,
                     None,
                     f"target parking slot is occupied: {self.target_slot_name}",
+                    tracked_vehicles,
+                    charge_assignment,
                 )
             empty_slots = [target_slot]
             candidate_slot_names = (target_slot.name,)
@@ -561,6 +871,8 @@ class SceneLocalizer:
                     slots,
                     None,
                     "no free parking slot in active assignment policy",
+                    tracked_vehicles,
+                    charge_assignment,
                 )
             candidate_slot_names = tuple(slot.name for slot in empty_slots)
             assignment_policy = self.parking_assignment.name
@@ -576,6 +888,8 @@ class SceneLocalizer:
                 slots,
                 None,
                 "no empty parking slot",
+                tracked_vehicles,
+                charge_assignment,
             )
 
         start = (
@@ -627,6 +941,8 @@ class SceneLocalizer:
                 if assignment_policy is None
                 else f"planning input ready ({assignment_policy})"
             ),
+            tracked_vehicles,
+            charge_assignment,
         )
 
 
@@ -634,7 +950,8 @@ def save_scene_observation(scene: SceneObservation, save_path: str | Path) -> No
     """경로계획 프로세스가 읽을 최신 scene JSON을 원자적으로 교체한다."""
     path = Path(save_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    # 고유 임시 파일로 동시 실행된 진단 프로세스와의 저장 충돌을 막는다.
+    temporary = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
     with temporary.open("w", encoding="utf-8") as file:
         json.dump(scene.to_dict(), file, indent=2, ensure_ascii=False)
         file.write("\n")

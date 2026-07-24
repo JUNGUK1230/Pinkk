@@ -10,9 +10,11 @@
 """
 
 import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 import json
 import math
 from pathlib import Path
+import sys
 import threading
 import time
 from typing import Sequence
@@ -24,30 +26,38 @@ import yaml
 if __package__:
     from .scene_localizer import (
         AffineBevToLidar,
+        ChargeEpisodeCoordinator,
         Detection,
         EgoVehicleTracker,
         ParkingAssignmentPolicy,
         ParkingSlotMap,
         SceneLocalizer,
         SceneObservation,
+        VehicleStateManager,
         save_scene_observation,
     )
+    from ..path_planning.direct_ros_publisher import DirectRosPublisher
 else:
     # `python3 path/to/live_localization.py` 직접 실행에서는 package 문맥이
     # 없으므로 같은 폴더를 import 경로에 넣어 module 실행과 동일하게 동작한다.
-    import sys
-
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.path.insert(
+        0,
+        str(Path(__file__).resolve().parents[1] / "path_planning"),
+    )
     from scene_localizer import (  # type: ignore[no-redef]
         AffineBevToLidar,
+        ChargeEpisodeCoordinator,
         Detection,
         EgoVehicleTracker,
         ParkingAssignmentPolicy,
         ParkingSlotMap,
         SceneLocalizer,
         SceneObservation,
+        VehicleStateManager,
         save_scene_observation,
     )
+    from direct_ros_publisher import DirectRosPublisher  # type: ignore[no-redef]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -66,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         help="Use an existing 1600x800 BEV once instead of opening the camera.",
     )
     parser.add_argument("--no-display", action="store_true")
+    parser.add_argument(
+        "--no-ros",
+        action="store_true",
+        help="Disable direct ROS 2 topic publishing for image-only diagnostics.",
+    )
     parser.add_argument("--max-frames", type=int)
     parser.add_argument(
         "--initial-ego-center",
@@ -190,6 +205,172 @@ class LatestFrameCamera:
                 self._condition.notify_all()
 
 
+class IntegratedPlanningController:
+    """heading 지정 후 한 번만 Hybrid A*를 실행하고 메모리 결과를 유지한다."""
+
+    def __init__(self) -> None:
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="pinkk-hybrid-planner",
+        )
+        self._future: Future[object] | None = None
+        self._active_key: tuple[int | None, str, int] | None = None
+        self._completed_key: tuple[int | None, str, int] | None = None
+        self._planner_stack: tuple[object, ...] | None = None
+        self.outcome: object | None = None
+        self.last_error: str | None = None
+        self._new_outcome = False
+
+    @property
+    def status(self) -> str:
+        if self._future is not None:
+            return "Hybrid A* planning..."
+        if self.last_error is not None:
+            return f"Hybrid A* blocked: {self.last_error}"
+        if self.outcome is not None:
+            return "Hybrid A* path ready and published"
+        return "waiting for heading and planning input"
+
+    def update(
+        self,
+        scene: SceneObservation,
+        heading_revision: int,
+    ) -> None:
+        """새 heading/차량/목표 조합일 때만 별도 스레드 계획을 시작한다."""
+        self._collect_finished()
+        if scene.vehicle is None or scene.planning_request is None:
+            return
+        key = (
+            scene.vehicle.track_id,
+            scene.planning_request.slot_name,
+            heading_revision,
+        )
+        if self._future is not None:
+            return
+        if key == self._completed_key:
+            return
+        if key != self._active_key:
+            # 새 heading 또는 새 충전 배정은 이전 overlay를 숨기고 새 경로가
+            # 검증될 때까지 기다린다.
+            self.outcome = None
+            self.last_error = None
+            self._active_key = key
+        request = scene.planning_request
+        self._future = self._executor.submit(
+            self._plan_request,
+            scene.frame_index,
+            scene.observed_at_unix_sec,
+            request.slot_name,
+            request.start_pose_cm,
+            request.goal_pose_cm,
+            request.alternative_goal_pose_cm,
+        )
+
+    def consume_new_outcome(self) -> object | None:
+        self._collect_finished()
+        if not self._new_outcome:
+            return None
+        self._new_outcome = False
+        return self.outcome
+
+    def draw_overlay(
+        self,
+        image: np.ndarray,
+        transform: AffineBevToLidar,
+    ) -> np.ndarray:
+        """파일을 읽지 않고 검증 완료 trajectory를 현재 BEV canvas에 그린다."""
+        if self.outcome is None:
+            return image
+        outcome = self.outcome
+        try:
+            from plan_from_live_vision import draw_live_path_overlay
+
+            trajectory = getattr(outcome, "trajectory")
+            lidar_points = np.asarray(
+                [
+                    [
+                        point.x_cm / transform.resolution_cm,
+                        point.y_cm / transform.resolution_cm,
+                        1.0,
+                    ]
+                    for point in trajectory
+                ],
+                dtype=np.float64,
+            )
+            camera_points = lidar_points @ transform.inverse_matrix.T
+            canvas, _ = draw_live_path_overlay(
+                image,
+                camera_points,
+                getattr(outcome, "adjusted_start"),
+                getattr(outcome, "adjusted_goal"),
+                transform.inverse_matrix,
+                transform.resolution_cm,
+                getattr(getattr(outcome, "request"), "frame_index"),
+                getattr(getattr(outcome, "request"), "slot_name"),
+            )
+            return canvas
+        except (AttributeError, ImportError, TypeError, ValueError) as error:
+            self.last_error = f"overlay failed: {error}"
+            return image
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _collect_finished(self) -> None:
+        if self._future is None or not self._future.done():
+            return
+        future = self._future
+        self._future = None
+        self._completed_key = self._active_key
+        try:
+            self.outcome = future.result()
+            self.last_error = None
+            self._new_outcome = True
+        except (FileNotFoundError, KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.outcome = None
+            self.last_error = str(error)
+
+    def _plan_request(
+        self,
+        frame_index: int,
+        observed_at_unix_sec: float,
+        slot_name: str,
+        start_pose_cm: tuple[float, float, float],
+        goal_pose_cm: tuple[float, float, float],
+        alternative_goal_pose_cm: tuple[float, float, float],
+    ) -> object:
+        """기존 standalone planner의 동일한 검증 함수를 재사용한다."""
+        path_planning_root = REPO_ROOT / "src/central_control/path_planning"
+        for module_path in (
+            path_planning_root / "scripts",
+            path_planning_root / "src",
+        ):
+            module_path_text = str(module_path)
+            if module_path_text not in sys.path:
+                sys.path.insert(0, module_path_text)
+        from plan_from_live_vision import load_planner_stack, plan_live_request
+        from vision_scene_input import VisionPlanningRequest
+
+        if self._planner_stack is None:
+            self._planner_stack = load_planner_stack()
+        _, planner, profile_config, limits, parking_config = self._planner_stack
+        request = VisionPlanningRequest(
+            frame_index=frame_index,
+            observed_at_unix_sec=observed_at_unix_sec,
+            slot_name=slot_name,
+            start_pose_cm=start_pose_cm,
+            goal_pose_cm=goal_pose_cm,
+            alternative_goal_pose_cm=alternative_goal_pose_cm,
+        )
+        return plan_live_request(
+            request,
+            planner,
+            profile_config,
+            limits,
+            parking_config,
+        )
+
+
 def open_camera(config: dict[str, object]) -> LatestFrameCamera:
     camera_id = int(config["camera_id"])
     camera = cv2.VideoCapture(camera_id, cv2.CAP_V4L2)
@@ -302,10 +483,22 @@ def build_localizer(
         str(target_slot_value) if target_slot_value is not None else None
     )
     parking_assignment = load_parking_assignment(config)
+    vehicle_states = VehicleStateManager(
+        transform,
+        track_ttl_sec=float(config.get("vehicle_track_ttl_sec", 2.0)),
+    )
+    charge_priority_value = config.get("charge_slot_priority", ["C2", "C1"])
+    if not isinstance(charge_priority_value, list):
+        raise ValueError("charge_slot_priority must be a list")
+    charge_coordinator = ChargeEpisodeCoordinator(
+        tuple(str(slot) for slot in charge_priority_value)
+    )
     return (
         SceneLocalizer(
             tracker,
             slots,
+            vehicle_state_manager=vehicle_states,
+            charge_coordinator=charge_coordinator,
             target_slot_name=target_slot_name,
             parking_assignment=parking_assignment,
         ),
@@ -359,6 +552,9 @@ def draw_scene(
     detections: Sequence[Detection] = (),
 ) -> np.ndarray:
     canvas = bev.copy()
+    tracked_by_id = {
+        vehicle.track_id: vehicle for vehicle in scene.tracked_vehicles
+    }
     selected_name = (
         scene.planning_request.slot_name if scene.planning_request else None
     )
@@ -390,8 +586,13 @@ def draw_scene(
         cv2.polylines(canvas, [polygon], True, (255, 128, 0), 1, cv2.LINE_AA)
         x1, y1, _, _ = detection.bbox_xyxy
         label = (
-            f"car id={detection.track_id} {detection.confidence:.2f}"
+            (
+                f"car id={detection.track_id} "
+                f"{tracked_by_id[detection.track_id].state} "
+                f"{tracked_by_id[detection.track_id].assigned_slot_name or ''}"
+            )
             if detection.track_id is not None
+            and detection.track_id in tracked_by_id
             else f"car id=pending {detection.confidence:.2f}"
         )
         cv2.putText(
@@ -446,6 +647,22 @@ def draw_scene(
         2,
         cv2.LINE_AA,
     )
+    if scene.charge_assignment is not None:
+        assignment = scene.charge_assignment
+        cv2.putText(
+            canvas,
+            (
+                f"charge: id={assignment.vehicle_track_id} -> "
+                f"{assignment.target_slot_name or 'WAIT'} "
+                f"({assignment.status})"
+            ),
+            (20, 125),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.62,
+            (255, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
     return canvas
 
 
@@ -461,6 +678,7 @@ class ManualHeadingSelector:
         self.transform = transform
         self.scene: SceneObservation | None = None
         self.armed = False
+        self.revision = 0
 
     def update_scene(self, scene: SceneObservation) -> None:
         self.scene = scene
@@ -475,6 +693,7 @@ class ManualHeadingSelector:
     def clear(self) -> None:
         self.tracker.clear_manual_heading()
         self.armed = False
+        self.revision += 1
         print("Manual heading cleared. Press h and click the vehicle front again")
 
     def mouse_callback(
@@ -500,6 +719,7 @@ class ManualHeadingSelector:
         yaw_rad = self.transform.axis_yaw_in_lidar(center, direction)
         self.tracker.set_manual_heading(yaw_rad)
         self.armed = False
+        self.revision += 1
         print(
             "Manual ego heading set: "
             f"click=({x}, {y}), yaw={math.degrees(yaw_rad):.1f} deg"
@@ -671,6 +891,25 @@ def print_scene(scene: SceneObservation) -> None:
         )
     free_count = sum(not slot.occupied for slot in scene.parking_slots)
     print(f"  Parking slots: {free_count}/{len(scene.parking_slots)} free")
+    if scene.tracked_vehicles:
+        print(
+            "  Tracked vehicles: "
+            + ", ".join(
+                (
+                    f"id={item.track_id}:{item.state}"
+                    f"({item.assigned_slot_name or '-'},{'live' if item.visible else 'lost'})"
+                )
+                for item in scene.tracked_vehicles
+            )
+        )
+    if scene.charge_assignment is not None:
+        assignment = scene.charge_assignment
+        print(
+            "  Charge assignment: "
+            f"id={assignment.vehicle_track_id} -> "
+            f"{assignment.target_slot_name or 'waiting'} "
+            f"({assignment.status})"
+        )
     # 첫 프레임에는 고정 주차면의 LiDAR 좌표를 모두 출력해 정합 결과를
     # 현장에서 바로 확인한다. 이후 프레임에는 같은 좌표를 반복 출력하지 않는다.
     if scene.frame_index == 0:
@@ -696,8 +935,10 @@ def print_scene(scene: SceneObservation) -> None:
 def save_bev_image_atomic(image: np.ndarray, save_path: Path) -> None:
     """경로 시각화 프로세스가 반쯤 저장된 BEV를 읽지 않도록 원자 교체한다."""
     save_path.parent.mkdir(parents=True, exist_ok=True)
+    # 별도 localization 테스트와 live process가 동시에 실행되어도 서로의
+    # 임시 파일을 지우지 않도록 실행 시각 기반의 고유 이름을 사용한다.
     temporary = save_path.with_name(
-        f"{save_path.stem}.tmp{save_path.suffix}"
+        f".{save_path.stem}.{time.time_ns()}.tmp{save_path.suffix}"
     )
     if not cv2.imwrite(str(temporary), image):
         raise RuntimeError(f"failed to save latest Camera BEV: {save_path}")
@@ -724,9 +965,13 @@ def main() -> int:
             raise ValueError(
                 f"vehicle heading and occupancy require segment weights, got {model.task}"
             )
+        write_runtime_files = bool(config.get("write_runtime_files", False))
         output_path = resolve_path(str(config["scene_output_path"]))
         bev_output_path = resolve_path(str(config["bev_output_path"]))
-        planned_path_path = resolve_path(str(config["planned_path_path"]))
+        ros_publish_enabled = (
+            not args.no_ros and bool(config.get("ros_publish_enabled", True))
+        )
+        ros_publisher = DirectRosPublisher() if ros_publish_enabled else None
         target_slot_value = config.get("target_slot_name")
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
@@ -751,8 +996,17 @@ def main() -> int:
             return 1
 
     print(f"Loaded YOLO segmentation: {model_path} names={model.names}")
-    print(f"Scene output: {output_path}")
-    print(f"Latest Camera BEV: {bev_output_path}")
+    if write_runtime_files:
+        print(f"Debug scene output: {output_path}")
+        print(f"Debug Camera BEV: {bev_output_path}")
+    else:
+        print("Runtime path/scene files: disabled (direct ROS topics only)")
+    if ros_publisher is not None:
+        print(
+            "Direct ROS topics: "
+            f"{ros_publisher.pose_topic}, {ros_publisher.path_topic}, "
+            f"{ros_publisher.trajectory_topic}"
+        )
     if target_slot_name is not None:
         print(f"Fixed target parking slot: {target_slot_name}")
     elif localizer.parking_assignment is not None:
@@ -762,13 +1016,12 @@ def main() -> int:
             f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
             f"slots={list(policy.allowed_slots)}"
         )
-    print("h: arm manual heading click | x: clear heading | q/ESC: quit")
-    heading_selector = ManualHeadingSelector(localizer.tracker, transform)
-    path_overlay = PlannedPathOverlay(
-        planned_path_path,
-        transform,
-        expected_slot_name=target_slot_name,
+    print(
+        "h: arm manual heading click | p: replan | x: clear heading | q/ESC: quit"
     )
+    heading_selector = ManualHeadingSelector(localizer.tracker, transform)
+    planning_controller = IntegratedPlanningController()
+    replan_revision = 0
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback(WINDOW_NAME, heading_selector.mouse_callback)
@@ -863,9 +1116,22 @@ def main() -> int:
                 frame_index,
             )
             heading_selector.update_scene(scene)
-            if frame_index % output_every == 0:
+            planning_controller.update(
+                scene,
+                heading_selector.revision + replan_revision,
+            )
+            completed_outcome = planning_controller.consume_new_outcome()
+            if completed_outcome is not None and ros_publisher is not None:
+                ros_publisher.publish_trajectory(
+                    getattr(completed_outcome, "trajectory")
+                )
+            if ros_publisher is not None and scene.vehicle is not None:
+                if scene.vehicle.planning_ready:
+                    ros_publisher.publish_pose(scene.vehicle)
+                ros_publisher.spin_once()
+            if write_runtime_files and frame_index % output_every == 0:
                 try:
-                    # BEV를 먼저 교체하고 같은 frame의 scene을 나중에 공개한다.
+                    # 기존 파일 기반 진단 호환 모드에서만 저장한다.
                     save_bev_image_atomic(bev, bev_output_path)
                 except RuntimeError as error:
                     print(f"ERROR: {error}")
@@ -890,8 +1156,22 @@ def main() -> int:
                     target_slot_name=target_slot_name,
                     detections=detections,
                 )
-                path_overlay.draw(canvas, scene)
+                canvas = planning_controller.draw_overlay(canvas, transform)
                 heading_selector.draw_instruction(canvas)
+                cv2.putText(
+                    canvas,
+                    planning_controller.status,
+                    (20, 155),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.60,
+                    (
+                        (0, 0, 255)
+                        if planning_controller.last_error is not None
+                        else (255, 255, 0)
+                    ),
+                    2,
+                    cv2.LINE_AA,
+                )
                 capture_age_ms = (time.monotonic() - captured_at) * 1000.0
                 latency_color = (
                     (0, 0, 255)
@@ -918,6 +1198,9 @@ def main() -> int:
                     break
                 if key == ord("h"):
                     heading_selector.arm()
+                elif key == ord("p"):
+                    replan_revision += 1
+                    print("Manual replan requested")
                 elif key == ord("x"):
                     heading_selector.clear()
             processed_frames += 1
@@ -934,6 +1217,9 @@ def main() -> int:
     finally:
         if camera is not None:
             camera.close()
+        planning_controller.close()
+        if ros_publisher is not None:
+            ros_publisher.close()
         cv2.destroyAllWindows()
     return 0
 

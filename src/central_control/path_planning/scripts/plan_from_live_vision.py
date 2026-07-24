@@ -86,6 +86,20 @@ class AutomaticParkingConfig:
     required_final_direction: int
 
 
+@dataclass(frozen=True)
+class LivePlanningOutcome:
+    """파일 저장과 분리된 한 번의 검증 완료 Hybrid A* 결과."""
+
+    request: VisionPlanningRequest
+    selected_candidate: str
+    adjusted_start: Pose
+    adjusted_goal: Pose
+    result: HybridAStarResult
+    trajectory: tuple[TrajectoryPoint, ...]
+    validation: TrajectoryValidationResult
+    staging_pose: Pose
+
+
 def resolve_map_image(pgm_path: Path, yaml_path: Path) -> Path:
     """PGM이 없으면 지도 YAML의 image 항목을 기준으로 실제 이미지를 찾는다.
 
@@ -681,6 +695,54 @@ def derive_reverse_parking_goal(
     return goal, edge_index, free_length_cm
 
 
+def plan_live_request(
+    request: VisionPlanningRequest,
+    planner: HybridAStarPlanner,
+    profile_config: dict[str, float],
+    limits: TrajectoryValidationLimits,
+    parking_config: AutomaticParkingConfig,
+) -> LivePlanningOutcome:
+    """Camera scene request를 받아 파일 저장 없이 T자 후진 trajectory를 만든다."""
+    entrance_goal, entrance_edge, entrance_clearance_cm = (
+        derive_reverse_parking_goal(
+            planner,
+            request.slot_name,
+            planner.resolution_cm,
+        )
+    )
+    print(
+        "Reverse parking entrance: "
+        f"slot={request.slot_name}, edge={entrance_edge}, "
+        f"outward clearance={entrance_clearance_cm:.1f} cm, "
+        f"goal yaw={math.degrees(entrance_goal[2]):.1f} deg"
+    )
+    adjusted_start, result, trajectory, validation, staging_pose = (
+        plan_t_parking_and_validate(
+            planner,
+            profile_config,
+            limits,
+            request.start_pose_cm,
+            entrance_goal,
+            parking_config.required_final_direction,
+        )
+    )
+    print(
+        "T parking staging pose: "
+        f"({staging_pose[0]:.1f}, {staging_pose[1]:.1f}, "
+        f"{math.degrees(staging_pose[2]):.1f} deg)"
+    )
+    return LivePlanningOutcome(
+        request=request,
+        selected_candidate="T reverse parking entrance",
+        adjusted_start=adjusted_start,
+        adjusted_goal=entrance_goal,
+        result=result,
+        trajectory=tuple(trajectory),
+        validation=validation,
+        staging_pose=staging_pose,
+    )
+
+
 def _nearby_goal_poses(
     planner: HybridAStarPlanner,
     nominal_goal: Pose,
@@ -1016,44 +1078,21 @@ def main() -> int:
             (grid_map.width, grid_map.height),
             grid_map.resolution_cm,
         )
-        entrance_goal, entrance_edge, entrance_clearance_cm = (
-            derive_reverse_parking_goal(
-                planner,
-                request.slot_name,
-                grid_map.resolution_cm,
-            )
-        )
-        print(
-            "Reverse parking entrance: "
-            f"slot={request.slot_name}, edge={entrance_edge}, "
-            f"outward clearance={entrance_clearance_cm:.1f} cm, "
-            f"goal yaw={math.degrees(entrance_goal[2]):.1f} deg"
-        )
-        adjusted_start, result, trajectory, validation, staging_pose = (
-            plan_t_parking_and_validate(
-                planner,
-                profile_config,
-                limits,
-                request.start_pose_cm,
-                entrance_goal,
-                parking_config.required_final_direction,
-            )
-        )
-        selected_candidate = "T reverse parking entrance"
-        adjusted_goal = entrance_goal
-        print(
-            "T parking staging pose: "
-            f"({staging_pose[0]:.1f}, {staging_pose[1]:.1f}, "
-            f"{math.degrees(staging_pose[2]):.1f} deg)"
+        outcome = plan_live_request(
+            request,
+            planner,
+            profile_config,
+            limits,
+            parking_config,
         )
         save_outputs(
-            request,
-            selected_candidate,
-            adjusted_start,
-            adjusted_goal,
-            result,
-            trajectory,
-            validation,
+            outcome.request,
+            outcome.selected_candidate,
+            outcome.adjusted_start,
+            outcome.adjusted_goal,
+            outcome.result,
+            outcome.trajectory,
+            outcome.validation,
             grid_map.resolution_cm,
             profile_config,
             parking_config,
@@ -1065,7 +1104,7 @@ def main() -> int:
                 "updated_at_unix_sec": time.time(),
                 "source_frame_index": request.frame_index,
                 "parking_slot": request.slot_name,
-                "trajectory_points": len(trajectory),
+                "trajectory_points": len(outcome.trajectory),
                 "camera_bev_overlay": (
                     "output/live_hybrid_path_on_camera_bev.png"
                 ),
@@ -1087,13 +1126,13 @@ def main() -> int:
 
     print(f"Source frame: {request.frame_index}")
     print(f"Detected vehicle start: {request.start_pose_cm}")
-    print(f"Adjusted start: {adjusted_start}")
+    print(f"Adjusted start: {outcome.adjusted_start}")
     print(f"Selected parking slot: {request.slot_name}")
-    print(f"Selected goal: {adjusted_goal} ({selected_candidate})")
+    print(f"Selected goal: {outcome.adjusted_goal} ({outcome.selected_candidate})")
     print("Hybrid A* path found and validation passed")
-    print(f"Trajectory points: {len(trajectory)}")
-    print(f"Total cost: {result.total_cost:.3f}")
-    print(f"Expanded nodes: {result.expanded_nodes}")
+    print(f"Trajectory points: {len(outcome.trajectory)}")
+    print(f"Total cost: {outcome.result.total_cost:.3f}")
+    print(f"Expanded nodes: {outcome.result.expanded_nodes}")
     print("Saved live Hybrid world path: output/live_hybrid_path_world_cm.csv")
     print("Saved live Hybrid Camera path: output/live_hybrid_path_camera_bev.csv")
     print("Saved live Hybrid JSON: output/live_hybrid_path_world_cm.json")

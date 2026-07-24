@@ -17,11 +17,13 @@ sys.path.append(str(PROJECT_ROOT / "src"))
 
 from overhead_vision.localization.scene_localizer import (  # noqa: E402
     AffineBevToLidar,
+    ChargeEpisodeCoordinator,
     Detection,
     EgoVehicleTracker,
     ParkingAssignmentPolicy,
     ParkingSlotMap,
     SceneLocalizer,
+    VehicleStateManager,
     save_scene_observation,
 )
 from overhead_vision.localization.live_localization import (  # noqa: E402
@@ -377,6 +379,122 @@ def main() -> int:
         assert tracked_ego.track_id == 7
         assert math.isclose(tracked_ego.center_bev_px[0], 200.0, abs_tol=1e-9)
         assert id_tracker.update([nearby_other]) is None
+
+        # 차량 운영 상태는 track_id와 차량 중심이 포함된 주차칸으로 분류한다.
+        # C2 안의 차량은 charging, 주차칸 밖의 차량은 entry_or_transit 상태다.
+        state_manager = VehicleStateManager(transform, track_ttl_sec=0.5)
+        state_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        state_scene = SceneLocalizer(
+            state_tracker,
+            parking,
+            vehicle_state_manager=state_manager,
+        ).observe(
+            [
+                detection((120.0, 120.0), 0.80, track_id=7),
+                detection((1200.0, 600.0), 0.95, 100.0, 70.0, track_id=22),
+            ],
+            (800, 1600),
+            frame_index=10,
+            observed_at_unix_sec=102.0,
+        )
+        states = {item.track_id: item for item in state_scene.tracked_vehicles}
+        assert states[7].state == "entry_or_transit"
+        assert states[7].visible
+        assert states[22].state == "charging"
+        assert states[22].assigned_slot_name == "C2"
+
+        # 짧은 가림에서는 마지막 상태를 lost로 유지하고 TTL을 넘으면 제거한다.
+        retained_scene = SceneLocalizer(
+            state_tracker,
+            parking,
+            vehicle_state_manager=state_manager,
+        ).observe(
+            [detection((121.0, 120.0), 0.80, track_id=7)],
+            (800, 1600),
+            frame_index=11,
+            observed_at_unix_sec=102.2,
+        )
+        retained = {
+            item.track_id: item for item in retained_scene.tracked_vehicles
+        }
+        assert not retained[22].visible
+        expired_scene = SceneLocalizer(
+            state_tracker,
+            parking,
+            vehicle_state_manager=state_manager,
+        ).observe(
+            [detection((122.0, 120.0), 0.80, track_id=7)],
+            (800, 1600),
+            frame_index=12,
+            observed_at_unix_sec=102.8,
+        )
+        assert {item.track_id for item in expired_scene.tracked_vehicles} == {7}
+
+        # 충전 Episode는 먼저 보인 eligible 차량을 FIFO로 선택하고 C2를 먼저
+        # 사용한다. C2가 점유되면 C1로 대체하고, 둘 다 점유되면 대기 상태다.
+        coordinator = ChargeEpisodeCoordinator(("C2", "C1"))
+        entry_vehicle = states[7]
+        slots_free = parking.observe([], (800, 1600))
+        assignment = coordinator.observe([entry_vehicle], slots_free)
+        assert assignment is not None
+        assert assignment.vehicle_track_id == 7
+        assert assignment.target_slot_name == "C2"
+        assert assignment.status == "assigned_to_charge"
+
+        c2_occupied_slots = parking.observe(
+            [detection((1200.0, 600.0), 0.99, 100.0, 70.0, track_id=22)],
+            (800, 1600),
+        )
+        assignment = coordinator.observe([entry_vehicle], c2_occupied_slots)
+        assert assignment is not None
+        assert assignment.target_slot_name == "C1"
+        assert assignment.status == "assigned_to_charge"
+
+        both_charge_occupied_slots = parking.observe(
+            [
+                detection((1200.0, 300.0), 0.99, 100.0, 70.0, track_id=21),
+                detection((1200.0, 600.0), 0.99, 100.0, 70.0, track_id=22),
+            ],
+            (800, 1600),
+        )
+        assignment = coordinator.observe([entry_vehicle], both_charge_occupied_slots)
+        assert assignment is not None
+        assert assignment.target_slot_name is None
+        assert assignment.status == "waiting_for_charge_slot"
+
+        # Episode 배정된 ego는 기존 active phase와 관계없이 C2 목표로 planner
+        # 입력을 생성한다. 다른 ID가 배정되면 planner 입력을 만들지 않는다.
+        episode_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        episode_scene = SceneLocalizer(
+            episode_tracker,
+            parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=entry_policy,
+        ).observe(
+            [detection((120.0, 120.0), 0.80, track_id=7)],
+            (800, 1600),
+            frame_index=13,
+            observed_at_unix_sec=103.0,
+        )
+        assert episode_scene.charge_assignment is not None
+        assert episode_scene.charge_assignment.target_slot_name == "C2"
+        assert episode_scene.planning_request is not None
+        assert episode_scene.planning_request.slot_name == "C2"
 
         line_image = np.zeros((100, 120, 3), dtype=np.uint8)
         skipped = _draw_continuous_path(
