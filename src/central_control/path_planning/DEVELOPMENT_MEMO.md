@@ -118,3 +118,43 @@
 - Python이 언제든 다시 생성할 수 있는 `__pycache__` 34개는 백업하지 않고
   삭제했다.
 - 활성 경로계획 폴더는 cache 제외 30개에서 26개로 줄었다.
+
+## 2026-07-22: 차량 PID 제어기 후보 추가 및 격리 검증
+
+- 전달받은 `pid_path_follower_smooth_topic.py`와
+  `pid_path_follower_smooth_parking_complete_topic.py`를 `src/vehicle_control`에
+  복사했다.
+- 두 파일 모두 Python 문법 검사와 ROS 2 노드 생성을 통과했다.
+- 실제 차량과 분리된 ROS domain 232에서 합성 `nav_msgs/Path`를
+  적용했고, 전진 구간은 양수, 후진 구간은 음수 `linear.x`를
+  생성하는 것을 확인했다. 테스트 중 `/cmd_vel` 발행 함수는 캡처로
+  대체해 실제 모터 명령이 나가지 않게 했다.
+- 두 파일의 중앙 `/pinkk/planned_path` 처리 방식은 같다. 두 번째
+  파일의 차이는 중앙 경로 모드가 아닌 내장 waypoint 주차 시퀀스에
+  있다.
+- 현재 제어기는 `/pinkk/planned_trajectory`를 구독하지 않아 planner가
+  계산한 direction, 조향각, 목표 속도, 정지 표시를 무시한다. 후진은
+  `Path` 이동 벡터와 pose yaw의 내적으로 다시 추정한다.
+- 현재 차량 자세는 `/pinkk/vehicle_pose`가 아닌 `/odom`에서 받는다.
+  실차 연동 전에 trajectory 메타데이터와 pose frame을 제어기에 직접
+  연결하는 보완이 필요하다.
+- 루트 `.gitignore`가 `src/vehicle_control/` 전체를 제외하고 있어 두 Python
+  파일은 현재 로컬 복사본이며 일반 `git add`로는 커밋되지 않는다.
+  팀 소유 정책을 확인한 뒤 예외 규칙 또는 명시적 추적을 선택해야 한다.
+
+## 2026-07-22: 남은 PID 제어기 경로 토픽 수신 수정
+
+- 남은 `pid_path_follower_smooth_topic.py` 하나를 기준으로 ROS 2
+  publish/subscribe를 다시 검증했다.
+- 중앙 발행기는 `/pinkk/planned_path`를 `RELIABLE + TRANSIENT_LOCAL`로
+  발행하지만 제어기는 기본 `VOLATILE`로 구독해, 발행기보다 나중에
+  실행된 제어기가 마지막 경로를 받지 못하는 문제를 재현했다.
+- 경로 subscriber의 QoS를 발행기와 같게 맞춰 late join 제어기도
+  보존된 경로를 즉시 받도록 수정했다.
+- 각 waypoint의 전후진을 다음 edge로 판정하던 로직은 gear cusp
+  정지점을 한 점 일찍 후진으로 해석했다. Hybrid trajectory 규약에
+  맞게 이전 점에서 현재 목표점으로 들어오는 edge를 기준으로 수정했다.
+- 격리 ROS domain에서 `경로 선발행 → 제어기 late join → odom 수신`
+  순서를 테스트했다. 보존 경로 수신, odom 후 활성화, 전진
+  `+0.0625 m/s`, 후진 `-0.0625 m/s`를 모두 확인했다.
+- 사용자 요청에 따라 이 작업 내용은 README에 추가하지 않았다.
