@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import threading
 import time
 from typing import Sequence
 
@@ -110,7 +111,86 @@ def load_camera_geometry(config: dict[str, object]) -> tuple[np.ndarray, np.ndar
     return camera_matrix, dist_coeffs, homography, bev_width, bev_height
 
 
-def open_camera(config: dict[str, object]) -> cv2.VideoCapture:
+class LatestFrameCamera:
+    """카메라를 계속 비워 메인 처리보다 오래된 프레임이 쌓이지 않게 한다.
+
+    YOLO 처리 속도가 카메라 FPS보다 낮아도 대기 프레임을 순서대로 소비하지
+    않고, 호출 시점에 가장 최근에 취득된 한 장만 반환한다.
+    """
+
+    def __init__(self, camera: cv2.VideoCapture) -> None:
+        self._camera = camera
+        self._condition = threading.Condition()
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._capture_loop,
+            name="overhead-camera-capture",
+            daemon=True,
+        )
+        self._sequence = -1
+        self._captured_at = 0.0
+        self._frame: np.ndarray | None = None
+        self._error: str | None = None
+
+    def start(self, timeout_seconds: float = 3.0) -> "LatestFrameCamera":
+        self._thread.start()
+        with self._condition:
+            ready = self._condition.wait_for(
+                lambda: self._frame is not None or self._error is not None,
+                timeout=timeout_seconds,
+            )
+            if not ready:
+                self.close()
+                raise RuntimeError("timed out waiting for the first camera frame")
+            if self._error is not None:
+                error = self._error
+                self.close()
+                raise RuntimeError(error)
+        return self
+
+    def read_latest(
+        self,
+        after_sequence: int,
+        timeout_seconds: float = 2.0,
+    ) -> tuple[int, float, np.ndarray]:
+        """`after_sequence`보다 새로운 최신 프레임 하나를 반환한다."""
+        with self._condition:
+            ready = self._condition.wait_for(
+                lambda: self._sequence > after_sequence or self._error is not None,
+                timeout=timeout_seconds,
+            )
+            if not ready:
+                raise RuntimeError("timed out waiting for a new camera frame")
+            if self._error is not None:
+                raise RuntimeError(self._error)
+            assert self._frame is not None
+            return self._sequence, self._captured_at, self._frame
+
+    def close(self) -> None:
+        self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+        self._camera.release()
+        if self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+
+    def _capture_loop(self) -> None:
+        while not self._stop_event.is_set():
+            ok, frame = self._camera.read()
+            captured_at = time.monotonic()
+            if not ok or frame is None:
+                with self._condition:
+                    self._error = "failed to read overhead camera frame"
+                    self._condition.notify_all()
+                return
+            with self._condition:
+                self._sequence += 1
+                self._captured_at = captured_at
+                self._frame = frame
+                self._condition.notify_all()
+
+
+def open_camera(config: dict[str, object]) -> LatestFrameCamera:
     camera_id = int(config["camera_id"])
     camera = cv2.VideoCapture(camera_id, cv2.CAP_V4L2)
     camera.set(
@@ -120,10 +200,26 @@ def open_camera(config: dict[str, object]) -> cv2.VideoCapture:
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, int(config["camera_width"]))
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, int(config["camera_height"]))
     camera.set(cv2.CAP_PROP_FPS, int(config["camera_fps"]))
+    # 일부 V4L2/OpenCV 조합은 이 속성을 무시할 수 있다. 따라서 버퍼 1 설정과
+    # 무관하게 LatestFrameCamera 스레드가 장치를 계속 읽어 최신성을 보장한다.
+    buffer_requested = int(config.get("camera_buffer_size", 1))
+    buffer_setting_accepted = camera.set(
+        cv2.CAP_PROP_BUFFERSIZE,
+        buffer_requested,
+    )
     if not camera.isOpened():
         camera.release()
         raise RuntimeError(f"could not open overhead camera_id={camera_id}")
-    return camera
+    actual_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    actual_fps = float(camera.get(cv2.CAP_PROP_FPS))
+    print(
+        "Opened overhead camera: "
+        f"{actual_width}x{actual_height} @ {actual_fps:.1f} FPS, "
+        f"latest-frame buffer request={buffer_requested} "
+        f"accepted={buffer_setting_accepted}"
+    )
+    return LatestFrameCamera(camera).start()
 
 
 def detections_from_result(result: object) -> list[Detection]:
@@ -133,6 +229,7 @@ def detections_from_result(result: object) -> list[Detection]:
     mask_polygons: Sequence[np.ndarray] = (
         result.masks.xy if result.masks is not None else ()
     )
+    tracked_ids = result.boxes.id if result.boxes.id is not None else None
     for index, box in enumerate(result.boxes):
         class_id = int(box.cls[0].item())
         class_name = str(result.names[class_id])
@@ -146,8 +243,13 @@ def detections_from_result(result: object) -> list[Detection]:
                 [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
                 dtype=np.float64,
             )
+        track_id = (
+            int(round(float(tracked_ids[index].item())))
+            if tracked_ids is not None
+            else None
+        )
         detections.append(
-            Detection(class_name, confidence, polygon, xyxy)
+            Detection(class_name, confidence, polygon, xyxy, track_id)
         )
     return detections
 
@@ -214,7 +316,7 @@ def build_localizer(
 def load_parking_assignment(
     config: dict[str, object],
 ) -> ParkingAssignmentPolicy | None:
-    """현재 에피소드의 입구·출구 기반 주차칸 배정 규칙을 읽는다."""
+    """현재 에피소드의 거리 또는 명시 순서 기반 주차칸 배정 규칙을 읽는다."""
     raw_assignment = config.get("parking_assignment")
     if not isinstance(raw_assignment, dict):
         return None
@@ -254,6 +356,7 @@ def draw_scene(
     scene: SceneObservation,
     transform: AffineBevToLidar,
     target_slot_name: str | None = None,
+    detections: Sequence[Detection] = (),
 ) -> np.ndarray:
     canvas = bev.copy()
     selected_name = (
@@ -278,6 +381,29 @@ def draw_scene(
             1,
             cv2.LINE_AA,
         )
+    # 모든 검출 차량에 ByteTrack ID를 표시한다. ego 차량은 아래에서 더 굵은
+    # 외곽선과 rear-axle pose로 다시 강조한다.
+    for detection in detections:
+        if detection.class_name != "car":
+            continue
+        polygon = np.rint(detection.polygon_bev).astype(np.int32)
+        cv2.polylines(canvas, [polygon], True, (255, 128, 0), 1, cv2.LINE_AA)
+        x1, y1, _, _ = detection.bbox_xyxy
+        label = (
+            f"car id={detection.track_id} {detection.confidence:.2f}"
+            if detection.track_id is not None
+            else f"car id=pending {detection.confidence:.2f}"
+        )
+        cv2.putText(
+            canvas,
+            label,
+            (max(0, round(x1)), max(18, round(y1) - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (255, 128, 0),
+            2,
+            cv2.LINE_AA,
+        )
     if scene.vehicle is not None:
         vehicle = scene.vehicle
         polygon = np.rint(vehicle.polygon_bev).astype(np.int32)
@@ -298,7 +424,11 @@ def draw_scene(
             cv2.arrowedLine(canvas, rear, front, (255, 255, 0), 3, tipLength=0.25)
         cv2.putText(
             canvas,
-            f"ego ({vehicle.rear_axle_cm[0]:.1f}, {vehicle.rear_axle_cm[1]:.1f}) cm yaw={vehicle.yaw_deg:.1f}",
+            (
+                f"ego id={vehicle.track_id} "
+                f"({vehicle.rear_axle_cm[0]:.1f}, {vehicle.rear_axle_cm[1]:.1f}) cm "
+                f"yaw={vehicle.yaw_deg:.1f}"
+            ),
             (max(0, center[0] - 120), max(25, center[1] - 18)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
@@ -535,7 +665,8 @@ def print_scene(scene: SceneObservation) -> None:
         print(
             "  Ego rear axle: "
             f"({vehicle.rear_axle_cm[0]:.2f}, {vehicle.rear_axle_cm[1]:.2f}) cm, "
-            f"yaw={vehicle.yaw_deg:.1f} deg, conf={vehicle.confidence:.2f}, "
+            f"id={vehicle.track_id}, yaw={vehicle.yaw_deg:.1f} deg, "
+            f"conf={vehicle.confidence:.2f}, "
             f"ambiguous={vehicle.heading_ambiguous or vehicle.ego_selection_ambiguous}"
         )
     free_count = sum(not slot.occupied for slot in scene.parking_slots)
@@ -605,7 +736,7 @@ def main() -> int:
         print("Run with the project virtual environment: .venv/bin/python")
         return 1
 
-    camera: cv2.VideoCapture | None = None
+    camera: LatestFrameCamera | None = None
     static_bev: np.ndarray | None = None
     if args.bev_image is not None:
         static_bev = cv2.imread(str(args.bev_image), cv2.IMREAD_COLOR)
@@ -641,20 +772,67 @@ def main() -> int:
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback(WINDOW_NAME, heading_selector.mouse_callback)
+    # 첫 실제 프레임 추론 전에 CUDA 커널과 모델을 준비한다. 준비 중에도 캡처
+    # 스레드는 카메라를 계속 비우므로 완료 후 가장 최근 프레임부터 처리한다.
+    inference_imgsz = int(config.get("inference_imgsz", 1600))
+    inference_device = config.get("inference_device", 0)
+    tracker_config = str(config.get("tracker_config", "bytetrack.yaml"))
+    if static_bev is None:
+        warmup_image = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
+        model.predict(
+            source=warmup_image,
+            imgsz=inference_imgsz,
+            device=inference_device,
+            conf=float(config["confidence"]),
+            iou=float(config["iou"]),
+            verbose=False,
+        )
+        print(
+            "YOLO warm-up complete: "
+            f"imgsz={inference_imgsz}, device={inference_device}"
+        )
+
     frame_index = 0
+    processed_frames = 0
+    last_camera_sequence = -1
+    dropped_camera_frames = 0
     last_print_time = 0.0
     output_every = max(1, int(config["output_every_n_frames"]))
+    latency_warning_ms = float(config.get("latency_warning_ms", 150.0))
+    undistort_maps: tuple[np.ndarray, np.ndarray] | None = None
     try:
         while True:
             if static_bev is not None:
                 bev = static_bev.copy()
+                captured_at = time.monotonic()
             else:
                 assert camera is not None
-                ok, frame = camera.read()
-                if not ok or frame is None:
-                    print("ERROR: failed to read overhead camera frame")
-                    return 1
-                undistorted = cv2.undistort(frame, camera_matrix, dist_coeffs)
+                previous_sequence = last_camera_sequence
+                frame_index, captured_at, frame = camera.read_latest(
+                    last_camera_sequence
+                )
+                last_camera_sequence = frame_index
+                if previous_sequence >= 0:
+                    dropped_camera_frames += max(
+                        0,
+                        frame_index - previous_sequence - 1,
+                    )
+                if undistort_maps is None:
+                    frame_height, frame_width = frame.shape[:2]
+                    undistort_maps = cv2.initUndistortRectifyMap(
+                        camera_matrix,
+                        dist_coeffs,
+                        None,
+                        camera_matrix,
+                        (frame_width, frame_height),
+                        cv2.CV_16SC2,
+                    )
+                undistorted = cv2.remap(
+                    frame,
+                    undistort_maps[0],
+                    undistort_maps[1],
+                    interpolation=cv2.INTER_LINEAR,
+                )
                 bev = cv2.warpPerspective(
                     undistorted,
                     homography,
@@ -668,8 +846,12 @@ def main() -> int:
                 )
                 return 1
 
-            result = model.predict(
+            result = model.track(
                 source=bev,
+                imgsz=inference_imgsz,
+                device=inference_device,
+                tracker=tracker_config,
+                persist=True,
                 conf=float(config["confidence"]),
                 iou=float(config["iou"]),
                 verbose=False,
@@ -692,6 +874,12 @@ def main() -> int:
             now = time.monotonic()
             if now - last_print_time >= 1.0 or static_bev is not None:
                 print_scene(scene)
+                capture_age_ms = (now - captured_at) * 1000.0
+                print(
+                    "  Live timing: "
+                    f"capture_age={capture_age_ms:.1f} ms, "
+                    f"dropped_for_freshness={dropped_camera_frames}"
+                )
                 last_print_time = now
 
             if not args.no_display:
@@ -700,9 +888,30 @@ def main() -> int:
                     scene,
                     transform,
                     target_slot_name=target_slot_name,
+                    detections=detections,
                 )
                 path_overlay.draw(canvas, scene)
                 heading_selector.draw_instruction(canvas)
+                capture_age_ms = (time.monotonic() - captured_at) * 1000.0
+                latency_color = (
+                    (0, 0, 255)
+                    if capture_age_ms > latency_warning_ms
+                    else (0, 255, 0)
+                )
+                cv2.putText(
+                    canvas,
+                    (
+                        f"capture age={capture_age_ms:.0f} ms | "
+                        f"camera frame={frame_index} | "
+                        f"skipped={dropped_camera_frames}"
+                    ),
+                    (20, 95),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    latency_color,
+                    2,
+                    cv2.LINE_AA,
+                )
                 cv2.imshow(WINDOW_NAME, canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
@@ -711,14 +920,20 @@ def main() -> int:
                     heading_selector.arm()
                 elif key == ord("x"):
                     heading_selector.clear()
-            frame_index += 1
+            processed_frames += 1
             if static_bev is not None:
                 break
-            if args.max_frames is not None and frame_index >= args.max_frames:
+            if (
+                args.max_frames is not None
+                and processed_frames >= args.max_frames
+            ):
                 break
+    except RuntimeError as error:
+        print(f"ERROR: {error}")
+        return 1
     finally:
         if camera is not None:
-            camera.release()
+            camera.close()
         cv2.destroyAllWindows()
     return 0
 

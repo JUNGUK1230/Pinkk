@@ -23,10 +23,14 @@ class Detection:
     confidence: float
     polygon_bev: np.ndarray
     bbox_xyxy: tuple[float, float, float, float]
+    # ByteTrack이 프레임 간 같은 차량에 유지하는 ID다. tracker 초기화 직후에는
+    # None일 수 있으므로 기존 단일 프레임 검출도 계속 지원한다.
+    track_id: int | None = None
 
 
 @dataclass(frozen=True)
 class VehicleObservation:
+    track_id: int | None
     confidence: float
     center_bev_px: Point
     center_lidar_px: Point
@@ -44,6 +48,7 @@ class VehicleObservation:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "track_id": self.track_id,
             "confidence": self.confidence,
             "center_bev_px": list(self.center_bev_px),
             "center_lidar_px": list(self.center_lidar_px),
@@ -83,7 +88,7 @@ class ParkingSlotObservation:
 
 @dataclass(frozen=True)
 class ParkingAssignmentPolicy:
-    """입구·출구 기준으로 빈 주차칸 후보를 정렬하는 공통 운영 규칙."""
+    """운영 단계에 따라 빈 주차칸 후보를 정렬하는 공통 배정 규칙."""
 
     name: str
     reference_bev_px: Point
@@ -92,8 +97,10 @@ class ParkingAssignmentPolicy:
     candidate_limit: int
 
     def __post_init__(self) -> None:
-        if self.preference not in ("nearest", "farthest"):
-            raise ValueError("parking preference must be nearest or farthest")
+        if self.preference not in ("nearest", "farthest", "ordered"):
+            raise ValueError(
+                "parking preference must be nearest, farthest, or ordered"
+            )
         if self.candidate_limit <= 0:
             raise ValueError("parking candidate limit must be positive")
         if not self.allowed_slots:
@@ -103,19 +110,32 @@ class ParkingAssignmentPolicy:
         self,
         slots: Sequence[ParkingSlotObservation],
     ) -> tuple[ParkingSlotObservation, ...]:
-        """점유된 칸을 제외하고 기준점 실제 BEV 거리 순으로 정렬한다."""
-        allowed = set(self.allowed_slots)
-        free_slots = [
-            slot for slot in slots if slot.name in allowed and not slot.occupied
-        ]
-        ranked = sorted(
-            free_slots,
-            key=lambda slot: math.hypot(
-                slot.center_bev_px[0] - self.reference_bev_px[0],
-                slot.center_bev_px[1] - self.reference_bev_px[1],
-            ),
-            reverse=self.preference == "farthest",
-        )
+        """점유 칸을 제외하고 거리 또는 명시된 운영 우선순위로 정렬한다."""
+        slots_by_name = {slot.name: slot for slot in slots}
+        if self.preference == "ordered":
+            # allowed_slots 순서를 그대로 사용한다. C2→C1처럼 운영 정책이
+            # 명확한 단계에서는 불필요한 거리 비교 없이 첫 빈 칸만 planner에
+            # 전달할 수 있다.
+            ranked = [
+                slots_by_name[name]
+                for name in self.allowed_slots
+                if name in slots_by_name and not slots_by_name[name].occupied
+            ]
+        else:
+            allowed = set(self.allowed_slots)
+            free_slots = [
+                slot
+                for slot in slots
+                if slot.name in allowed and not slot.occupied
+            ]
+            ranked = sorted(
+                free_slots,
+                key=lambda slot: math.hypot(
+                    slot.center_bev_px[0] - self.reference_bev_px[0],
+                    slot.center_bev_px[1] - self.reference_bev_px[1],
+                ),
+                reverse=self.preference == "farthest",
+            )
         return tuple(ranked[: self.candidate_limit])
 
 
@@ -249,6 +269,9 @@ class EgoVehicleTracker:
         self.previous_center_bev: Point | None = None
         self.previous_yaw_rad: float | None = self.initial_yaw_rad
         self.manual_yaw_rad: float | None = None
+        # 첫 ego 선택 후에는 거리 대신 ByteTrack ID를 우선한다. 다른 차량이
+        # 옆을 지나가도 경로계획 start가 다른 차로 바뀌는 것을 막는다.
+        self.ego_track_id: int | None = None
         # Mask의 장축은 방향축만 제공한다. 초기 yaw가 없으면 앞뒤 절대 방향은
         # 이후 프레임에서도 결정할 수 없으므로 계속 ambiguous로 유지한다.
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
@@ -273,8 +296,20 @@ class EgoVehicleTracker:
             return None
         centers = [_polygon_center(item.polygon_bev) for item in car_detections]
         selection_reference = self.previous_center_bev or self.initial_center_bev_px
-        selection_ambiguous = selection_reference is None and len(car_detections) > 1
-        if selection_reference is None:
+        selection_ambiguous = False
+        if self.ego_track_id is not None:
+            matching_indices = [
+                index
+                for index, detection in enumerate(car_detections)
+                if detection.track_id == self.ego_track_id
+            ]
+            # 잠시 가려졌을 때 가까운 다른 차로 바꾸지 않는다. 같은 ID가 다시
+            # 나타날 때까지 ego pose와 경로계획 입력은 안전하게 비활성화한다.
+            if not matching_indices:
+                return None
+            selected_index = matching_indices[0]
+        elif selection_reference is None:
+            selection_ambiguous = len(car_detections) > 1
             selected_index = max(
                 range(len(car_detections)),
                 key=lambda index: car_detections[index].confidence,
@@ -295,6 +330,8 @@ class EgoVehicleTracker:
                 return None
 
         detection = car_detections[selected_index]
+        if detection.track_id is not None:
+            self.ego_track_id = detection.track_id
         raw_center = centers[selected_index]
         if self.previous_center_bev is None:
             center = raw_center
@@ -345,6 +382,7 @@ class EgoVehicleTracker:
         self.previous_center_bev = center
         self.previous_yaw_rad = yaw
         return VehicleObservation(
+            track_id=detection.track_id,
             confidence=detection.confidence,
             center_bev_px=center,
             center_lidar_px=center_lidar,

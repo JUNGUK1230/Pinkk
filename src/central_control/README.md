@@ -102,14 +102,21 @@ cd ~/PINKK/src/central_control/camera_tools/first_map
 
 ## 알고리즘 개요
 
-1. USB 카메라 영상을 렌즈 왜곡 보정 후 `1600×800` Camera BEV로 변환합니다.
-2. YOLO segmentation으로 차량을 찾고 Camera–LiDAR affine 정합으로 rear-axle
-   위치를 LiDAR map cm 좌표로 변환합니다.
+1. USB 카메라를 별도 스레드에서 계속 읽고, 밀린 프레임은 버린 뒤 가장
+   최신 프레임만 렌즈 왜곡 보정하여 `1600×800` Camera BEV로 변환합니다.
+   화면의 `capture age`로 촬영부터 표시까지의 지연을 확인할 수 있습니다.
+2. YOLO segmentation과 ByteTrack으로 차량별 `track_id`를 유지하고,
+   처음 선택한 ego ID가 잠시 가려졌을 때 다른 차량으로 바뀌지 않게 합니다.
+   Camera–LiDAR affine 정합으로 해당 ego의 rear-axle 위치를 LiDAR map cm
+   좌표로 변환합니다.
 3. 입구 단계에서는 P6~P10의 빈 주차면을 입구에서 먼 순서로 선택합니다.
-4. Occupancy grid의 검은 영역을 벽으로 사용하고, 차량 `12×10 cm` 회전
+   현재 충전 이동 단계에서는 C2를 우선 선택하고, C2 점유 시 C1을 선택합니다.
+4. 2D A* 통로 guide를 짧은 Hybrid A* 구간으로 나눠 장거리 탐색량을
+   줄이고, 각 구간 경계에서 정지·조향 재설정점을 만듭니다.
+5. Occupancy grid의 검은 영역을 벽으로 사용하고, 차량 `12×10 cm` 회전
    footprint와 전진·후진을 고려하는 Hybrid A*로 경로를 탐색합니다.
-5. 주차면 앞 staging pose까지 접근한 뒤 정지하고, T자 maneuver로 마지막
+6. 주차면 앞 staging pose까지 접근한 뒤 정지하고, T자 maneuver로 마지막
    구간을 후진해 주차합니다.
-6. 경로를 0.5cm 이하 간격으로 생성하고 곡률, 목표속도, 조향각, 정지점을
+7. 경로를 0.5cm 이하 간격으로 생성하고 곡률, 목표속도, 조향각, 정지점을
    계산합니다.
-7. 충돌·간격·yaw·조향·속도 제한을 통과한 trajectory만 ROS 2로 발행합니다.
+8. 충돌·간격·yaw·조향·속도 제한을 통과한 trajectory만 ROS 2로 발행합니다.

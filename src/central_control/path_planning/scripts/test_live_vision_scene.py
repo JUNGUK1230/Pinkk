@@ -51,6 +51,7 @@ def detection(
     confidence: float,
     width: float = 80.0,
     height: float = 35.0,
+    track_id: int | None = None,
 ) -> Detection:
     polygon = rectangle(center[0], center[1], width, height)
     return Detection(
@@ -63,6 +64,7 @@ def detection(
             center[0] + width / 2.0,
             center[1] + height / 2.0,
         ),
+        track_id,
     )
 
 
@@ -83,6 +85,7 @@ def main() -> int:
                     "occupied_slot": rectangle(500.0, 400.0, 150.0, 160.0).tolist(),
                     "free_slot": rectangle(900.0, 400.0, 150.0, 160.0).tolist(),
                     "C1": rectangle(1200.0, 300.0, 150.0, 160.0).tolist(),
+                    "C2": rectangle(1200.0, 600.0, 150.0, 160.0).tolist(),
                 }
             ),
             encoding="utf-8",
@@ -221,6 +224,65 @@ def main() -> int:
         assert fallback_scene.planning_request.slot_name == "free_slot"
         assert fallback_scene.planning_request.candidate_slot_names == ("free_slot",)
 
+        # 충전 단계는 거리와 관계없이 설정 순서대로 C2를 먼저 선택하고,
+        # C2가 점유됐을 때만 C1로 대체한다.
+        charge_policy = ParkingAssignmentPolicy(
+            name="parking_to_charge",
+            reference_bev_px=(120.0, 120.0),
+            allowed_slots=("C2", "C1"),
+            preference="ordered",
+            candidate_limit=2,
+        )
+        charge_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        charge_scene = SceneLocalizer(
+            charge_tracker,
+            parking,
+            parking_assignment=charge_policy,
+        ).observe(
+            detections,
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        assert charge_scene.planning_request is not None
+        assert charge_scene.planning_request.slot_name == "C2"
+        assert charge_scene.planning_request.candidate_slot_names == (
+            "C2",
+            "C1",
+        )
+
+        occupied_c2 = detection((1200.0, 600.0), 0.99, 100.0, 70.0)
+        charge_fallback_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        charge_fallback_scene = SceneLocalizer(
+            charge_fallback_tracker,
+            parking,
+            parking_assignment=charge_policy,
+        ).observe(
+            [parked_car, occupied_c2, ego],
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        assert charge_fallback_scene.planning_request is not None
+        assert charge_fallback_scene.planning_request.slot_name == "C1"
+        assert charge_fallback_scene.planning_request.candidate_slot_names == (
+            "C1",
+        )
+
         occupied_scene = SceneLocalizer(
             fixed_tracker,
             parking,
@@ -294,6 +356,27 @@ def main() -> int:
         )
         assert manual_scene.planning_request is not None
         assert manual_scene.planning_request.slot_name == "C1"
+
+        # ByteTrack ID가 생긴 뒤에는 이전 중심에 더 가까운 다른 차량이 있어도
+        # 첫 ego ID를 계속 선택한다. ID가 사라지면 다른 차량으로 바꾸지 않는다.
+        id_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        first_ego = detection((120.0, 120.0), 0.80, track_id=7)
+        tracked_ego = id_tracker.update([first_ego])
+        assert tracked_ego is not None and tracked_ego.track_id == 7
+        moved_ego = detection((200.0, 120.0), 0.80, track_id=7)
+        nearby_other = detection((121.0, 120.0), 0.99, track_id=11)
+        tracked_ego = id_tracker.update([nearby_other, moved_ego])
+        assert tracked_ego is not None
+        assert tracked_ego.track_id == 7
+        assert math.isclose(tracked_ego.center_bev_px[0], 200.0, abs_tol=1e-9)
+        assert id_tracker.update([nearby_other]) is None
 
         line_image = np.zeros((100, 120, 3), dtype=np.uint8)
         skipped = _draw_continuous_path(

@@ -14,7 +14,7 @@
 | `src/occupancy_grid.py` | 지도 image와 YAML을 occupancy grid로 변환하고 외부 영역 차단·obstacle inflation을 수행합니다. |
 | `src/hybrid_astar_planner.py` | 차량 yaw, 조향, 전진·후진, 회전 footprint를 고려해 경로를 탐색합니다. |
 | `src/reeds_shepp.py` | 전진·후진이 가능한 Reeds–Shepp analytic goal 연결 후보를 생성합니다. |
-| `src/t_parking_planner.py` | 통로 staging 접근과 최종 후진 maneuver를 결합한 T자 후면주차 경로를 만듭니다. |
+| `src/t_parking_planner.py` | 2D 통로 guide, 짧은 Hybrid 접근 구간과 최종 후진 maneuver를 결합한 T자 후면주차 경로를 만듭니다. |
 | `src/path_smoothing.py` | 기어 전환을 유지하면서 경로 위치·yaw·곡률을 부드럽게 만듭니다. |
 | `src/trajectory_profile.py` | 곡률에 따른 목표속도, 각속도 및 정지점을 계산합니다. |
 | `src/trajectory_validator.py` | 충돌, 간격, yaw, 조향, 속도, 기어 전환 조건을 검사합니다. |

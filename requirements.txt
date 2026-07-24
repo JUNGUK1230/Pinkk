@@ -2,5 +2,7 @@ numpy
 opencv-python
 PyYAML
 ultralytics
+# Ultralytics ByteTrack의 프레임 간 차량 ID matching 의존성
+lap>=0.5.12
 scipy
 typeguard

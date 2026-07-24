@@ -14,22 +14,39 @@ realtime_localization:
   camera_height: 1080
   camera_fps: 30
   camera_fourcc: MJPG
+  # YOLO가 카메라 FPS보다 느려도 과거 프레임을 순서대로 처리하지 않는다.
+  camera_buffer_size: 1
+
+  # 현재 학습·검증 해상도를 유지한다. 화면의 capture age가 계속 크면
+  # 정확도를 현장 검증한 뒤 960으로 낮추는 것을 다음 최적화로 검토한다.
+  inference_imgsz: 1600
+  inference_device: 0
+  # ByteTrack은 car mask의 프레임 간 ID를 유지한다. ego는 처음 선택된 ID만
+  # 따르므로 다른 차량과 가까워져도 planner start가 바뀌지 않는다.
+  tracker_config: bytetrack.yaml
+  latency_warning_ms: 150.0
 
   confidence: 0.25
   iou: 0.45
   occupancy_threshold: 0.10
   output_every_n_frames: 1
 
-  # 입구 차량의 첫 에피소드: 입구에서 먼 P6~P10 빈 칸을 우선 선택한다.
-  # P6~P10 중 점유된 칸은 건너뛰며, 최대 5개 후보를 scene에 기록한다.
+  # 현재 에피소드: P6~P10 주차 후 충전 구역으로 이동한다.
+  # C2가 비어 있으면 C2만 계획하고, C2가 점유됐을 때만 C1로 대체한다.
   parking_assignment:
-    active_phase: entry_to_parking
+    active_phase: parking_to_charge
     phases:
       entry_to_parking:
         reference_point: entrance
         allowed_slots: [P6, P7, P8, P9, P10]
         preference: farthest
         candidate_limit: 5
+      parking_to_charge:
+        # ordered 정책에서는 reference_point를 거리 계산에 사용하지 않는다.
+        reference_point: entrance
+        allowed_slots: [C2, C1]
+        preference: ordered
+        candidate_limit: 2
       charge_to_exit:
         reference_point: exit
         allowed_slots: [P1, P2, P3, P4, P5]
