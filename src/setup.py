@@ -39,7 +39,10 @@ setup(
         ),
         ('share/' + PACKAGE_NAME, [str(PACKAGE_ROOT / 'package.xml')]),
     ] + config_files(),
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'Flask>=3.0,<4',
+    ],
     zip_safe=True,
     maintainer='PINKK',
     maintainer_email='maintainer@example.com',

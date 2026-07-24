@@ -1,4 +1,12 @@
+# Python virtual environments and locally installed libraries
 .venv/
+venv/
+.env/
+env/
+site-packages/
+*.dist-info/
+
+# Python caches and build outputs
 __pycache__/
 .pytest_cache/
 build/

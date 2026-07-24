@@ -1,6 +1,5 @@
+flask
 numpy
 opencv-python
 PyYAML
-Flask>=3.0,<4
-scipy
 typeguard
