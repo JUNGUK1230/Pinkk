@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 
@@ -17,7 +18,12 @@ from central_control.camera_tools.first_map.coordinate_transformer import (
 # 1. 기본 설정
 # ============================================================
 
-CAMERA_ID = 2
+# USB 재연결 시 /dev/video 번호는 바뀔 수 있다. 고정된 by-id 경로를 기본값으로
+# 사용해, 같은 LKZC USB 카메라라면 다시 연결한 뒤에도 자동으로 찾는다.
+CAMERA_DEVICE = os.getenv(
+    "PINKK_CAMERA_DEVICE",
+    "/dev/v4l/by-id/usb-LKZC_USB_Camera_200901010001-video-index0",
+)
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 FPS = 30
@@ -315,7 +321,7 @@ MAP_DISPLAY_HEIGHT = int(
 # ============================================================
 
 cap = cv2.VideoCapture(
-    CAMERA_ID,
+    CAMERA_DEVICE,
     cv2.CAP_V4L2
 )
 
@@ -323,7 +329,7 @@ cap = cv2.VideoCapture(
 if not cap.isOpened():
 
     raise RuntimeError(
-        f"카메라 {CAMERA_ID}번 "
+        f"카메라 {CAMERA_DEVICE} "
         f"열기 실패"
     )
 
@@ -387,7 +393,7 @@ print("Runtime Camera")
 print("=" * 70)
 
 print(
-    f"Camera ID : {CAMERA_ID}"
+    f"Camera device : {CAMERA_DEVICE}"
 )
 
 print(
