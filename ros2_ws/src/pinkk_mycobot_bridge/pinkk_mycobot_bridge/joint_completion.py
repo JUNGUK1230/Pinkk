@@ -1,0 +1,74 @@
+"""관절 목표 도달과 실제 정지를 연속 표본으로 검증한다."""
+
+from __future__ import annotations
+
+import math
+from typing import Sequence
+
+
+def wrapped_joint_error(target: float, actual: float) -> float:
+    """두 radian 관절각 사이의 최단 절대 오차를 반환한다."""
+    return abs(math.remainder(float(target) - float(actual), 2.0 * math.pi))
+
+
+def maximum_joint_error(
+    target: Sequence[float],
+    actual: Sequence[float],
+) -> float:
+    """같은 길이 관절 배열의 최대 절대 오차를 반환한다."""
+    if len(target) != len(actual) or not target:
+        raise ValueError('target과 actual 관절 배열 길이가 같고 비어 있지 않아야 합니다')
+    return max(
+        wrapped_joint_error(target_value, actual_value)
+        for target_value, actual_value in zip(target, actual, strict=True)
+    )
+
+
+class JointStabilityMonitor:
+    """목표 오차·표본간 변화·로봇 정지를 모두 만족한 연속 횟수를 센다."""
+
+    def __init__(
+        self,
+        tolerance_rad: float,
+        stable_delta_rad: float,
+        required_samples: int,
+    ) -> None:
+        """정지 판정에 사용할 오차·변화량·연속 표본 수를 설정한다."""
+        if tolerance_rad <= 0.0 or stable_delta_rad <= 0.0:
+            raise ValueError('관절 오차와 안정 변화량은 0보다 커야 합니다')
+        if required_samples < 2:
+            raise ValueError('정지 확인 표본은 최소 2개여야 합니다')
+        self._tolerance = float(tolerance_rad)
+        self._stable_delta = float(stable_delta_rad)
+        self._required = int(required_samples)
+        self._previous: list[float] | None = None
+        self._consecutive = 0
+
+    @property
+    def consecutive_samples(self) -> int:
+        """현재까지 연속으로 통과한 표본 수를 반환한다."""
+        return self._consecutive
+
+    def update(
+        self,
+        target: Sequence[float],
+        actual: Sequence[float],
+        robot_is_moving: bool,
+    ) -> bool:
+        """한 표본을 반영하고 목표에서 실제 정지했으면 true를 반환한다."""
+        current = [float(value) for value in actual]
+        if len(target) != len(current) or not current:
+            raise ValueError('target과 actual 관절 배열 형식이 다릅니다')
+        stable_between_samples = False
+        if self._previous is not None:
+            sample_delta = maximum_joint_error(
+                self._previous, current
+            )
+            stable_between_samples = sample_delta <= self._stable_delta
+        inside_goal = maximum_joint_error(target, current) <= self._tolerance
+        if inside_goal and stable_between_samples and not robot_is_moving:
+            self._consecutive += 1
+        else:
+            self._consecutive = 0
+        self._previous = current
+        return self._consecutive >= self._required

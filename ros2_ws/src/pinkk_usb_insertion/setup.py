@@ -26,6 +26,9 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
+            'camera_publisher_node = '
+            'pinkk_usb_insertion.camera_publisher_node:main',
+            'yolo_keypoint_node = pinkk_usb_insertion.yolo_keypoint_node:main',
             'port_pose_node = pinkk_usb_insertion.port_pose_node:main',
             'pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main',
             'pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main',

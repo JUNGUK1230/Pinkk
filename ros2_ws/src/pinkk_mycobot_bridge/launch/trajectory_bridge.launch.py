@@ -13,6 +13,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("speed", default_value="10"),
             DeclareLaunchArgument("goal_tolerance_deg", default_value="2.0"),
             DeclareLaunchArgument(
+                "joint_execution_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
                 "cartesian_execution_enabled", default_value="false"
             ),
             DeclareLaunchArgument(
@@ -28,7 +31,16 @@ def generate_launch_description() -> LaunchDescription:
                         "port": LaunchConfiguration("port"),
                         "baud": LaunchConfiguration("baud"),
                         "speed": LaunchConfiguration("speed"),
-                        "goal_tolerance_deg": LaunchConfiguration("goal_tolerance_deg"),
+                        "goal_tolerance_deg": LaunchConfiguration(
+                            "goal_tolerance_deg"
+                        ),
+                        "joint_execution_enabled": ParameterValue(
+                            LaunchConfiguration("joint_execution_enabled"),
+                            value_type=bool,
+                        ),
+                        "joint_stable_sample_count": 5,
+                        "joint_stable_delta_deg": 0.2,
+                        "joint_hold_check_seconds": 2.0,
                         "publish_rate_hz": 10.0,
                         "max_execution_seconds": 60.0,
                         "cartesian_execution_enabled": ParameterValue(

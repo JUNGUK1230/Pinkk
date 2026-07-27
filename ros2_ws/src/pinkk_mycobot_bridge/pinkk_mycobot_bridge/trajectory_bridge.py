@@ -27,6 +27,7 @@ from .cartesian_conversion import (
     wrapped_angle_difference_deg,
 )
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
+from .joint_completion import JointStabilityMonitor, maximum_joint_error
 
 
 def duration_seconds(duration: object) -> float:
@@ -78,6 +79,10 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("speed", 10)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("goal_tolerance_deg", 2.0)
+        self.declare_parameter("joint_execution_enabled", False)
+        self.declare_parameter("joint_stable_sample_count", 5)
+        self.declare_parameter("joint_stable_delta_deg", 0.2)
+        self.declare_parameter("joint_hold_check_seconds", 2.0)
         self.declare_parameter("max_execution_seconds", 60.0)
         self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
@@ -95,6 +100,18 @@ class MyCobotTrajectoryBridge(Node):
         rate = float(self.get_parameter("publish_rate_hz").value)
         self._tolerance_rad = math.radians(
             float(self.get_parameter("goal_tolerance_deg").value)
+        )
+        self._joint_execution_enabled = bool(
+            self.get_parameter("joint_execution_enabled").value
+        )
+        self._joint_stable_sample_count = int(
+            self.get_parameter("joint_stable_sample_count").value
+        )
+        self._joint_stable_delta_rad = math.radians(
+            float(self.get_parameter("joint_stable_delta_deg").value)
+        )
+        self._joint_hold_check_seconds = float(
+            self.get_parameter("joint_hold_check_seconds").value
         )
         self._max_execution_seconds = float(
             self.get_parameter("max_execution_seconds").value
@@ -134,6 +151,12 @@ class MyCobotTrajectoryBridge(Node):
             raise ValueError("publish_rate_hz는 0보다 크고 50 이하여야 합니다")
         if self._tolerance_rad <= 0.0:
             raise ValueError("goal_tolerance_deg는 0보다 커야 합니다")
+        if self._joint_stable_sample_count < 2:
+            raise ValueError("joint_stable_sample_count는 최소 2여야 합니다")
+        if self._joint_stable_delta_rad <= 0.0:
+            raise ValueError("joint_stable_delta_deg는 0보다 커야 합니다")
+        if self._joint_hold_check_seconds <= 0.0:
+            raise ValueError("joint_hold_check_seconds는 0보다 커야 합니다")
         if self._max_execution_seconds <= 0.0:
             raise ValueError("max_execution_seconds는 0보다 커야 합니다")
         positive_cartesian_parameters = (
@@ -188,6 +211,12 @@ class MyCobotTrajectoryBridge(Node):
             f"실제 실행 브리지 준비: port={port}, baud={baud}, speed={self._speed}, "
             f"action={self.ACTION_NAME}"
         )
+        joint_mode = "실행 허용" if self._joint_execution_enabled else "실행 차단"
+        self.get_logger().warning(
+            f"관절 send_angles action {joint_mode}: action={self.ACTION_NAME}, "
+            f"tolerance={math.degrees(self._tolerance_rad):.2f}deg, "
+            f"stable_samples={self._joint_stable_sample_count}"
+        )
         api_mode = "API 준비" if self._cartesian_ready else "API 사용 불가"
         execution_mode = (
             "실행 허용" if self._cartesian_execution_enabled else "실행 차단"
@@ -229,6 +258,8 @@ class MyCobotTrajectoryBridge(Node):
 
     def _goal_callback(self, goal_request: FollowJointTrajectory.Goal) -> GoalResponse:
         try:
+            if not self._joint_execution_enabled:
+                raise ValueError("joint_execution_enabled=false")
             validate_trajectory(
                 goal_request.trajectory.joint_names,
                 goal_request.trajectory.points,
@@ -289,6 +320,11 @@ class MyCobotTrajectoryBridge(Node):
             return result
 
         started = time.monotonic()
+        stability = JointStabilityMonitor(
+            self._tolerance_rad,
+            self._joint_stable_delta_rad,
+            self._joint_stable_sample_count,
+        )
         while rclpy.ok():
             if goal_handle.is_cancel_requested:
                 self._stop_robot()
@@ -307,11 +343,37 @@ class MyCobotTrajectoryBridge(Node):
                 feedback.actual = JointTrajectoryPoint(positions=list(actual))
                 feedback.error = JointTrajectoryPoint(positions=errors)
                 goal_handle.publish_feedback(feedback)
-                if max(abs(value) for value in errors) <= self._tolerance_rad:
+                try:
+                    robot_is_moving = self._robot_is_moving()
+                    stable = stability.update(
+                        target_rad,
+                        actual,
+                        robot_is_moving,
+                    )
+                except Exception as error:
+                    self._stop_robot()
+                    goal_handle.abort()
+                    result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                    result.error_string = f"관절 정지 상태 확인 실패: {error}"
+                    return result
+                if stable:
+                    self._stop_robot()
+                    if not self._verify_joint_hold(target_rad):
+                        goal_handle.abort()
+                        result.error_code = (
+                            FollowJointTrajectory.Result.GOAL_TOLERANCE_VIOLATED
+                        )
+                        result.error_string = (
+                            "정지 후 관절 자세 유지 검증에 실패했습니다"
+                        )
+                        self.get_logger().error(result.error_string)
+                        return result
                     goal_handle.succeed()
                     result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
-                    result.error_string = "목표 관절 자세 도달"
-                    self.get_logger().info("trajectory 실행 완료")
+                    result.error_string = "목표 관절 자세 도달 및 정지 유지 확인"
+                    self.get_logger().info(
+                        "trajectory 실행 완료: 로봇 정지와 자세 유지 확인"
+                    )
                     return result
 
             if time.monotonic() - started > timeout:
@@ -328,6 +390,33 @@ class MyCobotTrajectoryBridge(Node):
         result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
         result.error_string = "ROS가 종료되었습니다"
         return result
+
+    def _robot_is_moving(self) -> bool:
+        is_moving = getattr(self._robot, "is_moving", None)
+        if not callable(is_moving):
+            raise RuntimeError("pymycobot is_moving() API가 없습니다")
+        with self._serial_lock:
+            state = is_moving()
+        if state in (False, 0):
+            return False
+        if state in (True, 1):
+            return True
+        raise RuntimeError(f"is_moving() 응답이 유효하지 않습니다: {state!r}")
+
+    def _verify_joint_hold(self, target_rad: Sequence[float]) -> bool:
+        deadline = time.monotonic() + self._joint_hold_check_seconds
+        while rclpy.ok() and time.monotonic() < deadline:
+            actual = self._read_and_publish_state()
+            if actual is None:
+                return False
+            if maximum_joint_error(target_rad, actual) > self._tolerance_rad:
+                self._stop_robot()
+                return False
+            if self._robot_is_moving():
+                self._stop_robot()
+                return False
+            time.sleep(0.1)
+        return rclpy.ok()
 
     def _cartesian_goal_callback(self, goal_request: CartesianMove.Goal) -> GoalResponse:
         try:
@@ -579,6 +668,7 @@ class MyCobotTrajectoryBridge(Node):
             self.get_logger().error(f"로봇 정지 명령 실패: {error}")
 
     def close(self) -> None:
+        self._stop_robot()
         self._action_server.destroy()
         self._cartesian_action_server.destroy()
         close = getattr(self._robot, "close", None)

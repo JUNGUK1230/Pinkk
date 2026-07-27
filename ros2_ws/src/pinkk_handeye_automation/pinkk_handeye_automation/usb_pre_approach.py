@@ -328,6 +328,8 @@ class UsbPreApproach(Node):
         self.flange_frame = flange_frame
         self._joint_lock = threading.Lock()
         self._latest_joints: list[float] | None = None
+        self._latest_joint_received_at: float | None = None
+        self._active_goal_handle: object | None = None
         self.create_subscription(JointState, "/joint_states", self._joint_callback, 10)
         self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0), node=self)
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
@@ -342,6 +344,7 @@ class UsbPreApproach(Node):
         if all(math.isfinite(value) for value in ordered):
             with self._joint_lock:
                 self._latest_joints = ordered
+                self._latest_joint_received_at = time.monotonic()
 
     def _wait_future(self, future: object, timeout: float) -> object:
         deadline = time.monotonic() + timeout
@@ -420,12 +423,83 @@ class UsbPreApproach(Node):
         handle = self._wait_future(self._action.send_goal_async(goal), 5.0)
         if not handle.accepted:
             raise RuntimeError("trajectory 목표가 거절됐습니다")
-        wrapped = self._wait_future(handle.get_result_async(), seconds + 15.0)
-        if wrapped.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-            raise RuntimeError(
-                f"trajectory 실행 실패: {wrapped.result.error_code} "
-                f"{wrapped.result.error_string}"
+        self._active_goal_handle = handle
+        try:
+            wrapped = self._wait_future(
+                handle.get_result_async(), seconds + 15.0
             )
+            if wrapped.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+                raise RuntimeError(
+                    f"trajectory 실행 실패: {wrapped.result.error_code} "
+                    f"{wrapped.result.error_string}"
+                )
+        finally:
+            self._active_goal_handle = None
+
+    def cancel_active_move(self) -> None:
+        """진행 중인 관절 action goal이 있으면 취소 응답을 기다린다."""
+        handle = self._active_goal_handle
+        if handle is None:
+            return
+        self.get_logger().warning("진행 중인 관절 이동 취소 요청")
+        try:
+            response = self._wait_future(handle.cancel_goal_async(), 3.0)
+            if not response.goals_canceling:
+                self.get_logger().error("관절 이동 취소가 수락되지 않았습니다")
+        except Exception as error:
+            self.get_logger().error(f"관절 이동 취소 요청 실패: {error}")
+        finally:
+            self._active_goal_handle = None
+
+    def verify_joint_hold(
+        self,
+        target: Sequence[float],
+        seconds: float,
+        tolerance_degrees: float,
+    ) -> None:
+        """지정 시간 동안 fresh joint state가 목표 자세를 유지하는지 확인한다."""
+        if seconds <= 0.0 or tolerance_degrees <= 0.0:
+            raise ValueError("자세 유지 시간과 허용오차는 0보다 커야 합니다")
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            with self._joint_lock:
+                actual = (
+                    None
+                    if self._latest_joints is None
+                    else list(self._latest_joints)
+                )
+                received_at = self._latest_joint_received_at
+            if (
+                actual is None
+                or received_at is None
+                or time.monotonic() - received_at > 0.5
+            ):
+                raise RuntimeError(
+                    "관절 자세 유지 검사 중 fresh /joint_states가 없습니다"
+                )
+            maximum_error = max(
+                abs(
+                    math.degrees(
+                        math.remainder(
+                            target_value - actual_value,
+                            2.0 * math.pi,
+                        )
+                    )
+                )
+                for target_value, actual_value in zip(
+                    target, actual, strict=True
+                )
+            )
+            if maximum_error > tolerance_degrees:
+                raise RuntimeError(
+                    "관측 자세 유지 실패: "
+                    f"최대 관절 오차={maximum_error:.3f}deg"
+                )
+            time.sleep(0.1)
+        self.get_logger().info(
+            f"관측 자세 {seconds:.1f}초 유지 확인: "
+            f"최대 허용오차={tolerance_degrees:.2f}deg"
+        )
 
 
 def _format_transform(name: str, transform: RigidTransform) -> str:
@@ -504,6 +578,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="trajectory 계획 시간. 현재 bridge에서는 주로 실행 timeout 계산에 사용",
     )
     parser.add_argument("--settle-seconds", type=float, default=0.2)
+    parser.add_argument(
+        "--hold-check-seconds",
+        type=float,
+        default=3.0,
+        help="관측 자세 이동 완료 후 유지 검증 시간",
+    )
+    parser.add_argument(
+        "--hold-tolerance-deg",
+        type=float,
+        default=1.0,
+        help="관측 자세 유지 검증의 최대 관절 오차",
+    )
     return parser
 
 
@@ -529,6 +615,11 @@ def _run(node: UsbPreApproach, arguments: argparse.Namespace) -> None:
         node.get_logger().warning("3초 후 초기 관측 자세로 이동합니다")
         time.sleep(3.0)
         node.move(target, arguments.motion_seconds)
+        node.verify_joint_hold(
+            target,
+            arguments.hold_check_seconds,
+            arguments.hold_tolerance_deg,
+        )
         node.get_logger().info("초기 관측 자세 이동 완료")
         return
 
@@ -659,12 +750,14 @@ def main(args: list[str] | None = None) -> int:
     try:
         _run(node, arguments)
     except KeyboardInterrupt:
+        node.cancel_active_move()
         node.get_logger().warning("사용자가 중단했습니다")
         exit_code = 130
     except Exception as error:
         node.get_logger().error(f"USB PRE 접근 실패: {error}")
         exit_code = 1
     finally:
+        node.cancel_active_move()
         executor.shutdown()
         thread.join(timeout=2.0)
         node.destroy_node()

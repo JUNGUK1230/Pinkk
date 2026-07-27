@@ -66,6 +66,16 @@ bash scripts/calibration/robot_start_charuco.sh false
 실제 실행 브리지 준비:
 port=/dev/ttyUSB0, baud=1000000
 action=/arm_group_controller/follow_joint_trajectory
+관절 send_angles action 실행 차단
+Cartesian send_coords action 실행 차단
+```
+
+기본 bridge는 상태만 읽고 두 이동 action을 모두 차단합니다. 관측 자세를 실제로
+검증할 때만 다음처럼 관절 실행을 명시적으로 엽니다.
+
+```bash
+bash scripts/calibration/robot_start_bridge.sh \
+  5 1.0 false 0.0015 true
 ```
 
 정상 ChArUco 로그:

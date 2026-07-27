@@ -145,10 +145,25 @@ bash scripts/calibration/robot_start_bridge.sh 5 5.0
 
 ```text
 실제 실행 브리지 준비: port=/dev/ttyUSB0 ...
+관절 send_angles action 실행 차단
+Cartesian send_coords action API 준비, 실행 차단
 ```
 
-bridge는 `/joint_states` 발행과 실제 trajectory 실행을 담당하므로 로봇을 읽거나
-움직이는 동안 항상 켜져 있어야 합니다.
+이 기본 명령은 `/joint_states`를 발행하지만 관절과 Cartesian 실제 이동은 모두
+차단합니다. 검증된 관측 자세 이동에서만 다음처럼 관절 실행을 명시적으로 엽니다.
+
+```bash
+bash scripts/calibration/robot_start_bridge.sh \
+  5 1.0 false 0.0015 true
+```
+
+노트북에서는 `observe`로 목표를 먼저 확인하고 `observe-execute`에서만 실제
+이동합니다.
+
+```bash
+bash scripts/calibration/laptop_usb_accuracy_check.sh observe
+bash scripts/calibration/laptop_usb_accuracy_check.sh observe-execute
+```
 
 ### 5.2 로봇 PC 터미널 2 — ChArUco
 

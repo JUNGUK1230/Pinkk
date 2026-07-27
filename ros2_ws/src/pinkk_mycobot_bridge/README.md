@@ -22,6 +22,10 @@ cd ~/Pinkk-robot-arm
 bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
+위 기본 실행은 관절 `send_angles()`와 Cartesian `send_coords()`를 모두
+차단합니다. `/joint_states`와 action server는 제공하지만 실제 이동 goal은
+명시적인 실행 게이트가 없으면 거부합니다.
+
 노트북:
 
 ```bash
@@ -69,12 +73,26 @@ OpenCV 카메라 좌표계는 ROS optical frame과 동일하게 X축은 영상 �
 ros2 launch pinkk_mycobot_bridge trajectory_bridge.launch.py speed:=10
 ```
 
-위 기본 명령은 joint action은 기존 방식으로 유지하지만 새 Cartesian action의 실제
-`send_coords()` 실행은 차단합니다. 브리지 로그에는 다음이 표시됩니다.
+위 기본 명령은 관절과 Cartesian 실제 실행을 모두 차단합니다. 브리지 로그에는
+다음 두 줄이 표시됩니다.
 
 ```text
+관절 send_angles action 실행 차단
 Cartesian send_coords action API 준비, 실행 차단
 ```
+
+관측 자세처럼 검증된 관절 목표를 실제 실행할 때만 마지막 인자로 관절 실행을
+엽니다. 초기 검증 허용오차는 1도로 낮춥니다.
+
+```bash
+bash scripts/calibration/robot_start_bridge.sh \
+  5 1.0 false 0.0015 true
+```
+
+관절 이동 완료는 단일 오차 표본으로 판정하지 않습니다. 목표 오차와 표본간
+변화량이 기준 안이고 `is_moving()==false`인 상태가 5회 연속 확인되어야 합니다.
+완료 직전에 `stop()`을 호출하고 2초 동안 목표 자세가 유지되는지도 검사합니다.
+취소, timeout, 검증 실패와 bridge 종료에서도 `stop()`을 호출합니다.
 
 Cartesian 실기 시험에서만 다음처럼 최종 실행 게이트를 명시적으로 엽니다. 첫
 시험은 브리지 자체의 이동 상한도 1.5 mm로 낮춥니다.
@@ -93,7 +111,8 @@ bash scripts/calibration/robot_start_bridge.sh 5 5.0 true 0.0015
 ```
 
 인자는 차례대로 joint speed, joint tolerance, Cartesian 실행 허용, Cartesian 최대
-translation입니다. 세 번째 인자를 생략하면 Cartesian 실행은 기본 차단됩니다.
+translation, joint 실행 허용입니다. 세 번째와 다섯 번째 인자를 생략하면 두 실행
+경로 모두 기본 차단됩니다.
 
 노트북:
 
