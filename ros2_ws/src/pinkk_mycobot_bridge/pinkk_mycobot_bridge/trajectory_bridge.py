@@ -28,6 +28,7 @@ from .cartesian_conversion import (
 )
 from .command_queue import (
     prepare_command_queue,
+    require_no_explicit_command_failure,
     stop_and_clear_command_queue,
 )
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
@@ -329,8 +330,7 @@ class MyCobotTrajectoryBridge(Node):
             with self._serial_lock:
                 prepare_command_queue(self._robot)
                 response = self._robot.send_angles(target_deg, self._speed)
-            if response not in (True, 1):
-                raise RuntimeError(f'send_angles 실패 응답: {response!r}')
+            require_no_explicit_command_failure('send_angles', response)
         except Exception as error:
             result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
             result.error_string = f"send_angles 실패: {error}"
@@ -531,8 +531,7 @@ class MyCobotTrajectoryBridge(Node):
                 response = self._robot.send_coords(
                     target_coords, int(request.speed), int(request.mode)
                 )
-            if response not in (True, 1):
-                raise RuntimeError(f'send_coords 실패 응답: {response!r}')
+            require_no_explicit_command_failure('send_coords', response)
         except Exception as error:
             result.success = False
             result.message = f"Cartesian 명령 실패: {error}"

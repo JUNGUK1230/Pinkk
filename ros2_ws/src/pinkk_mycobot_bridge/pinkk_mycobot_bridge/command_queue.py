@@ -12,7 +12,7 @@ def _required_method(robot: object, name: str):
     return method
 
 
-def _allow_unconfirmed_command(name: str, response: object) -> None:
+def require_no_explicit_command_failure(name: str, response: object) -> None:
     """일부 펌웨어의 무응답(-1/None)은 허용하되 명시적 실패는 거부한다."""
     if response not in (None, -1, True, 1):
         raise RuntimeError(f'{name}() 실패 응답: {response!r}')
@@ -45,7 +45,7 @@ def prepare_command_queue(robot: object) -> None:
     # 성공 응답을 반환하지 않는다. 큐 삭제를 요청하고 fresh mode와 실제
     # 정지 상태를 조회해서 안전 상태를 확인한다.
     _required_method(robot, 'stop')()
-    _allow_unconfirmed_command(
+    require_no_explicit_command_failure(
         'clear_queue',
         _required_method(robot, 'clear_queue')(),
     )
@@ -61,7 +61,7 @@ def prepare_command_queue(robot: object) -> None:
 def stop_and_clear_command_queue(robot: object) -> None:
     """현재 이동을 정지하고 남아 있는 모든 이동 명령을 삭제한다."""
     _required_method(robot, 'stop')()
-    _allow_unconfirmed_command(
+    require_no_explicit_command_failure(
         'clear_queue',
         _required_method(robot, 'clear_queue')(),
     )

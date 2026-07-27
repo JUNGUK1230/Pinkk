@@ -4,6 +4,7 @@ import pytest
 
 from pinkk_mycobot_bridge.command_queue import (
     prepare_command_queue,
+    require_no_explicit_command_failure,
     stop_and_clear_command_queue,
 )
 
@@ -120,3 +121,15 @@ def test_rejects_unconfirmed_stop() -> None:
 
     with pytest.raises(RuntimeError, match='stop 확인 실패'):
         prepare_command_queue(robot)
+
+
+@pytest.mark.parametrize('response', [None, -1, True, 1])
+def test_accepts_command_responses_verified_by_later_state(response) -> None:
+    """명령 응답이 없어도 후속 위치·정지 감시가 판정할 수 있게 한다."""
+    require_no_explicit_command_failure('send_angles', response)
+
+
+def test_rejects_explicit_command_failure() -> None:
+    """명시적인 실패 응답은 후속 상태 감시로 넘기지 않는다."""
+    with pytest.raises(RuntimeError, match='send_angles'):
+        require_no_explicit_command_failure('send_angles', 0)
