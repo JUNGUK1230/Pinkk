@@ -1,12 +1,12 @@
 # PINKK Central Control
 
-상단 카메라에서 차량과 주차면을 인식하고, LiDAR 지도에서 T자 후진주차
-경로를 생성해 ROS 2 토픽으로 전달하는 중앙제어 모듈입니다.
+상단 카메라로 차량의 현재 section을 찾고, 미리 생성한 주차장 고정 경로를
+ROS 2 토픽으로 전달하는 중앙제어 모듈입니다. 실시간 운행에서는 차량 heading을
+클릭하지 않으며, `START`와 각 주차면에 설정된 고정 yaw를 사용합니다.
 
 ## 설치
 
-기준 환경은 Ubuntu 24.04, Python 3.12, ROS 2 Jazzy입니다. PINKK 프로젝트
-루트에서 Python 가상환경과 중앙제어 의존성을 설치합니다.
+기준 환경은 Ubuntu 24.04, Python 3.12, ROS 2 Jazzy입니다.
 
 ```bash
 cd ~/PINKK
@@ -16,14 +16,13 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 ```
 
-실시간 YOLO segmentation 학습 가중치는 다음 위치에 `best.pt`라는 이름으로
-둡니다.
+YOLO segmentation 가중치는 다음 위치에 둡니다.
 
 ```text
 src/central_control/models/best.pt
 ```
 
-카메라 실행 전 다음 보정·정합 파일이 준비되어 있어야 합니다.
+카메라 실행 전 다음 보정·정합 파일이 필요합니다.
 
 ```text
 src/central_control/camera_tools/first_map/camera_calibration.npz
@@ -33,22 +32,27 @@ src/central_control/camera_tools/first_map/my_test_map0710.yaml
 src/central_control/camera_tools/first_map/my_test_map0710.png
 ```
 
-실시간 중앙제어 실행은 표준 ROS 메시지만 쓰므로 PINKK의 `install/setup.bash`를
-source할 필요가 없습니다. 현재 작업공간의 `install/`에 최상위 setup 파일이 없는
-상태여도 아래 실행 명령은 그대로 동작합니다. 별도 ROS 패키지 실행을 위해 빌드할
-경우에만 다음 명령을 사용합니다.
+## 고정 경로 준비
+
+운영 경로는 `path_planning/output/fixed_route_*_to_*.csv` 32개입니다. 경로
+설정이나 주차장 구조를 변경한 경우에만 다시 생성합니다.
 
 ```bash
-cd ~/PINKK
-source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
-# build가 성공해서 install/setup.bash가 생성된 경우에만 실행한다.
-source install/setup.bash
+cd ~/PINKK/src/central_control/path_planning
+python3 scripts/test_fixed_mission_routes.py --generate-all
+python3 scripts/test_fixed_mission_routes.py --check-all
+python3 scripts/test_fixed_route_selector.py
+python3 scripts/test_fixed_live_route_bridge.py
 ```
 
-## 실행
+허용 이동 관계는 다음과 같습니다.
 
-상단 카메라·YOLO·Hybrid A*·ROS 2 토픽 발행은 한 프로세스로 실행합니다.
+- `START` → `P10`~`P6`, `C1`, `C2`
+- `P10`~`P6` → `C1`, `C2`
+- `C1`, `C2` → `P1`~`P5`
+- `P1`~`P5` → `EXIT`
+
+## 실시간 실행
 
 ```bash
 cd ~/PINKK
@@ -56,26 +60,59 @@ source /opt/ros/jazzy/setup.bash
 .venv/bin/python -m src.central_control.overhead_vision.localization.live_localization
 ```
 
-창에서 `h`를 누르고 차량 앞쪽을 클릭하면 현재 차량 heading이 지정됩니다.
-그러면 검증된 Hybrid A*가 별도 작업 스레드에서 바로 시작되고, 성공 경로는
-화면에 빨간 선으로 표시되며 ROS 2 토픽으로 즉시 발행됩니다. 차량이 C1/C2
-충전칸에 도착한 뒤 `SPACE`를 누르면 `충전이 완료되었습니다`를 출력하고,
-출구에 가까운 빈 P1~P5를 선택해 대기주차 경로를 새로 생성합니다. `p`는 같은
-차량·목표로 재계획, `x`는 heading 초기화, `q` 또는 `ESC`는 종료입니다.
+YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택과 ROS 2
+발행이 한 프로세스에서 동작합니다. 차량은 `START` 또는 주차면에 정차한
+상태에서만 새 경로를 선택합니다. 도로를 주행 중인 `TRANSIT` 상태에서는
+경로를 중간부터 잘라 새로 발행하지 않습니다.
 
-발행 토픽은 다음과 같습니다.
+창 조작:
 
-- `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
-- `/pinkk/planned_trajectory`: 전후진·속도·조향·정지 정보
+- `SPACE`: C1/C2 충전 완료 처리 후 P1~P5 목표 배정
+- `p`: 현재 운행 단계의 고정 경로 다시 선택
+- `q` 또는 `ESC`: 종료
+
+고정 yaw를 사용하므로 heading 지정용 마우스 클릭과 `h`/`x` 키는 없습니다.
+
+## ROS 2 토픽
+
 - `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 rear-axle pose
+- `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
+- `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
 
-기본 통합 실행은 trajectory CSV·JSON·Camera overlay 파일을 저장하지
-않습니다. 진단용 파일 저장이 필요할 때만
-`config/yolo/realtime_localization.yaml`의 `write_runtime_files`를 `true`로
-바꿉니다. 파일 기반 단독 진단은 기존
-`path_planning/scripts/plan_from_live_vision.py`를 사용합니다.
+`/pinkk/planned_trajectory`의 point 필드는 다음 네 개뿐입니다.
 
-### Camera BEV 다시 저장
+```text
+x_m, y_m, yaw_rad, direction
+```
+
+`direction`은 전진 `1`, 후진 `-1`입니다. speed, steering angle, angular
+velocity, stop flag는 보내지 않으며 차량 주행 코드가 경로를 바탕으로 직접
+계산합니다. 경로와 trajectory 토픽은 reliable/transient-local QoS로 마지막
+경로를 유지하고, pose 토픽은 최신 차량 위치를 연속 발행합니다.
+
+## 동작 흐름
+
+1. USB 카메라의 최신 프레임을 `1600×800` Camera BEV로 변환합니다.
+2. YOLO segmentation과 ByteTrack으로 ego 차량을 추적합니다.
+3. Camera–LiDAR affine 정합으로 차량 rear-axle 위치를 `lidar_map_cm`으로
+   변환합니다.
+4. 차량 중심이 포함된 주차면 또는 출발지를 현재 section으로 판별하고 해당
+   endpoint의 고정 yaw를 적용합니다.
+5. 입차·충전·출차 상태와 빈 주차면을 기준으로 목표 section을 배정합니다.
+6. 현재 section과 목표 section에 대응하는 CSV 전체를 읽어 경로 토픽으로
+   즉시 발행합니다.
+
+충전칸이 모두 사용 중이면 P6~P10의 빈 면을 대기 위치로 사용합니다. 충전
+완료 후에는 빈 P1~P5 중 출구에 가까운 면을 배정합니다.
+
+기본 실행은 runtime CSV/JSON/PNG를 저장하지 않습니다.
+`config/yolo/realtime_localization.yaml`의 `write_runtime_files: true`는
+scene/BEV 파일이 필요한 진단 상황에서만 사용합니다.
+
+상세 경로 설정과 테스트 방법은
+[`path_planning/README.md`](path_planning/README.md)를 참고합니다.
+
+## Camera BEV 다시 저장
 
 ```bash
 cd ~/PINKK/src/central_control/camera_tools/first_map
@@ -84,33 +121,5 @@ cd ~/PINKK/src/central_control/camera_tools/first_map
 
 `s`를 누르면 `camera_bev.png`를 저장하고 `q` 또는 `ESC`로 종료합니다.
 
-## 알고리즘 개요
-
-1. USB 카메라를 별도 스레드에서 계속 읽고, 밀린 프레임은 버린 뒤 가장
-   최신 프레임만 렌즈 왜곡 보정하여 `1600×800` Camera BEV로 변환합니다.
-   화면의 `capture age`로 촬영부터 표시까지의 지연을 확인할 수 있습니다.
-2. YOLO segmentation과 ByteTrack으로 차량별 `track_id`를 유지하고,
-   처음 선택한 ego ID가 잠시 가려졌을 때 다른 차량으로 바뀌지 않게 합니다.
-   Camera–LiDAR affine 정합으로 해당 ego의 rear-axle 위치를 LiDAR map cm
-   좌표로 변환합니다.
-3. 각 `track_id` 차량은 중심이 포함된 주차칸으로 `entry_or_transit`,
-   `waiting_for_charge`(P6~P10), `charging`(C1·C2),
-   `charged_waiting_exit`(P1~P5) 상태로 분류해 메모리 scene에 유지합니다.
-   짧은 가림은 기본 2초 동안 유지하며, 진단 파일 저장 모드에서만 JSON에도
-   기록합니다.
-4. 충전 Episode는 `entry_or_transit`·`waiting_for_charge` 차량을 입차 시각
-   기준 FIFO로 선택합니다. 빈 충전칸은 C2를 우선하고 C2 점유 시 C1을 쓰며,
-   배정된 ego만 기존 경로 계획 입력을 생성합니다.
-5. 입구 단계에서 충전칸이 모두 차 있으면 P6~P10의 빈 주차면을 입구에서 먼
-   순서로 선택합니다. 현재 실험 단계에서는 C1/C2 도착 후 `SPACE`가 충전
-   완료 이벤트 역할을 하며, 출구에 가까운 빈 P1~P5 대기 주차면으로 이동합니다.
-6. 2D A* 통로 guide를 짧은 Hybrid A* 구간으로 나눠 장거리 탐색량을
-   줄이고, 각 구간 경계에서 정지·조향 재설정점을 만듭니다.
-7. Occupancy grid의 검은 영역을 벽으로 사용하고, 차량 `12×10 cm` 회전
-   footprint와 전진·후진을 고려하는 Hybrid A*로 경로를 탐색합니다.
-8. 주차면 앞 staging pose까지 접근한 뒤 정지하고, T자 maneuver로 마지막
-   구간을 후진해 주차합니다.
-9. 경로를 0.5cm 이하 간격으로 생성하고 곡률, 목표속도, 조향각, 정지점을
-   계산합니다.
-10. 충돌·간격·yaw·조향·속도 제한을 통과한 trajectory만 파일 중계 없이
-    ROS 2 토픽으로 직접 발행합니다.
+Hybrid A*, T-parking, velocity/steering profile 코드는 오프라인 실험과 회귀
+진단용으로 남아 있으며 현재 실시간 고정 경로 발행에는 사용하지 않습니다.

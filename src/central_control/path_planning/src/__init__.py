@@ -1,4 +1,4 @@
-"""Active Hybrid A* parking-path components."""
+"""Fixed-route runtime API and legacy offline planning components."""
 
 from .hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
 from .path_smoothing import (

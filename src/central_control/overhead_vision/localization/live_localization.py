@@ -90,11 +90,6 @@ def parse_args() -> argparse.Namespace:
         metavar=("X_PX", "Y_PX"),
         help="Override the configured first-frame ego BEV center.",
     )
-    parser.add_argument(
-        "--initial-yaw-deg",
-        type=float,
-        help="Override the known initial ego heading in LiDAR-grid degrees.",
-    )
     return parser.parse_args()
 
 
@@ -246,7 +241,7 @@ class IntegratedPlanningController:
     def update(
         self,
         scene: SceneObservation,
-        heading_revision: int,
+        route_revision: int,
     ) -> None:
         """새 차량/목표 조합일 때만 고정 경로 선택을 시작한다."""
         self._collect_finished()
@@ -255,15 +250,15 @@ class IntegratedPlanningController:
         key = (
             scene.vehicle.track_id,
             scene.planning_request.slot_name,
-            heading_revision,
+            route_revision,
         )
         if self._future is not None:
             return
         if key == self._completed_key:
             return
         if key != self._active_key:
-            # 새 heading 또는 새 충전 배정은 이전 overlay를 숨기고 새 경로가
-            # 검증될 때까지 기다린다.
+            # 새 운행 단계 또는 새 충전 배정은 이전 overlay를 숨기고 새 고정
+            # 경로가 선택될 때까지 기다린다.
             self.outcome = None
             self.last_error = None
             self._active_key = key
@@ -292,8 +287,8 @@ class IntegratedPlanningController:
         self._active_key = None
         self._completed_key = None
         self._new_outcome = False
-        # ThreadPoolExecutor에서 실행 중인 Hybrid A*는 안전하게 강제 종료할 수
-        # 없으므로 완료 결과만 버리고, 다음 프레임에서 새 목적지를 계획한다.
+        # 작업 스레드에서 이미 CSV를 읽는 중이면 완료 결과만 버리고, 다음
+        # 프레임에서 새 운행 단계의 경로를 선택한다.
         self._discard_pending_result = self._future is not None
 
     def draw_overlay(
@@ -487,7 +482,7 @@ def build_localizer(
     vehicle_config_path = resolve_path(str(config["vehicle_config_path"]))
     with vehicle_config_path.open(encoding="utf-8") as file:
         vehicle_config = (yaml.safe_load(file) or {}).get("vehicle", {})
-    # Hybrid A* pose 기준은 rear axle이다. YOLO mask의 기하 중심을 차체
+    # 고정 경로 pose 기준은 rear axle이다. YOLO mask의 기하 중심을 차체
     # 중심으로 보고, 동일한 vehicle config에서 rear axle까지의 거리를 구한다.
     rear_axle_offset_cm = (
         float(vehicle_config["length_cm"]) / 2.0
@@ -505,8 +500,7 @@ def build_localizer(
     def fixed_heading_for_center(center_bev: tuple[float, float]) -> float | None:
         slot_name = slots.slot_name_for_point(center_bev)
         # Planning starts only at START or inside a configured slot. Outside a
-        # slot, keep the one-way START/corridor heading instead of asking for a
-        # mask-front click.
+        # slot, keep the configured one-way START/corridor heading.
         return fixed_yaws.get(slot_name, fixed_yaws["START"])
 
     tracker = EgoVehicleTracker(
@@ -726,194 +720,6 @@ def draw_scene(
     return canvas
 
 
-class ManualHeadingSelector:
-    """h 키 이후 한 번의 BEV 클릭으로 검출 차량의 앞 방향을 지정한다."""
-
-    def __init__(
-        self,
-        tracker: EgoVehicleTracker,
-        transform: AffineBevToLidar,
-    ) -> None:
-        self.tracker = tracker
-        self.transform = transform
-        self.scene: SceneObservation | None = None
-        self.armed = False
-        self.revision = 0
-
-    def update_scene(self, scene: SceneObservation) -> None:
-        self.scene = scene
-
-    def arm(self) -> None:
-        if self.scene is None or self.scene.vehicle is None:
-            print("Manual heading unavailable: ego vehicle is not detected")
-            return
-        self.armed = True
-        print("Manual heading armed: click a point in FRONT of the ego vehicle")
-
-    def clear(self) -> None:
-        self.tracker.clear_manual_heading()
-        self.armed = False
-        self.revision += 1
-        print("Manual heading cleared. Press h and click the vehicle front again")
-
-    def mouse_callback(
-        self,
-        event: int,
-        x: int,
-        y: int,
-        flags: int,
-        parameter: object,
-    ) -> None:
-        del flags, parameter
-        if event != cv2.EVENT_LBUTTONDOWN or not self.armed:
-            return
-        if self.scene is None or self.scene.vehicle is None:
-            print("Manual heading failed: ego vehicle is not detected")
-            self.armed = False
-            return
-        center = self.scene.vehicle.center_bev_px
-        direction = (float(x) - center[0], float(y) - center[1])
-        if math.hypot(*direction) < 10.0:
-            print("Manual heading failed: click farther from the vehicle center")
-            return
-        yaw_rad = self.transform.axis_yaw_in_lidar(center, direction)
-        self.tracker.set_manual_heading(yaw_rad)
-        self.armed = False
-        self.revision += 1
-        print(
-            "Manual ego heading set: "
-            f"click=({x}, {y}), yaw={math.degrees(yaw_rad):.1f} deg"
-        )
-
-    def draw_instruction(self, image: np.ndarray) -> None:
-        if self.armed:
-            message = "CLICK A POINT IN FRONT OF THE EGO VEHICLE"
-            color = (0, 255, 255)
-        elif self.tracker.manual_yaw_rad is None:
-            if self.tracker.absolute_heading_resolved:
-                message = "CONFIG HEADING SET | h: replace by click"
-                color = (0, 255, 0)
-            else:
-                message = "PRESS h, THEN CLICK THE EGO FRONT | x: clear heading"
-                color = (0, 165, 255)
-        else:
-            message = (
-                "MANUAL HEADING SET | SPACE: charge complete | "
-                "h: set again | x: clear"
-            )
-            color = (0, 255, 0)
-        cv2.putText(
-            image,
-            message,
-            (20, image.shape[0] - 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
-
-
-class PlannedPathOverlay:
-    """검증된 자동 Hybrid JSON을 감시해 live BEV에 연속 경로선을 그린다."""
-
-    def __init__(
-        self,
-        path: Path,
-        transform: AffineBevToLidar,
-        expected_slot_name: str | None,
-    ) -> None:
-        self.path = path
-        self.transform = transform
-        self.expected_slot_name = expected_slot_name
-        self.modified_time_ns: int | None = None
-        self.path_bev: tuple[tuple[float, float], ...] = ()
-        self.start_cm: tuple[float, float] | None = None
-        self.source_frame: int | None = None
-        self.slot_name: str | None = None
-        self.status = "no validated path"
-
-    def refresh(self) -> None:
-        if not self.path.exists():
-            self._clear("no validated path")
-            return
-        modified_time_ns = self.path.stat().st_mtime_ns
-        if modified_time_ns == self.modified_time_ns:
-            return
-        self.modified_time_ns = modified_time_ns
-        try:
-            with self.path.open(encoding="utf-8") as file:
-                payload = json.load(file)
-            source = payload["source"]
-            slot_name = str(source["parking_slot"])
-            if (
-                self.expected_slot_name is not None
-                and slot_name != self.expected_slot_name
-            ):
-                self._clear(
-                    f"path target {slot_name} ignored; waiting for "
-                    f"{self.expected_slot_name}"
-                )
-                return
-            points_cm = [
-                (float(point["x_cm"]), float(point["y_cm"]))
-                for point in payload["path"]
-            ]
-            if len(points_cm) < 2:
-                raise ValueError("planned path needs at least two points")
-            self.path_bev = tuple(
-                self.transform.planner_cm_to_bev(point)
-                for point in points_cm
-            )
-            self.start_cm = points_cm[0]
-            self.source_frame = int(source["frame_index"])
-            self.slot_name = slot_name
-            self.status = f"path frame={self.source_frame} target={slot_name}"
-            print(f"Loaded validated live path: {len(points_cm)} points, {self.status}")
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as error:
-            self._clear(f"invalid path overlay: {error}")
-
-    def draw(self, image: np.ndarray, scene: SceneObservation) -> None:
-        self.refresh()
-        if not self.path_bev:
-            return
-        if scene.vehicle is not None and self.start_cm is not None:
-            distance = math.hypot(
-                scene.vehicle.rear_axle_cm[0] - self.start_cm[0],
-                scene.vehicle.rear_axle_cm[1] - self.start_cm[1],
-            )
-            if distance > 8.0:
-                cv2.putText(
-                    image,
-                    f"PATH HIDDEN: ego moved {distance:.1f} cm from path start",
-                    (20, 65),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (0, 0, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-                return
-        _draw_continuous_path(image, self.path_bev)
-        cv2.putText(
-            image,
-            self.status,
-            (20, 65),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (0, 0, 255),
-            2,
-            cv2.LINE_AA,
-        )
-
-    def _clear(self, status: str) -> None:
-        self.path_bev = ()
-        self.start_cm = None
-        self.source_frame = None
-        self.slot_name = None
-        self.status = status
-
-
 def _draw_continuous_path(
     image: np.ndarray,
     path_bev: Sequence[tuple[float, float]],
@@ -1065,8 +871,6 @@ def main() -> int:
         config = load_config(args.config)
         if args.initial_ego_center is not None:
             config["initial_ego_center_bev_px"] = list(args.initial_ego_center)
-        if args.initial_yaw_deg is not None:
-            config["initial_ego_yaw_deg"] = args.initial_yaw_deg
         camera_matrix, dist_coeffs, homography, bev_width, bev_height = (
             load_camera_geometry(config)
         )

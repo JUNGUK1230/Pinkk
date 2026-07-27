@@ -8,7 +8,6 @@ import math
 from pathlib import Path
 import sys
 
-import cv2
 import numpy as np
 import yaml
 
@@ -19,7 +18,6 @@ sys.path.extend((str(SCRIPT_DIR), str(PROJECT_ROOT / "src")))
 
 from plan_from_live_vision import load_planner_stack  # noqa: E402
 from reeds_shepp import ReedsSheppPlanner  # noqa: E402
-from visualization import draw_visible_polyline  # noqa: E402
 
 
 Pose = tuple[float, float, float]
@@ -123,54 +121,16 @@ def build_route(config: dict, planner, source: str, target: str) -> list[dict]:
     return rows
 
 
-def _camera_pixels(rows: list[dict], registration_path: Path) -> list[tuple[float, float]]:
-    with np.load(registration_path) as registration:
-        affine = np.asarray(registration["affine_matrix"], dtype=np.float64)
-        cm_per_pixel = float(registration["resolution"]) * 100.0
-    inverse_linear = np.linalg.inv(affine[:, :2])
-    return [
-        tuple(
-            inverse_linear
-            @ (np.asarray((row["x_cm"], row["y_cm"])) / cm_per_pixel - affine[:, 2])
-        )
-        for row in rows
-    ]
-
-
-def save_route(
-    rows: list[dict], source: str, target: str, save_image: bool = False
-) -> tuple[Path, Path | None]:
+def save_route(rows: list[dict], source: str, target: str) -> Path:
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(exist_ok=True)
     stem = f"fixed_route_{source.lower()}_to_{target.lower()}"
     csv_path = output_dir / f"{stem}.csv"
-    image_path = output_dir / f"{stem}.png" if save_image else None
     with csv_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=["index", "x_cm", "y_cm", "yaw_rad", "direction"])
         writer.writeheader()
         writer.writerows({"index": index, **row} for index, row in enumerate(rows))
-
-    if image_path is not None:
-        central_root = PROJECT_ROOT.parent
-        image = cv2.imread(str(central_root / "camera_tools/first_map/camera_bev.png"))
-        if image is None:
-            raise RuntimeError("failed to load Camera BEV")
-        pixels = _camera_pixels(
-            rows,
-            central_root / "camera_tools/first_map/camera_to_lidar_rigid_registration.npz",
-        )
-        forward_pixels = [
-            pixel for pixel, row in zip(pixels, rows) if row["direction"] > 0
-        ]
-        reverse_pixels = [
-            pixel for pixel, row in zip(pixels, rows) if row["direction"] < 0
-        ]
-        draw_visible_polyline(image, forward_pixels, color=(0, 255, 0), thickness=5)
-        draw_visible_polyline(image, reverse_pixels, color=(0, 0, 255), thickness=4)
-        cv2.circle(image, tuple(map(int, map(round, pixels[0]))), 8, (255, 0, 0), -1)
-        if not cv2.imwrite(str(image_path), image):
-            raise RuntimeError(f"failed to save route image: {image_path}")
-    return csv_path, image_path
+    return csv_path
 
 
 def main() -> int:
@@ -183,7 +143,6 @@ def main() -> int:
         action="store_true",
         help="save CSV files for every allowed transition",
     )
-    parser.add_argument("--save-image", action="store_true")
     args = parser.parse_args()
     config = _load_config()
     _, planner, _, _, _ = load_planner_stack()
@@ -198,7 +157,7 @@ def main() -> int:
                     config, planner, candidate_source, candidate_target
                 )
                 if args.generate_all:
-                    candidate_csv, _ = save_route(
+                    candidate_csv = save_route(
                         candidate_rows, candidate_source, candidate_target
                     )
                     manifest_rows.append(
@@ -222,14 +181,13 @@ def main() -> int:
             print(f"saved manifest: {manifest_path}")
         action = "generated" if args.generate_all else "validated"
         print(f"{action} fixed mission transitions: {count}")
+        return 0
 
     rows = build_route(config, planner, source, target)
-    csv_path, image_path = save_route(rows, source, target, save_image=args.save_image)
+    csv_path = save_route(rows, source, target)
     print(f"fixed route: {source} -> {target}")
     print(f"path points: {len(rows)}")
     print(f"saved csv: {csv_path}")
-    if image_path is not None:
-        print(f"saved image: {image_path}")
     return 0
 
 

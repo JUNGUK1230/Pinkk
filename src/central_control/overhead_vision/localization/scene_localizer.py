@@ -329,26 +329,11 @@ class EgoVehicleTracker:
         self.fixed_heading_resolver = fixed_heading_resolver
         self.previous_center_bev: Point | None = None
         self.previous_yaw_rad: float | None = self.initial_yaw_rad
-        self.manual_yaw_rad: float | None = None
         # 첫 ego 선택 후에는 거리 대신 ByteTrack ID를 우선한다. 다른 차량이
         # 옆을 지나가도 경로계획 start가 다른 차로 바뀌는 것을 막는다.
         self.ego_track_id: int | None = None
         # Mask의 장축은 방향축만 제공한다. 초기 yaw가 없으면 앞뒤 절대 방향은
         # 이후 프레임에서도 결정할 수 없으므로 계속 ambiguous로 유지한다.
-        self.absolute_heading_resolved = self.initial_yaw_rad is not None
-
-    def set_manual_heading(self, yaw_rad: float) -> None:
-        """사용자가 Camera BEV에서 지정한 차량 앞 방향을 고정 heading으로 사용한다."""
-        if not math.isfinite(yaw_rad):
-            raise ValueError("manual yaw must be finite")
-        self.manual_yaw_rad = _normalize_yaw(yaw_rad)
-        self.previous_yaw_rad = self.manual_yaw_rad
-        self.absolute_heading_resolved = True
-
-    def clear_manual_heading(self) -> None:
-        """수동 heading을 지우고 다시 사용자 입력이 필요한 상태로 되돌린다."""
-        self.manual_yaw_rad = None
-        self.previous_yaw_rad = self.initial_yaw_rad
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
 
     def update(self, detections: Sequence[Detection]) -> VehicleObservation | None:
@@ -413,11 +398,6 @@ class EgoVehicleTracker:
             yaw = _normalize_yaw(fixed_yaw)
             heading_ambiguous = False
             self.absolute_heading_resolved = True
-        elif self.manual_yaw_rad is not None:
-            # 테스트 단계에서는 mask 장축으로 heading을 갱신하지 않는다.
-            # 사용자가 다시 지정할 때까지 클릭한 절대 방향을 그대로 유지한다.
-            yaw = self.manual_yaw_rad
-            heading_ambiguous = False
         else:
             axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
             yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))

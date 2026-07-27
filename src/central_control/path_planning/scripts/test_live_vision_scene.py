@@ -1,4 +1,4 @@
-"""YOLO 검출부터 Hybrid A* start/goal 입력까지의 mock 회귀 테스트."""
+"""YOLO 검출부터 고정 경로 section/target 입력까지의 mock 회귀 테스트."""
 
 import json
 import math
@@ -6,7 +6,6 @@ from pathlib import Path
 import sys
 import tempfile
 
-import cv2
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -26,10 +25,7 @@ from overhead_vision.localization.scene_localizer import (  # noqa: E402
     VehicleStateManager,
     save_scene_observation,
 )
-from overhead_vision.localization.live_localization import (  # noqa: E402
-    ManualHeadingSelector,
-    _draw_continuous_path,
-)
+from overhead_vision.localization.live_localization import _draw_continuous_path  # noqa: E402
 from vision_scene_input import (  # noqa: E402
     VisionSceneUnavailable,
     load_vision_planning_request,
@@ -325,41 +321,6 @@ def main() -> int:
         assert ambiguous_scene.vehicle.ego_selection_ambiguous
         assert ambiguous_scene.vehicle.heading_ambiguous
         assert not ambiguous_scene.planning_ready
-
-        heading_selector = ManualHeadingSelector(ambiguous_tracker, transform)
-        heading_selector.update_scene(ambiguous_scene)
-        heading_selector.arm()
-        center_x, center_y = ambiguous_scene.vehicle.center_bev_px
-        heading_selector.mouse_callback(
-            cv2.EVENT_LBUTTONDOWN,
-            round(center_x + 100.0),
-            round(center_y),
-            0,
-            None,
-        )
-        assert ambiguous_tracker.manual_yaw_rad is not None
-
-        ambiguous_tracker.set_manual_heading(math.radians(-25.0))
-        manual_scene = SceneLocalizer(
-            ambiguous_tracker,
-            parking,
-            target_slot_name="C1",
-        ).observe(
-            detections,
-            (800, 1600),
-            frame_index=9,
-            observed_at_unix_sec=101.1,
-        )
-        assert manual_scene.vehicle is not None
-        assert not manual_scene.vehicle.heading_ambiguous
-        assert not manual_scene.vehicle.ego_selection_ambiguous
-        assert math.isclose(
-            manual_scene.vehicle.yaw_rad,
-            math.radians(-25.0),
-            abs_tol=1e-9,
-        )
-        assert manual_scene.planning_request is not None
-        assert manual_scene.planning_request.slot_name == "C1"
 
         # ByteTrack ID가 생긴 뒤에는 이전 중심에 더 가까운 다른 차량이 있어도
         # 첫 ego ID를 계속 선택한다. ID가 사라지면 다른 차량으로 바꾸지 않는다.
