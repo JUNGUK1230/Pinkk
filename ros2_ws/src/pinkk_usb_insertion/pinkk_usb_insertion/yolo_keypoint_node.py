@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cv_bridge import CvBridge
 from pinkk_usb_insertion_interfaces.msg import (
     Keypoint2D,
     UsbPortDetection,
@@ -15,6 +14,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
+from .image_conversion import array_to_bgr8_image, bgr8_image_to_array
 from .perception.yolo_adapter import normalize_yolo_pose
 
 
@@ -28,7 +28,7 @@ class YoloKeypointNode(Node):
         self.declare_parameter('image_size', 640)
         self.declare_parameter('confidence_threshold', 0.25)
         self.declare_parameter('visibility_threshold', 0.01)
-        self.declare_parameter('device', 'cpu')
+        self.declare_parameter('device', 'cuda:0')
         self.declare_parameter('debug_image_enabled', True)
 
         model_value = str(self.get_parameter('model_path').value)
@@ -62,7 +62,6 @@ class YoloKeypointNode(Node):
         if not keypoint_shape or int(keypoint_shape[0]) != 4:
             raise ValueError(f'keypoint 4개 모델이 아닙니다: {keypoint_shape}')
 
-        self._bridge = CvBridge()
         self._detection_publisher = self.create_publisher(
             UsbPortDetectionArray,
             '/robot_arm/perception/usb_port/detections',
@@ -86,9 +85,7 @@ class YoloKeypointNode(Node):
 
     def _image_callback(self, message: Image) -> None:
         try:
-            frame = self._bridge.imgmsg_to_cv2(
-                message, desired_encoding='bgr8'
-            )
+            frame = bgr8_image_to_array(message)
             result = self._model.predict(
                 frame,
                 imgsz=self._image_size,
@@ -121,10 +118,10 @@ class YoloKeypointNode(Node):
                 self._debug_publisher.get_subscription_count() > 0
             )
             if self._debug_enabled and has_debug_subscriber:
-                debug = self._bridge.cv2_to_imgmsg(
-                    result.plot(), encoding='bgr8'
+                debug = array_to_bgr8_image(
+                    result.plot(),
+                    header=message.header,
                 )
-                debug.header = message.header
                 self._debug_publisher.publish(debug)
         except Exception as error:
             self.get_logger().error(f'YOLO frame 처리 실패: {error}')

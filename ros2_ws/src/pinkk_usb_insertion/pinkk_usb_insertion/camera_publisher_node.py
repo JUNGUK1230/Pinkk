@@ -6,13 +6,13 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 import cv2
-from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
 from .configuration import load_yaml
+from .image_conversion import array_to_bgr8_image
 
 
 def _default_config(filename: str) -> str:
@@ -65,7 +65,6 @@ class CameraPublisherNode(Node):
                 f'calibrated={self._width}x{self._height}'
             )
 
-        self._bridge = CvBridge()
         self._image_publisher = self.create_publisher(
             Image, '/camera/image_raw', qos_profile_sensor_data
         )
@@ -115,7 +114,7 @@ class CameraPublisherNode(Node):
             return
 
         stamp = self.get_clock().now().to_msg()
-        image = self._bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+        image = array_to_bgr8_image(frame)
         image.header.stamp = stamp
         image.header.frame_id = self._frame_id
         info = self._camera_info()

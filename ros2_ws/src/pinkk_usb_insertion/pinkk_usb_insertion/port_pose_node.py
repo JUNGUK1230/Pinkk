@@ -87,7 +87,7 @@ class PortPoseNode(Node):
         observation.valid = False
         observation.rejection_reason = reason
         self._observation_publisher.publish(observation)
-        self.get_logger().warning(reason)
+        self.get_logger().warning(reason, throttle_duration_sec=2.0)
 
     def _detection_callback(self, message: UsbPortDetectionArray) -> None:
         if self._camera_info is None:

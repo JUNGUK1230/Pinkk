@@ -22,7 +22,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 'model_path', default_value='/home/juwon/Desktop/usb_01.pt'
             ),
-            DeclareLaunchArgument('inference_device', default_value='cpu'),
+            DeclareLaunchArgument('inference_device', default_value='cuda:0'),
             DeclareLaunchArgument(
                 'debug_image_enabled', default_value='true'
             ),
