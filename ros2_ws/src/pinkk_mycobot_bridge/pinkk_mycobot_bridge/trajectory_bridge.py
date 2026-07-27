@@ -26,6 +26,10 @@ from .cartesian_conversion import (
     robot_coords_to_pose_values,
     wrapped_angle_difference_deg,
 )
+from .command_queue import (
+    prepare_command_queue,
+    stop_and_clear_command_queue,
+)
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
 from .joint_completion import JointStabilityMonitor, maximum_joint_error
 
@@ -179,6 +183,16 @@ class MyCobotTrajectoryBridge(Node):
         self._serial_lock = threading.Lock()
         self._motion_lock = threading.Lock()
         self._robot = MyCobot280(port, baud)
+        try:
+            with self._serial_lock:
+                prepare_command_queue(self._robot)
+        except Exception as error:
+            raise RuntimeError(
+                f'MyCobot 이동 큐 안전 초기화 실패: {error}'
+            ) from error
+        self.get_logger().warning(
+            'MyCobot 이동 큐 초기화 완료: fresh_mode=1, pending queue cleared'
+        )
         self._cartesian_ready = self._check_cartesian_api()
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -312,7 +326,10 @@ class MyCobotTrajectoryBridge(Node):
         try:
             self.get_logger().info(f"MyCobot 목표 전송 [deg]: {target_deg}")
             with self._serial_lock:
-                self._robot.send_angles(target_deg, self._speed)
+                prepare_command_queue(self._robot)
+                response = self._robot.send_angles(target_deg, self._speed)
+            if response not in (True, 1):
+                raise RuntimeError(f'send_angles 실패 응답: {response!r}')
         except Exception as error:
             result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
             result.error_string = f"send_angles 실패: {error}"
@@ -357,7 +374,15 @@ class MyCobotTrajectoryBridge(Node):
                     result.error_string = f"관절 정지 상태 확인 실패: {error}"
                     return result
                 if stable:
-                    self._stop_robot()
+                    if not self._stop_robot():
+                        goal_handle.abort()
+                        result.error_code = (
+                            FollowJointTrajectory.Result.INVALID_GOAL
+                        )
+                        result.error_string = (
+                            '목표 도달 후 정지·큐 삭제에 실패했습니다'
+                        )
+                        return result
                     if not self._verify_joint_hold(target_rad):
                         goal_handle.abort()
                         result.error_code = (
@@ -501,9 +526,12 @@ class MyCobotTrajectoryBridge(Node):
                 f"speed={request.speed}, mode={request.mode}"
             )
             with self._serial_lock:
-                self._robot.send_coords(
+                prepare_command_queue(self._robot)
+                response = self._robot.send_coords(
                     target_coords, int(request.speed), int(request.mode)
                 )
+            if response not in (True, 1):
+                raise RuntimeError(f'send_coords 실패 응답: {response!r}')
         except Exception as error:
             result.success = False
             result.message = f"Cartesian 명령 실패: {error}"
@@ -545,6 +573,14 @@ class MyCobotTrajectoryBridge(Node):
                 position_error_m <= self._cartesian_position_tolerance
                 and orientation_error_deg <= self._cartesian_orientation_tolerance
             ):
+                if not self._stop_robot():
+                    result.success = False
+                    result.message = (
+                        'Cartesian 목표 도달 후 정지·큐 삭제에 실패했습니다'
+                    )
+                    result.actual = actual
+                    goal_handle.abort()
+                    return result
                 result.success = True
                 result.message = "Cartesian 목표 자세 도달"
                 result.actual = actual
@@ -657,15 +693,14 @@ class MyCobotTrajectoryBridge(Node):
         self._joint_publisher.publish(message)
         return positions
 
-    def _stop_robot(self) -> None:
-        stop = getattr(self._robot, "stop", None)
-        if not callable(stop):
-            return
+    def _stop_robot(self) -> bool:
         try:
             with self._serial_lock:
-                stop()
+                stop_and_clear_command_queue(self._robot)
         except Exception as error:
-            self.get_logger().error(f"로봇 정지 명령 실패: {error}")
+            self.get_logger().error(f"로봇 정지·큐 삭제 실패: {error}")
+            return False
+        return True
 
     def close(self) -> None:
         self._stop_robot()
