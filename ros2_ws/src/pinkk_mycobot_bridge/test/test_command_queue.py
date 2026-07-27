@@ -57,6 +57,7 @@ def test_prepare_stops_clears_and_enables_fresh_mode() -> None:
         ('clear_queue',),
         ('set_fresh_mode', 1),
         ('get_fresh_mode',),
+        ('stop',),
         ('is_moving',),
     ]
 
@@ -67,15 +68,29 @@ def test_stop_and_clear_removes_pending_commands() -> None:
 
     stop_and_clear_command_queue(robot)
 
-    assert robot.calls == [('stop',), ('clear_queue',), ('is_moving',)]
+    assert robot.calls == [
+        ('stop',),
+        ('clear_queue',),
+        ('stop',),
+        ('is_moving',),
+    ]
 
 
 def test_rejects_failed_clear_queue_response() -> None:
-    """큐 삭제 실패를 성공으로 처리하지 않는다."""
+    """명시적인 큐 삭제 실패를 성공으로 처리하지 않는다."""
     robot = FakeRobot(clear_response=0)
 
     with pytest.raises(RuntimeError, match='clear_queue'):
         prepare_command_queue(robot)
+
+
+def test_accepts_unconfirmed_clear_queue_with_state_verification() -> None:
+    """응답 없는 펌웨어도 fresh mode와 정지를 확인하면 사용할 수 있다."""
+    robot = FakeRobot(clear_response=-1)
+
+    prepare_command_queue(robot)
+
+    assert robot.calls[-2:] == [('stop',), ('is_moving',)]
 
 
 def test_rejects_unconfirmed_fresh_mode() -> None:

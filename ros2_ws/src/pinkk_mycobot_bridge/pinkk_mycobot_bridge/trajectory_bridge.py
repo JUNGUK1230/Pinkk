@@ -191,7 +191,8 @@ class MyCobotTrajectoryBridge(Node):
                 f'MyCobot 이동 큐 안전 초기화 실패: {error}'
             ) from error
         self.get_logger().warning(
-            'MyCobot 이동 큐 초기화 완료: fresh_mode=1, pending queue cleared'
+            'MyCobot 이동 안전 상태 확인 완료: fresh_mode=1, '
+            'queue clear requested, stopped verified'
         )
         self._cartesian_ready = self._check_cartesian_api()
         qos = QoSProfile(

@@ -12,8 +12,9 @@ def _required_method(robot: object, name: str):
     return method
 
 
-def _require_success(name: str, response: object) -> None:
-    if response not in (True, 1):
+def _allow_unconfirmed_command(name: str, response: object) -> None:
+    """일부 펌웨어의 무응답(-1/None)은 허용하되 명시적 실패는 거부한다."""
+    if response not in (None, -1, True, 1):
         raise RuntimeError(f'{name}() 실패 응답: {response!r}')
 
 
@@ -40,20 +41,29 @@ def _require_stopped(
 
 def prepare_command_queue(robot: object) -> None:
     """기존 이동을 정지·삭제하고 항상 최신 명령만 실행하도록 설정한다."""
-    # pymycobot의 stop()과 set_fresh_mode()는 펌웨어에 따라 성공 응답을
-    # 반환하지 않는다. 명령은 전송하고, 각각 is_moving()/get_fresh_mode()로
-    # 실제 상태를 확인한다.
+    # pymycobot의 stop(), clear_queue(), set_fresh_mode()는 펌웨어에 따라
+    # 성공 응답을 반환하지 않는다. 큐 삭제를 요청하고 fresh mode와 실제
+    # 정지 상태를 조회해서 안전 상태를 확인한다.
     _required_method(robot, 'stop')()
-    _require_success('clear_queue', _required_method(robot, 'clear_queue')())
+    _allow_unconfirmed_command(
+        'clear_queue',
+        _required_method(robot, 'clear_queue')(),
+    )
     _required_method(robot, 'set_fresh_mode')(1)
     mode = _required_method(robot, 'get_fresh_mode')()
     if mode not in (True, 1):
         raise RuntimeError(f'fresh mode 확인 실패: get_fresh_mode()={mode!r}')
+    # fresh mode 전환 뒤 stop을 최신 명령으로 다시 보내 잔류 명령을 덮는다.
+    _required_method(robot, 'stop')()
     _require_stopped(robot)
 
 
 def stop_and_clear_command_queue(robot: object) -> None:
     """현재 이동을 정지하고 남아 있는 모든 이동 명령을 삭제한다."""
     _required_method(robot, 'stop')()
-    _require_success('clear_queue', _required_method(robot, 'clear_queue')())
+    _allow_unconfirmed_command(
+        'clear_queue',
+        _required_method(robot, 'clear_queue')(),
+    )
+    _required_method(robot, 'stop')()
     _require_stopped(robot)
