@@ -11,9 +11,9 @@
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:16px;padding:16px;max-width:1920px;margin:auto}.left,.right{display:flex;flex-direction:column;gap:16px;min-width:0}.panel{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(16,24,39,.98),rgba(11,18,32,.98));box-shadow:0 12px 35px rgba(0,0,0,.26);overflow:hidden}.panel-head{min-height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;border-bottom:1px solid var(--line)}.title{font-size:14px;font-weight:800}.sub{margin-top:3px;color:var(--muted);font-size:11px}.tools{display:flex;gap:8px}.tool{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#131d2e;color:#d8e2ef;cursor:pointer;font-size:12px}
 .map-view{position:relative;min-height:560px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(rgba(34,211,238,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.06) 1px,transparent 1px),#050a12;background-size:32px 32px}.map-view img{width:100%;height:560px;object-fit:contain}.fallback{position:absolute;inset:0;display:grid;place-items:center}.fake-map{width:min(82%,900px);aspect-ratio:16/9;position:relative;border:2px solid #38506e;border-radius:12px;background:linear-gradient(#0d1827,#09111d)}.road{position:absolute;left:13%;right:13%;top:42%;height:16%;border:1px dashed #53657d;background:#101b2b}.slots{position:absolute;left:12%;right:12%;top:12%;bottom:12%;display:grid;grid-template-columns:repeat(5,1fr) 1.2fr;grid-template-rows:1fr 1fr;gap:8px}.slot{border:1px solid #33506d;border-radius:5px;background:rgba(34,197,94,.11);display:grid;place-items:center;color:#8fb3cf;font-size:11px}.slot.busy{background:rgba(255,92,108,.18);border-color:rgba(255,92,108,.75);color:#ff9da8}.slot.charge{background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.72);color:#88ecf7}.robot{position:absolute;width:28px;height:28px;display:grid;place-items:center;border:3px solid #06101b;border-radius:50%;color:white;font-size:10px;font-weight:900}.r1{left:43%;top:46%;background:var(--blue);box-shadow:0 0 14px var(--blue)}.r2{left:63%;top:52%;background:var(--yellow);box-shadow:0 0 14px var(--yellow)}.legend{position:absolute;left:14px;bottom:14px;display:flex;gap:8px;flex-wrap:wrap}.legend span{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:rgba(5,10,18,.88);color:#bac7d8;font-size:11px}
 .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sum{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.sum small{color:var(--muted)}.sum strong{display:block;margin-top:7px;font-size:25px}.sum p{margin-top:6px;color:#b8c5d5;font-size:11px}
-.vehicle{padding:15px}.veh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.veh-id{font-size:17px;font-weight:900}.badge{padding:6px 9px;border-radius:999px;background:rgba(40,209,124,.13);color:#68e5a5;font-size:11px;font-weight:800}.badge.run{background:rgba(79,140,255,.14);color:#8fb5ff}.row{display:grid;grid-template-columns:80px 1fr auto;gap:10px;align-items:center;margin-top:11px}.label{color:var(--muted);font-size:12px}.value{font-size:12px;font-weight:800}.battery{height:10px;overflow:hidden;border-radius:999px;background:#263247}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,#28d17c,#72e6a8)}.fill.low{background:linear-gradient(90deg,#f7b955,#ff7a59)}
+.vehicle{padding:15px}.veh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.veh-id{font-size:17px;font-weight:900}.badge{padding:6px 9px;border-radius:999px;background:rgba(40,209,124,.13);color:#68e5a5;font-size:11px;font-weight:800}.badge.run{background:rgba(79,140,255,.14);color:#8fb5ff}.badge.offline{background:rgba(255,92,108,.14);color:#ff929e}.badge.delayed{background:rgba(247,185,85,.14);color:#f7b955}.row{display:grid;grid-template-columns:80px 1fr auto;gap:10px;align-items:center;margin-top:11px}.label{color:var(--muted);font-size:12px}.value{font-size:12px;font-weight:800}.battery{height:10px;overflow:hidden;border-radius:999px;background:#263247}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,#28d17c,#72e6a8)}.fill.low{background:linear-gradient(90deg,#f7b955,#ff7a59)}
 .route{padding:15px}.route-line{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #202c40;font-size:13px}.route-line span{color:var(--muted)}.progress{height:8px;margin-top:12px;border-radius:999px;background:#263247;overflow:hidden}.progress div{width:64%;height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan))}
-.controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:15px}.control{min-height:48px;border:1px solid var(--line);border-radius:10px;background:#162236;color:white;cursor:pointer;font-weight:800}.danger{border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e}.logs{max-height:210px;overflow-y:auto;padding:8px 15px 15px}.log{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #202c40;color:#cbd5e1;font-size:12px}.time{color:#6f849e}
+.command-config{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:15px 15px 0}.command-config select,.command-config input{min-width:0;padding:11px;border:1px solid var(--line);border-radius:9px;background:#0b1220;color:var(--text)}.controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:15px}.control{min-height:48px;border:1px solid var(--line);border-radius:10px;background:#162236;color:white;cursor:pointer;font-weight:800}.danger{grid-column:1/-1;border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e}.logs{max-height:210px;overflow-y:auto;padding:8px 15px 15px}.log{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #202c40;color:#cbd5e1;font-size:12px}.time{color:#6f849e}
 @media(max-width:1180px){.layout{grid-template-columns:1fr}.right{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}@media(max-width:760px){.topbar{height:auto;padding:14px;align-items:flex-start}.top-status{flex-direction:column}.layout{padding:10px}.summary,.right{grid-template-columns:1fr}.map-view,.map-view img{min-height:430px;height:430px}}
 
 .monitor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:15px}
@@ -35,9 +35,9 @@
 <section class="panel"><div class="panel-head"><div><div class="title">경로 생성 현황</div><div class="sub">Hybrid A* 경로 계획 및 임무 진행 상태</div></div></div><div class="route"><div class="route-line"><span>담당 로봇</span><strong>PINKY_02</strong></div><div class="route-line"><span>현재 위치</span><strong>입구 대기구역</strong></div><div class="route-line"><span>목적지</span><strong>P8 주차구역</strong></div><div class="route-line"><span>경로 상태</span><strong style="color:#8fb5ff">경로 추종 중</strong></div><div class="route-line"><span>예상 완료</span><strong>약 38초</strong></div><div class="progress"><div></div></div></div></section>
 </section>
 <aside class="right">
-<section class="panel"><div class="panel-head"><div><div class="title">PINKY_01</div><div class="sub">Robot Fleet Unit 01</div></div><span class="badge">대기 중</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar1" class="fill" style="width:0%"></div></div><span id="batteryText1" class="value">--%</span></div><div class="row"><span class="label">충전 상태</span><span class="value">충전 안 함</span><span class="value">C2 인접</span></div><div class="row"><span class="label">현재 위치</span><span class="value">대기 주차구역</span><span class="value">P3</span></div><div class="row"><span class="label">현재 임무</span><span class="value">명령 대기</span><span class="value">READY</span></div></div></section>
-<section class="panel"><div class="panel-head"><div><div class="title">PINKY_02</div><div class="sub">Robot Fleet Unit 02</div></div><span class="badge run">주행 중</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar2" class="fill low" style="width:0%"></div></div><span id="batteryText2" class="value">--%</span></div><div class="row"><span class="label">충전 상태</span><span class="value">충전 안 함</span><span class="value">-</span></div><div class="row"><span class="label">현재 위치</span><span class="value">중앙 통로</span><span class="value">MAP</span></div><div class="row"><span class="label">현재 임무</span><span class="value">P8 입차 경로 추종</span><span class="value">64%</span></div></div></section>
-<section class="panel"><div class="panel-head"><div><div class="title">관리자 제어</div><div class="sub">임무 실행 및 안전 제어</div></div></div><div class="controls"><button class="control" onclick="sendCommand('entry')">입차 명령</button><button class="control" onclick="sendCommand('exit')">출차 명령</button><button class="control" onclick="sendCommand('charge')">충전 배정</button><button class="control" onclick="sendCommand('replan')">경로 재생성</button><button class="control" onclick="sendCommand('pause')">일시 정지</button><button class="control danger" onclick="sendCommand('emergency')">긴급 정지</button></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_01</div><div class="sub">Robot Fleet Unit 01</div></div><span id="connection1" class="badge offline">오프라인</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar1" class="fill" style="width:0%"></div></div><span id="batteryText1" class="value">--%</span></div><div class="row"><span class="label">충전 상태</span><span id="charging1" class="value">--</span><span id="voltage1" class="value">-- V</span></div><div class="row"><span class="label">상태</span><span id="robotStatus1" class="value">정보 없음</span><span class="value">STATUS</span></div><div class="row"><span class="label">마지막 수신</span><span id="lastUpdated1" class="value">수신 전</span><span class="value">HTTP</span></div></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_02</div><div class="sub">Robot Fleet Unit 02</div></div><span id="connection2" class="badge offline">오프라인</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar2" class="fill" style="width:0%"></div></div><span id="batteryText2" class="value">--%</span></div><div class="row"><span class="label">충전 상태</span><span id="charging2" class="value">--</span><span id="voltage2" class="value">-- V</span></div><div class="row"><span class="label">상태</span><span id="robotStatus2" class="value">정보 없음</span><span class="value">STATUS</span></div><div class="row"><span class="label">마지막 수신</span><span id="lastUpdated2" class="value">수신 전</span><span class="value">HTTP</span></div></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">관리자 제어</div><div class="sub">로봇을 선택한 뒤 명령을 저장·전송합니다</div></div></div><div class="command-config"><select id="commandRobot" aria-label="명령 대상 로봇"><option value="pinky1">PINKY_01</option><option value="pinky2">PINKY_02</option></select><input id="adminKey" type="password" autocomplete="current-password" placeholder="관리자 키" aria-label="관리자 키"></div><div class="controls"><button class="control" onclick="sendCommand('entry')">입차 명령</button><button class="control" onclick="sendCommand('exit')">출차 명령</button><button class="control danger" onclick="sendCommand('emergency_stop')">긴급 정지</button></div></section>
 <section class="panel"><div class="panel-head"><div><div class="title">시스템 이벤트</div><div class="sub">최근 상태 변경과 명령 기록</div></div></div><div class="logs" id="eventLog"><div class="log"><span class="time">09:14:22</span><span>PINKY_02 경로 추종 시작</span></div><div class="log"><span class="time">09:14:18</span><span>P8 주차면 배정 완료</span></div><div class="log"><span class="time">09:13:55</span><span>LiDAR 맵 연결 정상</span></div><div class="log"><span class="time">09:13:42</span><span>PINKY_01 대기 상태 전환</span></div></div></section>
 </aside>
 </main>
@@ -45,20 +45,48 @@
 function updateClock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false})}
 function refreshFeeds(){const now=Date.now();document.getElementById('yoloFeed').src='/video_feed?t='+now;document.getElementById('lidarFeed').src='/map_feed?t='+now}
 function toggleFullscreen(){const el=document.getElementById('monitorGrid');if(!document.fullscreenElement)el.requestFullscreen?.();else document.exitFullscreen?.()}
-async function sendCommand(command){const log=document.getElementById('eventLog');const time=new Date().toLocaleTimeString('ko-KR',{hour12:false});const item=document.createElement('div');item.className='log';item.innerHTML=`<span class="time">${time}</span><span>${command} 명령 전송</span>`;log.prepend(item);try{await fetch(`/api/control/${command}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})})}catch(e){console.warn('백엔드 연결 전 데모 모드:',e)}}
+function addCommandLog(message){const log=document.getElementById('eventLog');const item=document.createElement('div');item.className='log';const time=document.createElement('span');time.className='time';time.textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false});const text=document.createElement('span');text.textContent=message;item.append(time,text);log.prepend(item)}
+async function sendCommand(command){
+    const robot=document.getElementById('commandRobot').value;
+    const adminKey=document.getElementById('adminKey').value;
+    if(!adminKey){addCommandLog('관리자 키를 입력해 주세요.');return}
+    if(command==='emergency_stop'&&!confirm(`${robot.toUpperCase()}에 긴급정지 명령을 전송하시겠습니까?`))return;
+    try{
+        const res=await fetch(`/api/robots/${robot}/commands`,{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Key':adminKey},body:JSON.stringify({command})});
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.message||`HTTP ${res.status}`);
+        const labels={entry:'입차',exit:'출차',emergency_stop:'긴급정지'};
+        addCommandLog(`${robot.toUpperCase()} ${labels[command]} 명령 저장 (${data.command_id.slice(0,8)})`);
+    }catch(e){addCommandLog(`명령 저장 실패: ${e.message}`)}
+}
 updateClock();setInterval(updateClock,1000)
 
+function renderRobot(index,data){
+    const percent=data?.battery_percent;
+    const bar=document.getElementById('batteryBar'+index);
+    bar.style.width=(percent??0)+'%';
+    bar.classList.toggle('low',percent!=null&&percent<=20);
+    document.getElementById('batteryText'+index).textContent=percent==null?'--%':Number(percent).toFixed(1)+'%';
+    document.getElementById('charging'+index).textContent=data?.charging?'충전 중':'충전 안 함';
+    document.getElementById('voltage'+index).textContent=data?.battery_voltage==null?'-- V':Number(data.battery_voltage).toFixed(2)+' V';
+    document.getElementById('robotStatus'+index).textContent=data?.status==='unknown'?'정보 없음':(data?.status??'정보 없음');
+    document.getElementById('lastUpdated'+index).textContent=data?.age_seconds==null?'수신 전':Math.round(data.age_seconds)+'초 전';
+    const badge=document.getElementById('connection'+index);
+    const labels={online:'온라인',delayed:'연결 지연',offline:'오프라인'};
+    badge.textContent=labels[data?.connection]??'오프라인';
+    badge.className='badge '+(data?.connection??'offline');
+}
 async function updateBattery(){
     try{
-        const res=await fetch('/api/battery');
+        const res=await fetch('/api/robots/status',{cache:'no-store'});
+        if(!res.ok)throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
-
-        if(data.percent!=null){
-            document.getElementById('batteryBar1').style.width=data.percent+'%';
-            document.getElementById('batteryText1').textContent=data.percent+'%';
-        }
+        renderRobot(1,data.pinky1);
+        renderRobot(2,data.pinky2);
     }catch(e){
         console.error(e);
+        renderRobot(1,null);
+        renderRobot(2,null);
     }
 }
 updateBattery();
