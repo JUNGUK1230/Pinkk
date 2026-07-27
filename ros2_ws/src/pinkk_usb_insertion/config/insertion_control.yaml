@@ -11,8 +11,9 @@ frames:
   plug_tip: plug_tip
 
 port_model:
-  width_m: 0.0115
-  height_m: 0.0045
+  # YOLO keypoint로 라벨링한 고정 경계의 실측 크기
+  width_m: 0.018
+  height_m: 0.008
 
 pose_estimation:
   input_mode: yolo_topic
