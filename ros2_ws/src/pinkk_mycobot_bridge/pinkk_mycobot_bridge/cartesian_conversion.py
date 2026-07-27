@@ -84,6 +84,24 @@ def robot_coords_to_pose_values(
     )
 
 
+def apply_cartesian_locks(
+    requested_coords: Sequence[float],
+    start_coords: Sequence[float],
+    *,
+    lock_z: bool,
+    lock_roll_pitch: bool,
+) -> list[float]:
+    """고정 요청 축은 MyCobot이 직접 읽은 시작 좌표로 덮어쓴다."""
+    target = _finite(requested_coords, 6, 'requested robot coords')
+    start = _finite(start_coords, 6, 'start robot coords')
+    if lock_z:
+        target[2] = start[2]
+    if lock_roll_pitch:
+        target[3] = start[3]
+        target[4] = start[4]
+    return target
+
+
 def wrapped_angle_difference_deg(first_deg: float, second_deg: float) -> float:
     """두 degree 각도의 -180~180 범위 최단 차이를 반환한다."""
     first, second = _finite((first_deg, second_deg), 2, 'angles')

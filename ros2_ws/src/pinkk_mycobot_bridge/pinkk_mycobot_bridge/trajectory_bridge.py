@@ -21,6 +21,7 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from .cartesian_conversion import (
+    apply_cartesian_locks,
     pose_error,
     pose_values_to_robot_coords,
     robot_coords_to_pose_values,
@@ -481,11 +482,18 @@ class MyCobotTrajectoryBridge(Node):
     def _execute_cartesian_locked(self, goal_handle: object) -> CartesianMove.Result:
         request = goal_handle.request
         result = CartesianMove.Result()
-        target_coords = self._pose_message_to_coords(request.target)
+        requested_coords = self._pose_message_to_coords(request.target)
         try:
             start_coords = self._read_robot_coords()
             start_pose = self._pose_from_coords(start_coords)
-            target_position, target_quaternion = self._pose_values(request.target)
+            target_coords = apply_cartesian_locks(
+                requested_coords,
+                start_coords,
+                lock_z=bool(request.lock_z),
+                lock_roll_pitch=bool(request.lock_roll_pitch),
+            )
+            target_pose = self._pose_from_coords(target_coords)
+            target_position, target_quaternion = self._pose_values(target_pose)
             start_position, start_quaternion = self._pose_values(start_pose)
             distance, rotation = pose_error(
                 target_position,
@@ -504,23 +512,6 @@ class MyCobotTrajectoryBridge(Node):
                     f"Cartesian 회전량 {rotation:.3f}deg가 "
                     f"제한 {self._cartesian_max_rotation:.3f}deg를 초과합니다"
                 )
-            if request.lock_z and abs(target_coords[2] - start_coords[2]) > 0.5:
-                raise ValueError(
-                    "lock_z 요청인데 목표 Z가 시작 Z와 0.5mm 이상 다릅니다"
-                )
-            if request.lock_roll_pitch:
-                roll_change = abs(
-                    wrapped_angle_difference_deg(target_coords[3], start_coords[3])
-                )
-                pitch_change = abs(
-                    wrapped_angle_difference_deg(target_coords[4], start_coords[4])
-                )
-                if max(roll_change, pitch_change) > 0.5:
-                    raise ValueError(
-                        "lock_roll_pitch 요청인데 목표 Roll/Pitch가 시작값과 "
-                        "0.5deg 이상 다릅니다"
-                    )
-
             self.get_logger().warning(
                 "Cartesian 목표 전송 [mm, deg]: "
                 f"{[round(value, 3) for value in target_coords]}, "

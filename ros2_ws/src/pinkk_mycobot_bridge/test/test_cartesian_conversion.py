@@ -1,6 +1,7 @@
 import math
 
 from pinkk_mycobot_bridge.cartesian_conversion import (
+    apply_cartesian_locks,
     pose_error,
     pose_values_to_robot_coords,
     quaternion_to_rpy_degrees,
@@ -46,3 +47,34 @@ def test_pose_conversion_rejects_invalid_values() -> None:
 
 def test_wrapped_angle_difference() -> None:
     assert wrapped_angle_difference_deg(179.0, -179.0) == pytest.approx(-2.0)
+
+
+def test_cartesian_locks_use_hardware_start_z_roll_pitch() -> None:
+    """URDF FK가 달라도 고정 축은 MyCobot 시작 자세를 그대로 사용한다."""
+    requested = [160.2, -66.0, 265.0, -178.9, 2.2, -136.4]
+    start = [159.3, -66.1, 261.6, -178.96, 2.18, -136.45]
+
+    target = apply_cartesian_locks(
+        requested,
+        start,
+        lock_z=True,
+        lock_roll_pitch=True,
+    )
+
+    assert target == pytest.approx(
+        [160.2, -66.0, 261.6, -178.96, 2.18, -136.4]
+    )
+
+
+def test_cartesian_locks_leave_unlocked_axes_requested() -> None:
+    requested = [160.2, -66.0, 265.0, -178.9, 2.2, -136.4]
+    start = [159.3, -66.1, 261.6, -178.96, 2.18, -136.45]
+
+    target = apply_cartesian_locks(
+        requested,
+        start,
+        lock_z=False,
+        lock_roll_pitch=False,
+    )
+
+    assert target == pytest.approx(requested)
