@@ -33,12 +33,16 @@ src/central_control/camera_tools/first_map/my_test_map0710.yaml
 src/central_control/camera_tools/first_map/my_test_map0710.png
 ```
 
-ROS 2 publisher를 사용할 때는 프로젝트를 빌드합니다.
+실시간 중앙제어 실행은 표준 ROS 메시지만 쓰므로 PINKK의 `install/setup.bash`를
+source할 필요가 없습니다. 현재 작업공간의 `install/`에 최상위 setup 파일이 없는
+상태여도 아래 실행 명령은 그대로 동작합니다. 별도 ROS 패키지 실행을 위해 빌드할
+경우에만 다음 명령을 사용합니다.
 
 ```bash
 cd ~/PINKK
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
+# build가 성공해서 install/setup.bash가 생성된 경우에만 실행한다.
 source install/setup.bash
 ```
 
@@ -49,13 +53,14 @@ source install/setup.bash
 ```bash
 cd ~/PINKK
 source /opt/ros/jazzy/setup.bash
-source install/setup.bash
 .venv/bin/python -m src.central_control.overhead_vision.localization.live_localization
 ```
 
 창에서 `h`를 누르고 차량 앞쪽을 클릭하면 현재 차량 heading이 지정됩니다.
 그러면 검증된 Hybrid A*가 별도 작업 스레드에서 바로 시작되고, 성공 경로는
-화면에 빨간 선으로 표시되며 ROS 2 토픽으로 즉시 발행됩니다. `p`는 같은
+화면에 빨간 선으로 표시되며 ROS 2 토픽으로 즉시 발행됩니다. 차량이 C1/C2
+충전칸에 도착한 뒤 `SPACE`를 누르면 `충전이 완료되었습니다`를 출력하고,
+출구에 가까운 빈 P1~P5를 선택해 대기주차 경로를 새로 생성합니다. `p`는 같은
 차량·목표로 재계획, `x`는 heading 초기화, `q` 또는 `ESC`는 종료입니다.
 
 발행 토픽은 다음과 같습니다.
@@ -97,8 +102,8 @@ cd ~/PINKK/src/central_control/camera_tools/first_map
    기준 FIFO로 선택합니다. 빈 충전칸은 C2를 우선하고 C2 점유 시 C1을 쓰며,
    배정된 ego만 기존 경로 계획 입력을 생성합니다.
 5. 입구 단계에서 충전칸이 모두 차 있으면 P6~P10의 빈 주차면을 입구에서 먼
-   순서로 선택합니다. 충전 완료·출차 대기 단계의 실제 전환은 아직 외부
-   충전 완료 신호를 연결하기 전의 다음 작업입니다.
+   순서로 선택합니다. 현재 실험 단계에서는 C1/C2 도착 후 `SPACE`가 충전
+   완료 이벤트 역할을 하며, 출구에 가까운 빈 P1~P5 대기 주차면으로 이동합니다.
 6. 2D A* 통로 guide를 짧은 Hybrid A* 구간으로 나눠 장거리 탐색량을
    줄이고, 각 구간 경계에서 정지·조향 재설정점을 만듭니다.
 7. Occupancy grid의 검은 영역을 벽으로 사용하고, 차량 `12×10 cm` 회전

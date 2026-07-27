@@ -5,6 +5,8 @@ realtime_localization:
   registration_path: src/central_control/camera_tools/first_map/camera_to_lidar_rigid_registration.npz
   parking_slots_path: src/central_control/config/map/parking_slots_bev.json
   parking_points_path: src/central_control/config/map/parking_points.json
+  fixed_route_config_path: src/central_control/path_planning/config/fixed_mission_routes.yaml
+  fixed_route_directory: src/central_control/path_planning/output
   vehicle_config_path: src/central_control/path_planning/config/vehicle_config.yaml
   scene_output_path: src/central_control/path_planning/output/live_vision_scene.json
   bev_output_path: src/central_control/path_planning/output/live_camera_bev.png
@@ -14,7 +16,9 @@ realtime_localization:
   write_runtime_files: false
   ros_publish_enabled: true
 
-  camera_id: 2
+  # 2026-07-27 확인: 상단 USB Camera는 /dev/video3 (1920x1080 MJPG)다.
+  # USB 재연결 후 번호가 달라지면 `v4l2-ctl --list-devices`로 다시 확인한다.
+  camera_id: 3
   camera_width: 1920
   camera_height: 1080
   camera_fps: 30
@@ -69,8 +73,8 @@ realtime_localization:
   # null이면 첫 프레임에서 confidence가 가장 높은 car를 표시하지만 planning_ready=false이다.
   initial_ego_center_bev_px: null
 
-  # 기본 null: 실행 창에서 h를 누르고 차량 앞쪽을 클릭해 heading을 지정한다.
-  # 숫자를 넣으면 기존 CLI/설정 기반 초기 heading 방식도 사용할 수 있다.
+  # null이면 fixed_mission_routes.yaml의 START yaw를 자동 사용한다. 주차면에
+  # 있을 때는 해당 slot goal yaw가 자동 적용되므로 front 클릭이 필요 없다.
   initial_ego_yaw_deg: null
 
   position_filter_alpha: 0.5

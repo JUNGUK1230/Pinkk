@@ -12,9 +12,6 @@ TRAJECTORY_FIELDS = (
     "y_m",
     "yaw_rad",
     "direction",
-    "target_speed_mps",
-    "steer_rad",
-    "stop_required",
 )
 
 
@@ -90,7 +87,7 @@ class DirectRosPublisher:
         self._pose_publisher.publish(message)
 
     def publish_trajectory(self, trajectory: Sequence[object]) -> None:
-        """검증된 Hybrid trajectory를 표준 path와 제어용 행렬 토픽으로 발행한다."""
+        """고정 경로를 표준 path와 x/y/yaw/direction 행렬로 발행한다."""
         if not trajectory:
             raise ValueError("trajectory must not be empty")
         stamp = self._node.get_clock().now().to_msg()
@@ -114,9 +111,6 @@ class DirectRosPublisher:
                     pose.pose.position.y,
                     yaw_rad,
                     float(getattr(point, "direction")),
-                    float(getattr(point, "target_speed_mps")),
-                    float(getattr(point, "steer_rad")),
-                    float(getattr(point, "stop_required")),
                 )
             )
         trajectory_message = self._Float64MultiArray()

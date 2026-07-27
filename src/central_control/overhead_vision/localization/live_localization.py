@@ -11,6 +11,7 @@
 
 import argparse
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -205,38 +206,49 @@ class LatestFrameCamera:
                 self._condition.notify_all()
 
 
-class IntegratedPlanningController:
-    """heading 지정 후 한 번만 Hybrid A*를 실행하고 메모리 결과를 유지한다."""
+@dataclass(frozen=True)
+class FixedRouteOutcome:
+    """Fixed-route selection shaped for the existing overlay/publish bridge."""
 
-    def __init__(self) -> None:
+    request: object
+    adjusted_start: tuple[float, float, float]
+    adjusted_goal: tuple[float, float, float]
+    trajectory: tuple[object, ...]
+
+
+class IntegratedPlanningController:
+    """Select one fixed route for each new vehicle/target episode."""
+
+    def __init__(self, route_selector: object) -> None:
+        self.route_selector = route_selector
         self._executor = ThreadPoolExecutor(
             max_workers=1,
-            thread_name_prefix="pinkk-hybrid-planner",
+            thread_name_prefix="pinkk-fixed-route",
         )
         self._future: Future[object] | None = None
         self._active_key: tuple[int | None, str, int] | None = None
         self._completed_key: tuple[int | None, str, int] | None = None
-        self._planner_stack: tuple[object, ...] | None = None
         self.outcome: object | None = None
         self.last_error: str | None = None
         self._new_outcome = False
+        self._discard_pending_result = False
 
     @property
     def status(self) -> str:
         if self._future is not None:
-            return "Hybrid A* planning..."
+            return "Fixed route selecting..."
         if self.last_error is not None:
-            return f"Hybrid A* blocked: {self.last_error}"
+            return f"Fixed route blocked: {self.last_error}"
         if self.outcome is not None:
-            return "Hybrid A* path ready and published"
-        return "waiting for heading and planning input"
+            return "Fixed route ready and published"
+        return "waiting for vehicle section and target"
 
     def update(
         self,
         scene: SceneObservation,
         heading_revision: int,
     ) -> None:
-        """새 heading/차량/목표 조합일 때만 별도 스레드 계획을 시작한다."""
+        """새 차량/목표 조합일 때만 고정 경로 선택을 시작한다."""
         self._collect_finished()
         if scene.vehicle is None or scene.planning_request is None:
             return
@@ -272,6 +284,17 @@ class IntegratedPlanningController:
             return None
         self._new_outcome = False
         return self.outcome
+
+    def invalidate(self) -> None:
+        """단계 전환 시 이전 목적지의 실행 중/완료 경로를 폐기한다."""
+        self.outcome = None
+        self.last_error = None
+        self._active_key = None
+        self._completed_key = None
+        self._new_outcome = False
+        # ThreadPoolExecutor에서 실행 중인 Hybrid A*는 안전하게 강제 종료할 수
+        # 없으므로 완료 결과만 버리고, 다음 프레임에서 새 목적지를 계획한다.
+        self._discard_pending_result = self._future is not None
 
     def draw_overlay(
         self,
@@ -321,6 +344,9 @@ class IntegratedPlanningController:
             return
         future = self._future
         self._future = None
+        if self._discard_pending_result:
+            self._discard_pending_result = False
+            return
         self._completed_key = self._active_key
         try:
             self.outcome = future.result()
@@ -339,7 +365,7 @@ class IntegratedPlanningController:
         goal_pose_cm: tuple[float, float, float],
         alternative_goal_pose_cm: tuple[float, float, float],
     ) -> object:
-        """기존 standalone planner의 동일한 검증 함수를 재사용한다."""
+        """Select the configured full route from the localized source endpoint."""
         path_planning_root = REPO_ROOT / "src/central_control/path_planning"
         for module_path in (
             path_planning_root / "scripts",
@@ -348,12 +374,8 @@ class IntegratedPlanningController:
             module_path_text = str(module_path)
             if module_path_text not in sys.path:
                 sys.path.insert(0, module_path_text)
-        from plan_from_live_vision import load_planner_stack, plan_live_request
         from vision_scene_input import VisionPlanningRequest
 
-        if self._planner_stack is None:
-            self._planner_stack = load_planner_stack()
-        _, planner, profile_config, limits, parking_config = self._planner_stack
         request = VisionPlanningRequest(
             frame_index=frame_index,
             observed_at_unix_sec=observed_at_unix_sec,
@@ -362,12 +384,15 @@ class IntegratedPlanningController:
             goal_pose_cm=goal_pose_cm,
             alternative_goal_pose_cm=alternative_goal_pose_cm,
         )
-        return plan_live_request(
-            request,
-            planner,
-            profile_config,
-            limits,
-            parking_config,
+        selector = getattr(self.route_selector, "select")
+        selection = selector(start_pose_cm, slot_name)
+        trajectory = tuple(selection.points)
+        final = trajectory[-1]
+        return FixedRouteOutcome(
+            request=request,
+            adjusted_start=start_pose_cm,
+            adjusted_goal=(final.x_cm, final.y_cm, final.yaw_rad),
+            trajectory=trajectory,
         )
 
 
@@ -445,11 +470,19 @@ def build_localizer(
         if isinstance(initial_center_value, list) and len(initial_center_value) == 2
         else None
     )
+    fixed_route_config_path = resolve_path(str(config["fixed_route_config_path"]))
+    with fixed_route_config_path.open(encoding="utf-8") as file:
+        fixed_route_config = yaml.safe_load(file)
+    fixed_endpoints = fixed_route_config["endpoints"]
+    fixed_yaws = {
+        name: float(endpoint.get("goal", endpoint["staging"])[2])
+        for name, endpoint in fixed_endpoints.items()
+    }
     initial_yaw_value = config.get("initial_ego_yaw_deg")
     initial_yaw = (
         math.radians(float(initial_yaw_value))
         if initial_yaw_value is not None
-        else None
+        else fixed_yaws["START"]
     )
     vehicle_config_path = resolve_path(str(config["vehicle_config_path"]))
     with vehicle_config_path.open(encoding="utf-8") as file:
@@ -462,6 +495,20 @@ def build_localizer(
     )
     if rear_axle_offset_cm < 0.0:
         raise ValueError("rear axle offset derived from vehicle config is negative")
+    slots = ParkingSlotMap(
+        resolve_path(str(config["parking_slots_path"])),
+        transform,
+        rear_axle_offset_cm,
+        float(config["occupancy_threshold"]),
+    )
+
+    def fixed_heading_for_center(center_bev: tuple[float, float]) -> float | None:
+        slot_name = slots.slot_name_for_point(center_bev)
+        # Planning starts only at START or inside a configured slot. Outside a
+        # slot, keep the one-way START/corridor heading instead of asking for a
+        # mask-front click.
+        return fixed_yaws.get(slot_name, fixed_yaws["START"])
+
     tracker = EgoVehicleTracker(
         transform,
         rear_axle_offset_cm=rear_axle_offset_cm,
@@ -471,18 +518,17 @@ def build_localizer(
         yaw_alpha=float(config["yaw_filter_alpha"]),
         max_center_jump_px=float(config["max_center_jump_px"]),
         minimum_elongation=float(config["minimum_mask_elongation"]),
-    )
-    slots = ParkingSlotMap(
-        resolve_path(str(config["parking_slots_path"])),
-        transform,
-        rear_axle_offset_cm,
-        float(config["occupancy_threshold"]),
+        fixed_heading_resolver=fixed_heading_for_center,
     )
     target_slot_value = config.get("target_slot_name")
     target_slot_name = (
         str(target_slot_value) if target_slot_value is not None else None
     )
     parking_assignment = load_parking_assignment(config)
+    post_charge_parking_assignment = load_parking_assignment(
+        config,
+        phase_name="charge_to_exit",
+    )
     vehicle_states = VehicleStateManager(
         transform,
         track_ttl_sec=float(config.get("vehicle_track_ttl_sec", 2.0)),
@@ -501,6 +547,7 @@ def build_localizer(
             charge_coordinator=charge_coordinator,
             target_slot_name=target_slot_name,
             parking_assignment=parking_assignment,
+            post_charge_parking_assignment=post_charge_parking_assignment,
         ),
         transform,
     )
@@ -508,12 +555,13 @@ def build_localizer(
 
 def load_parking_assignment(
     config: dict[str, object],
+    phase_name: str | None = None,
 ) -> ParkingAssignmentPolicy | None:
     """현재 에피소드의 거리 또는 명시 순서 기반 주차칸 배정 규칙을 읽는다."""
     raw_assignment = config.get("parking_assignment")
     if not isinstance(raw_assignment, dict):
         return None
-    phase_name = raw_assignment.get("active_phase")
+    phase_name = phase_name or raw_assignment.get("active_phase")
     phases = raw_assignment.get("phases")
     if not isinstance(phase_name, str) or not isinstance(phases, dict):
         raise ValueError("parking_assignment requires active_phase and phases")
@@ -550,6 +598,7 @@ def draw_scene(
     transform: AffineBevToLidar,
     target_slot_name: str | None = None,
     detections: Sequence[Detection] = (),
+    route_selector: object | None = None,
 ) -> np.ndarray:
     canvas = bev.copy()
     tracked_by_id = {
@@ -647,6 +696,17 @@ def draw_scene(
         2,
         cv2.LINE_AA,
     )
+    current_section, route_target = route_context(scene, route_selector)
+    cv2.putText(
+        canvas,
+        f"CURRENT SECTION: {current_section}  ->  TARGET: {route_target}",
+        (20, 65),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
     if scene.charge_assignment is not None:
         assignment = scene.charge_assignment
         cv2.putText(
@@ -737,7 +797,10 @@ class ManualHeadingSelector:
                 message = "PRESS h, THEN CLICK THE EGO FRONT | x: clear heading"
                 color = (0, 165, 255)
         else:
-            message = "MANUAL HEADING SET | h: set again | x: clear"
+            message = (
+                "MANUAL HEADING SET | SPACE: charge complete | "
+                "h: set again | x: clear"
+            )
             color = (0, 255, 0)
         cv2.putText(
             image,
@@ -878,7 +941,54 @@ def _draw_continuous_path(
     return skipped
 
 
-def print_scene(scene: SceneObservation) -> None:
+def route_context(
+    scene: SceneObservation,
+    route_selector: object | None,
+) -> tuple[str, str]:
+    """Return the live ego section and currently assigned route target."""
+    current_section = "UNKNOWN"
+    if scene.vehicle is not None:
+        tracked = next(
+            (
+                item
+                for item in scene.tracked_vehicles
+                if item.track_id == scene.vehicle.track_id
+            ),
+            None,
+        )
+        if tracked is not None and tracked.assigned_slot_name is not None:
+            current_section = tracked.assigned_slot_name
+        elif route_selector is not None:
+            detector = getattr(route_selector, "detect_location", None)
+            if callable(detector):
+                current_section = str(
+                    detector(
+                        (
+                            scene.vehicle.rear_axle_cm[0],
+                            scene.vehicle.rear_axle_cm[1],
+                            scene.vehicle.yaw_rad,
+                        )
+                    )
+                )
+        else:
+            current_section = "TRANSIT"
+
+    if scene.planning_request is not None:
+        target = scene.planning_request.slot_name
+    elif (
+        scene.charge_assignment is not None
+        and scene.charge_assignment.target_slot_name is not None
+    ):
+        target = scene.charge_assignment.target_slot_name
+    else:
+        target = "WAIT"
+    return current_section, target
+
+
+def print_scene(
+    scene: SceneObservation,
+    route_selector: object | None = None,
+) -> None:
     print(f"Frame {scene.frame_index}: {scene.status}")
     if scene.vehicle:
         vehicle = scene.vehicle
@@ -889,6 +999,8 @@ def print_scene(scene: SceneObservation) -> None:
             f"conf={vehicle.confidence:.2f}, "
             f"ambiguous={vehicle.heading_ambiguous or vehicle.ego_selection_ambiguous}"
         )
+    current_section, route_target = route_context(scene, route_selector)
+    print(f"  Route context: {current_section} -> {route_target}")
     free_count = sum(not slot.occupied for slot in scene.parking_slots)
     print(f"  Parking slots: {free_count}/{len(scene.parking_slots)} free")
     if scene.tracked_vehicles:
@@ -976,6 +1088,16 @@ def main() -> int:
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
         )
+        path_planning_root = REPO_ROOT / "src/central_control/path_planning"
+        route_module_path = str(path_planning_root / "src")
+        if route_module_path not in sys.path:
+            sys.path.insert(0, route_module_path)
+        from fixed_route_selector import FixedRouteSelector
+
+        route_selector = FixedRouteSelector(
+            resolve_path(str(config["fixed_route_config_path"])),
+            resolve_path(str(config["fixed_route_directory"])),
+        )
     except (ImportError, FileNotFoundError, KeyError, TypeError, ValueError, OSError) as error:
         print(f"ERROR: initialization failed: {error}")
         print("Run with the project virtual environment: .venv/bin/python")
@@ -1016,15 +1138,11 @@ def main() -> int:
             f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
             f"slots={list(policy.allowed_slots)}"
         )
-    print(
-        "h: arm manual heading click | p: replan | x: clear heading | q/ESC: quit"
-    )
-    heading_selector = ManualHeadingSelector(localizer.tracker, transform)
-    planning_controller = IntegratedPlanningController()
+    print("SPACE: charge complete | p: replan | q/ESC: quit")
+    planning_controller = IntegratedPlanningController(route_selector)
     replan_revision = 0
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.setMouseCallback(WINDOW_NAME, heading_selector.mouse_callback)
     # 첫 실제 프레임 추론 전에 CUDA 커널과 모델을 준비한다. 준비 중에도 캡처
     # 스레드는 카메라를 계속 비우므로 완료 후 가장 최근 프레임부터 처리한다.
     inference_imgsz = int(config.get("inference_imgsz", 1600))
@@ -1115,10 +1233,9 @@ def main() -> int:
                 bev.shape[:2],
                 frame_index,
             )
-            heading_selector.update_scene(scene)
             planning_controller.update(
                 scene,
-                heading_selector.revision + replan_revision,
+                replan_revision,
             )
             completed_outcome = planning_controller.consume_new_outcome()
             if completed_outcome is not None and ros_publisher is not None:
@@ -1139,7 +1256,7 @@ def main() -> int:
                 save_scene_observation(scene, output_path)
             now = time.monotonic()
             if now - last_print_time >= 1.0 or static_bev is not None:
-                print_scene(scene)
+                print_scene(scene, route_selector)
                 capture_age_ms = (now - captured_at) * 1000.0
                 print(
                     "  Live timing: "
@@ -1155,9 +1272,9 @@ def main() -> int:
                     transform,
                     target_slot_name=target_slot_name,
                     detections=detections,
+                    route_selector=route_selector,
                 )
                 canvas = planning_controller.draw_overlay(canvas, transform)
-                heading_selector.draw_instruction(canvas)
                 cv2.putText(
                     canvas,
                     planning_controller.status,
@@ -1196,13 +1313,20 @@ def main() -> int:
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
-                if key == ord("h"):
-                    heading_selector.arm()
+                if key == ord(" "):
+                    completed, message = localizer.complete_charging(
+                        scene.vehicle.track_id if scene.vehicle is not None else None,
+                        scene.tracked_vehicles,
+                    )
+                    print(message)
+                    if completed:
+                        # 이전 C1/C2 경로를 토픽으로 발행하지 않고 P1~P5 경로만
+                        # 새로 계획하도록 planner 결과를 무효화한다.
+                        replan_revision += 1
+                        planning_controller.invalidate()
                 elif key == ord("p"):
                     replan_revision += 1
                     print("Manual replan requested")
-                elif key == ord("x"):
-                    heading_selector.clear()
             processed_frames += 1
             if static_bev is not None:
                 break

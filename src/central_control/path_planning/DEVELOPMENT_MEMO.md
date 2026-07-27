@@ -1,5 +1,26 @@
 # 경로계획 중간 메모
 
+## 2026-07-27: 상단 USB 카메라 장치 번호 갱신
+
+- 현재 시스템에서 상단 `USB Camera`는 `/dev/video3`으로 인식되며,
+  1920×1080 MJPG 30 FPS capture capability를 확인했다.
+- `/dev/video2`는 존재하지 않아 `realtime_localization.yaml`의 `camera_id`를
+  2에서 3으로 변경했다.
+- USB 재연결 후 번호가 달라질 수 있으므로 실행 오류가 나면
+  `v4l2-ctl --list-devices`로 실제 Video Capture 장치를 확인한다.
+
+## 2026-07-27: Space 충전 완료 이벤트와 C1/C2 → P1~P5 전환
+
+- 실시간 localization 창에서 ego 차량이 C1 또는 C2 충전칸에 있는 상태로
+  `SPACE`를 누르면 `충전이 완료되었습니다`를 출력한다.
+- 해당 `track_id`만 충전 완료 상태로 메모리에 표시하고, 화면상 차량이 아직
+  C1/C2에 보이더라도 기존 충전칸 재계획 대신 `charge_to_exit` 정책의 P1~P5
+  빈 자리로 Hybrid A*를 다시 생성한다.
+- P1~P5는 설정된 출구 기준 거리 순서로 고르며, 차량이 선택 칸에 실제 도착하면
+  `charged_waiting_exit` 상태로 남아 출차 요청 전에는 재계획하지 않는다.
+- 전환 순간 이전 C1/C2 목적지 planner가 실행 중이면 결과를 버려, 이전 경로가
+  ROS 토픽으로 뒤늦게 발행되는 일을 막는다.
+
 ## 2026-07-24: Camera 화면·Hybrid A*·ROS 직접 발행 통합
 
 - Camera localization 창에서 수동 heading을 지정하면 별도 작업 스레드가

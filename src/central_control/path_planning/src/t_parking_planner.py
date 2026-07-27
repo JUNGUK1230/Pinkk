@@ -11,8 +11,10 @@ import numpy as np
 
 try:
     from .hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
+    from .reeds_shepp import ReedsSheppPlanner
 except ImportError:
     from hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
+    from reeds_shepp import ReedsSheppPlanner
 
 
 Pose = tuple[float, float, float]
@@ -35,6 +37,16 @@ class TParkingPlanResult:
     @property
     def total_cost(self) -> float:
         return self.global_result.total_cost + self.maneuver_result.total_cost
+
+
+@dataclass(frozen=True)
+class ReverseOnlyManeuverResult:
+    """A collision-free final parking maneuver with no gear changes."""
+
+    path: list[HybridState]
+    staging_pose: Pose
+    stop_indices: tuple[int, ...]
+    total_length_cm: float
 
 
 def plan_t_reverse_parking(
@@ -131,6 +143,87 @@ def plan_t_reverse_parking(
 
     detail = failures[-1] if failures else "no footprint-valid staging pose"
     raise RuntimeError(f"T reverse parking failed: {detail}")
+
+
+def plan_reverse_only_maneuver(
+    planner: HybridAStarPlanner,
+    goal: Pose,
+    minimum_reverse_distance_cm: float = 10.0,
+    max_staging_candidates: int = 40,
+) -> ReverseOnlyManeuverResult:
+    """Find a final maneuver made exclusively of reverse bounded-curvature motion.
+
+    Unlike the general Hybrid A* maneuver, this function rejects every candidate
+    containing a forward segment.  A duplicated stopped pose is inserted at each
+    steering-mode transition so the existing trajectory validator can permit the
+    steering reset without interpreting it as an in-place vehicle rotation.
+    """
+    if minimum_reverse_distance_cm <= 0.0 or max_staging_candidates <= 0:
+        raise ValueError("reverse-only maneuver limits must be positive")
+
+    reeds_shepp = ReedsSheppPlanner(
+        planner.minimum_turning_radius_cm,
+        step_size_cm=planner.path_output_step_cm,
+    )
+    for candidate_index, staging_pose in enumerate(_staging_candidates(planner, goal)):
+        if candidate_index >= max_staging_candidates:
+            break
+        if planner.is_pose_collision(*staging_pose):
+            continue
+        for candidate in reeds_shepp.iter_candidates(staging_pose, goal):
+            if not candidate.poses or any(pose.direction != -1 for pose in candidate.poses):
+                continue
+            if candidate.total_length_cm + 1e-6 < minimum_reverse_distance_cm:
+                continue
+            if not planner.is_path_collision_free(candidate.poses):
+                continue
+            path, stop_indices = _states_with_steering_reset_stops(planner, candidate.poses)
+            return ReverseOnlyManeuverResult(
+                path=path,
+                staging_pose=staging_pose,
+                stop_indices=tuple(stop_indices),
+                total_length_cm=candidate.total_length_cm,
+            )
+    raise RuntimeError("no collision-free reverse-only maneuver was found")
+
+
+def _states_with_steering_reset_stops(
+    planner: HybridAStarPlanner,
+    poses: Iterable[object],
+) -> tuple[list[HybridState], set[int]]:
+    """Convert analytic poses and stop at mode transitions for steering reset."""
+    states: list[HybridState] = []
+    stop_indices: set[int] = set()
+    for pose in poses:
+        mode = getattr(pose, "segment_mode")
+        steer_rad = (
+            planner.analytic_steer_rad
+            if mode == "L"
+            else -planner.analytic_steer_rad
+            if mode == "R"
+            else 0.0
+        )
+        state = HybridState(
+            float(getattr(pose, "x_cm")),
+            float(getattr(pose, "y_cm")),
+            float(getattr(pose, "yaw_rad")),
+            int(getattr(pose, "direction")),
+            steer_rad,
+        )
+        if states and abs(state.steer_rad - states[-1].steer_rad) > 1e-12:
+            previous = states[-1]
+            states.append(
+                HybridState(
+                    previous.x_cm,
+                    previous.y_cm,
+                    previous.yaw_rad,
+                    previous.direction,
+                    state.steer_rad,
+                )
+            )
+            stop_indices.update((len(states) - 2, len(states) - 1))
+        states.append(state)
+    return states, stop_indices
 
 
 def _plan_guided_approach(

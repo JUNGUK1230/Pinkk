@@ -1,7 +1,7 @@
 """검증된 Hybrid A* trajectory 파일을 ROS 2 토픽으로 발행한다.
 
 `/pinkk/planned_path`는 Pure Pursuit 같은 표준 path follower용 Pose 경로이고,
-`/pinkk/planned_trajectory`는 direction·속도·조향까지 포함한 제어용 행렬이다.
+`/pinkk/planned_trajectory`는 x·y·yaw·direction만 포함한 경로 행렬이다.
 이 노드는 명령을 직접 실행하지 않고, 검증을 통과해 저장된 경로만 발행한다.
 """
 
@@ -24,9 +24,6 @@ TRAJECTORY_FIELDS = (
     "y_m",
     "yaw_rad",
     "direction",
-    "target_speed_mps",
-    "steer_rad",
-    "stop_required",
 )
 
 
@@ -49,15 +46,7 @@ def load_validated_trajectory(path: str | Path) -> dict[str, Any]:
     for index, row in enumerate(path_rows):
         if not isinstance(row, dict):
             raise ValueError(f"trajectory row {index} is not an object")
-        required = (
-            "x_cm",
-            "y_cm",
-            "yaw_rad",
-            "direction",
-            "target_speed_mps",
-            "steer_deg",
-            "stop_required",
-        )
+        required = ("x_cm", "y_cm", "yaw_rad", "direction")
         if any(key not in row for key in required):
             raise ValueError(f"trajectory row {index} misses required fields")
         if int(row["direction"]) not in (-1, 1):
@@ -75,9 +64,6 @@ def trajectory_matrix(payload: dict[str, Any]) -> list[float]:
                 float(row["y_cm"]) / 100.0,
                 float(row["yaw_rad"]),
                 float(row["direction"]),
-                float(row["target_speed_mps"]),
-                math.radians(float(row["steer_deg"])),
-                float(row["stop_required"]),
             )
         )
     return matrix

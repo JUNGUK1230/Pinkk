@@ -34,6 +34,40 @@
 | `scripts/test_trajectory_profile.py` | 곡률 기반 속도와 기어 전환 정지점 계산을 검사합니다. |
 | `scripts/test_trajectory_validator.py` | 정상·비정상 trajectory의 안전 차단 조건을 검사합니다. |
 | `scripts/test_path_publisher.py` | 경로·차량 pose ROS message 변환과 stale 차단을 검사합니다. |
+| `scripts/test_fixed_mission_routes.py` | 출발지·주차면·충전면·도착지 사이의 고정 단방향 mission route를 생성하고 Camera BEV에 표시합니다. |
+| `scripts/test_fixed_route_selector.py` | 검출된 현재 차량 pose에서 호환되는 고정 경로를 선택하고 가장 가까운 지점부터 이어지는지 검사합니다. |
+
+## 고정 mission route
+
+`config/fixed_mission_routes.yaml`은 다음 이동 관계를 허용합니다.
+
+- `START` → `P10`~`P6` 또는 `C1`~`C2`
+- `P10`~`P6` → `C1`~`C2`
+- `C1`~`C2` → `P1`~`P5`
+- `P1`~`P5` → `EXIT`
+
+슬롯에서 출차할 때는 검증된 주차 maneuver를 반대로 따라 전진하고, 목표
+슬롯에서는 도로 중앙선 staging에서 단일 후진 maneuver로 진입합니다.
+
+```bash
+python3 scripts/test_fixed_mission_routes.py --source START --target C2
+python3 scripts/test_fixed_mission_routes.py --source P6 --target C1
+python3 scripts/test_fixed_mission_routes.py --check-all
+python3 scripts/test_fixed_mission_routes.py --generate-all
+```
+
+기본 출력은 제어 입력용 CSV이며, 진단 이미지가 필요할 때만
+`--save-image`를 추가합니다.
+
+실시간 route selector는 localization의 rear-axle pose로 현재 위치가
+`START` 또는 어느 주차면인지 판별한 뒤, 해당 source에서 목표로 가는 전체
+고정 경로를 선택합니다. 차량이 도로 이동 중인 `TRANSIT` 상태에서는 새로운
+경로 생성을 시작하지 않습니다.
+
+YOLO vehicle center가 주차면 안에 있으면 그 slot의 고정 goal yaw를 사용하고,
+그 외 초기 위치에서는 START yaw를 사용합니다. 별도의 ego-front 클릭 없이
+선택된 경로는 `/pinkk/planned_path`와 `/pinkk/planned_trajectory`로 바로
+발행되며 trajectory 행렬 필드는 `x_m, y_m, yaw_rad, direction` 네 개입니다.
 
 ## 통합 실행과 진단 출력
 

@@ -88,6 +88,8 @@ def main() -> int:
                     "free_slot": rectangle(900.0, 400.0, 150.0, 160.0).tolist(),
                     "C1": rectangle(1200.0, 300.0, 150.0, 160.0).tolist(),
                     "C2": rectangle(1200.0, 600.0, 150.0, 160.0).tolist(),
+                    "P1": rectangle(1500.0, 600.0, 80.0, 120.0).tolist(),
+                    "P2": rectangle(1400.0, 600.0, 80.0, 120.0).tolist(),
                 }
             ),
             encoding="utf-8",
@@ -495,6 +497,50 @@ def main() -> int:
         assert episode_scene.charge_assignment.target_slot_name == "C2"
         assert episode_scene.planning_request is not None
         assert episode_scene.planning_request.slot_name == "C2"
+
+        # C2에 실제로 도착한 ego가 space 충전 완료 이벤트를 받으면, 아직
+        # 화면상 C2에 있어도 C2 재계획 대신 P1~P5 대기 주차 단계로 전환한다.
+        post_charge_policy = ParkingAssignmentPolicy(
+            name="charge_to_exit",
+            reference_bev_px=(1600.0, 600.0),
+            allowed_slots=("P1", "P2"),
+            preference="nearest",
+            candidate_limit=2,
+        )
+        post_charge_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(1200.0, 600.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        post_charge_localizer = SceneLocalizer(
+            post_charge_tracker,
+            parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=entry_policy,
+            post_charge_parking_assignment=post_charge_policy,
+        )
+        c2_ego = detection((1200.0, 600.0), 0.95, 100.0, 70.0, track_id=42)
+        charging_scene = post_charge_localizer.observe(
+            [c2_ego], (800, 1600), frame_index=14, observed_at_unix_sec=104.0
+        )
+        assert charging_scene.planning_request is None
+        completed, message = post_charge_localizer.complete_charging(
+            42, charging_scene.tracked_vehicles
+        )
+        assert completed and "충전이 완료되었습니다" in message
+        post_charge_scene = post_charge_localizer.observe(
+            [c2_ego], (800, 1600), frame_index=15, observed_at_unix_sec=104.1
+        )
+        assert post_charge_scene.planning_request is not None
+        assert post_charge_scene.planning_request.slot_name == "P1", (
+            post_charge_scene.planning_request.slot_name,
+            post_charge_scene.planning_request.candidate_slot_names,
+        )
+        assert post_charge_scene.planning_request.assignment_policy == "charge_to_exit"
 
         line_image = np.zeros((100, 120, 3), dtype=np.uint8)
         skipped = _draw_continuous_path(
