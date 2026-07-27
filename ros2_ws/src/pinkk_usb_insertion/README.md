@@ -9,29 +9,34 @@
 
 ## 현재 상태
 
-현재 버전은 인지 인터페이스, solvePnP, PBVS 계산과 승인형 Cartesian 실행 기반까지
-구현한 상태입니다. 실제 로봇 브리지와 이후 단계는 아래 상태를 구분해 확인합니다.
+현재 버전은 USB 카메라와 CUDA YOLO Pose 추론, solvePnP, PBVS 목표 계산까지 실제
+데이터로 확인했습니다. 로봇 명령 큐 초기화와 실행 게이트도 실기에서 확인했지만,
+MyCobot의 직접 `send_coords(mode=1)`는 X 1 mm 시험에서 Z가 4.5 mm 이탈하여
+고정-Z 제어 경로로 사용을 중단했습니다. 다음 실행 백엔드는 MoveIt IK와 검증된
+관절 waypoint 방식으로 교체할 예정입니다.
 
 | 영역 | 현재 상태 |
 |---|---|
 | 카메라 내부 파라미터 | 실제 보정 결과 반영 |
 | Hand-eye 변환 | Easy Handeye2 결과 반영 |
-| YOLO keypoint 입력 | custom detection 토픽 구독 구조 구현 |
+| YOLO keypoint 입력 | `/dev/video2`, `usb_01.pt`, CUDA 추론과 ROS 토픽 연결 확인 |
 | 수동 네 점 입력 | 동일 detection 메시지를 만드는 테스트 노드 지원 |
-| solvePnP | 구현 |
-| 좌표변환 | 구현 |
-| 고정-Z PBVS XY 정렬 | 계산 노드와 승인형 최대 10 mm Cartesian 단발 실행기 구현 |
+| solvePnP | 18×8 mm 포트 모델로 유효 관측 발행 확인 |
+| 좌표변환 | Hand-eye와 로봇 TF를 포함한 PBVS DRY RUN 확인 |
+| 고정-Z PBVS XY 정렬 | 목표 계산 확인, 실제 실행 백엔드는 교체 필요 |
 | IBVS | 초기 XY P 제어 계산 함수 구현 |
 | 상태 머신 | DRY RUN 경로 구현 |
-| PBVS Cartesian 실제 실행 | `send_coords()` 연결, 노트북 테스트 완료, 실기 미검증 |
-| MoveIt 일반 trajectory 실행 | 마지막 관절 목표 방식이며 Cartesian 경로 추종용이 아님 |
+| MyCobot 명령 큐 안전 | fresh mode, stop, 정지 상태 조회와 실행 게이트 실기 확인 |
+| 직접 Cartesian 실제 실행 | `send_coords(mode=1)`에서 Z 이탈 확인, 사용 중단 |
+| MoveIt IK 실행 | 다음 구현 단계, 아직 실제 PBVS에 연결되지 않음 |
 | Plug TCP | 미보정 |
-| YOLO 추론 모델 | 외부 노드 연결 필요 |
+| YOLO 추론 모델 | 약 500장 학습 모델 연결, 추가 데이터 평가 필요 |
 | 실제 삽입 및 접촉 감지 | 미구현 |
 
-현재 기본 실행 모드는 `DRY RUN`입니다. PBVS Cartesian 경로는 소프트웨어로
-연결됐지만 launch에서 명시적으로 실행을 허용하지 않으면 로봇 bridge에 목표를
-보내지 않습니다. 새 브리지는 실제 로봇에서 아직 검증되지 않았습니다.
+현재 기본 실행 모드는 `DRY RUN`입니다. 관절과 Cartesian 실행 게이트는 기본적으로
+모두 닫혀 있습니다. 직접 Cartesian action은 코드와 안전 감시 검증용으로 남겨
+두지만, MoveIt IK 백엔드가 구현되고 1 mm 실기 검증을 통과하기 전에는 다시
+활성화하지 않습니다.
 
 ## 전체 처리 흐름
 
@@ -250,82 +255,26 @@ ros2 topic echo /robot_arm/pbvs/converged
 stop-and-go 시험에서만 사용합니다. YOLO 운용에서는 영상 timestamp에 해당하는
 TF를 사용하므로 두 컴퓨터의 clock 동기화가 필요합니다.
 
-### 사용자 승인형 최대 10 mm Cartesian 실제 시험
+### 직접 `send_coords()` 시험 결과와 현재 금지 상태
 
-실제 시험 launch는 명시적으로 실행기를 허용해야 합니다. 기본값은 항상
-`false`입니다.
+2026-07-27 실기에서 X +1 mm 목표를 `send_coords(mode=1)`로 보냈을 때
+MyCobot의 실제 Z가 4.5 mm 이탈했습니다. 정지 상태 `get_coords()`를 30회 읽은
+결과 모든 축의 span이 0이어서 측정 노이즈가 아니라 실제 제어 경로 문제로
+판정했습니다. 브리지의 Z 이탈 감시는 정상적으로 정지 명령을 수행했습니다.
 
-```bash
-ros2 launch pinkk_usb_insertion usb_insertion.launch.py \
-  use_manual_input:=true \
-  enable_pbvs_test_execution:=true
-```
+따라서 다음 항목을 적용합니다.
 
-로봇이 안전한 초기 관측 자세에 완전히 정지한 뒤 Z와 초기 자세 기준을 명시적으로
-한 번 캡처합니다. 기준이 없으면 PBVS 계산은 자동 거부됩니다.
+- `cartesian_execution_enabled=false` 유지
+- `enable_pbvs_test_execution=false` 유지
+- Z/Roll/Pitch 허용오차를 늘려 같은 시험을 우회하지 않음
+- `cartesian_smoke_test`는 DRY RUN 좌표 확인에만 사용
+- 실제 PBVS 이동은 MoveIt IK 백엔드가 준비된 후 재개
 
-```bash
-ros2 topic pub --once /robot_arm/pbvs/reference_command \
-  std_msgs/msg/String "{data: capture}"
-```
-
-캡처한 `z_lock`과 초기 자세는 모든 PBVS 반복에서 재사용하므로 매 이동의 작은
-Z·자세 오차가 다음 기준으로 누적되지 않습니다. 새 작업을 시작하거나 관측 자세를
-다시 잡았으면 먼저 초기화한 뒤 다시 캡처합니다.
-
-```bash
-ros2 topic pub --once /robot_arm/pbvs/reference_command \
-  std_msgs/msg/String "{data: reset}"
-```
-
-새 클릭으로 `converged=false` 목표가 나온 뒤 30초 안에 다음 명령을 한 번
-발행하면 최신 목표 하나만 실행합니다.
-
-```bash
-ros2 topic pub --once /robot_arm/pbvs/step_command \
-  std_msgs/msg/String "{data: execute_once}"
-```
-
-실행 상태를 클릭 전에 모니터링합니다.
-
-```bash
-ros2 topic echo /robot_arm/pbvs/execution_status
-```
-
-PBVS를 연결하기 전에 새 브리지 자체를 검증할 때는 `cartesian_smoke_test`를
-사용합니다. 이 도구는 현재 TF에서 X 또는 Y만 변경하며 기본값은 DRY RUN입니다.
-
-```bash
-ros2 run pinkk_usb_insertion cartesian_smoke_test \
-  --axis x --distance-mm 1
-```
-
-현재 pose와 목표 pose가 예상대로이고 로봇 주변이 비어 있을 때만 동일 명령에 실제
-실행 승인 두 개를 추가합니다.
-
-```bash
-ros2 run pinkk_usb_insertion cartesian_smoke_test \
-  --axis x --distance-mm 1 \
-  --speed 5 --execute --confirm MOVE
-```
-
-로봇 PC 브리지도 `cartesian_execution_enabled:=true`로 실행 중이어야 합니다.
-목표가 거부되면 우회하지 말고 브리지의 실행 게이트, 최대 이동량, frame과
-base/flange API 확인 로그를 점검합니다.
-
-실행기는 현재 TF와 목표를 다시 비교하여 XY 10 mm, Z 변화 0.5 mm, 자세 변화
-0.5도 제한을 검사합니다. 목표까지 최대 1 mm 간격의 고정-Z·고정자세 Cartesian
-waypoint를 만들고, 각 점에서 MoveIt 충돌검사 IK와 관절 점프 5도 제한을 모두
-사전검사합니다. 이 waypoint들은 안전 검사에만 사용하며 한 점씩 정지 이동하지
-않습니다.
-
-검사를 모두 통과하면 최종 `g_base` 기준 flange pose 하나를
-`/robot_arm/cartesian_move` action으로 보내고, 로봇 PC 브리지가
-`send_coords(..., speed=10, mode=1)`로 실행합니다. 브리지는 이동 중 실제
-`get_coords()`를 읽어 Z 2 mm 또는 Roll/Pitch 3도 이상 이탈하면 `stop()`하고,
-PBVS 실행기도 완료 후 TF의 Z·자세를 다시 검사합니다. 실행 후 목표를 폐기하므로
-다음 단계에는 반드시 새 YOLO 관측이 필요합니다. 현재 수동 클릭 입력은 기능 확인
-용도일 뿐 운영 입력으로 사용하지 않습니다.
+다음 백엔드는 현재 TF에서 X/Y 목표를 만들고, Z와 Roll/Pitch를 시작값으로 고정한
+뒤 MoveIt IK·충돌·관절 점프 검사를 통과한 짧은 관절 waypoint만 실행합니다.
+실행 중에는 실제 TF를 감시하고 Z 또는 Roll/Pitch가 제한을 넘으면 action을
+취소합니다. X/Y 각각 1 mm 왕복 시험을 통과하기 전에는 5 mm, 10 mm 또는 PBVS
+폐루프 시험으로 확대하지 않습니다.
 
 Yaw PBVS용 평면 긴 축 오차와 1회 2도 제한 계산은 준비되어 있지만 현재
 `yaw_pbvs.enabled=false`입니다. YOLO keypoint 순서와 실제 `T_flange_plug`를
@@ -358,6 +307,6 @@ ros2 topic echo /robot_arm/usb_insertion/state
 - 카메라가 크게 기울어진 자세에서는 base Z 고정 때문에 영상 오차 전체를 한 번에
   제거할 수 없으므로 반복 관측으로 수렴 여부를 확인해야 합니다.
 - 실제 실행은 launch의 `enable_pbvs_test_execution=true`를 명시해야만 허용됩니다.
-- Cartesian 실행은 노트북 단위 테스트만 통과했으며 실제 `pymycobot`과 로봇에서
-  아직 검증되지 않았습니다. 첫 검증은 장애물이 없는 자세에서 1 mm로 수행합니다.
+- 직접 Cartesian 실행은 실기에서 Z 이탈이 확인되어 현재 사용 금지입니다.
+- 다음 실기 검증은 MoveIt IK 백엔드의 X/Y 1 mm 왕복 시험부터 다시 시작합니다.
 - 기존 `usb_pre_approach`는 좌표 검증 실험이며 이 패키지의 실행기가 아닙니다.

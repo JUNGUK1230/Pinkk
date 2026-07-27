@@ -1,6 +1,6 @@
 # 진행 현황과 개발 체크리스트
 
-최종 갱신: 2026-07-21
+최종 갱신: 2026-07-27
 대상 브랜치: `robot_arm_1828`
 
 이 문서는 프로젝트의 현재 구현 범위, 아직 검증되지 않은 항목, 다음 작업 순서와
@@ -33,6 +33,47 @@ OBSERVE_POSE
 현재 PBVS 코드는 아직 초기 quaternion 전체를 고정하므로 Yaw 실행도 고정됩니다.
 위 표는 TCP와 YOLO 방향 검증 후 바꿀 최종 정책입니다.
 
+## 오늘 실기 검증 결과 (2026-07-27)
+
+### 오늘 확인한 것
+
+- [x] 로봇 PC와 노트북의 `robot_arm_1828` 동기화와 overlay 빌드
+- [x] MyCobot 명령 큐 초기화, fresh mode와 정지 상태 확인
+- [x] 관절/Cartesian 실행 게이트를 서로 독립적으로 차단
+- [x] 초기 관측 자세 이동과 장시간 자세 유지
+- [x] `/dev/video2` 카메라와 `usb_01.pt` CUDA 추론
+- [x] YOLO 네 keypoint, solvePnP, 유효 `UsbPortObservation` 발행
+- [x] RQT 디버그 영상과 ROS 토픽 통신
+- [x] PBVS DRY RUN에서 안정적인 X/Y 오차와 제한 step 계산
+- [x] ROS TF와 MyCobot `get_coords()` 비교
+- [x] 직접 Cartesian X +1 mm 실기 시험과 Z 이탈 안전 정지
+
+### 측정 결과
+
+```text
+ROS TF:       xyz ≈ [159, -66, 265] mm
+MyCobot FK:   xyz = [159.3, -66.1, 261.6] mm
+정적 차이:    Z 약 3.4 mm
+
+send_coords(mode=1), X +1 mm 시험:
+고정 Z 이탈 4.5 mm 감지 → 브리지 stop 및 실행 실패 처리
+
+정지 후 get_coords 30회:
+X/Y/Z/Roll/Pitch/Yaw span = 모두 0
+```
+
+따라서 4.5 mm는 측정 노이즈가 아니라 직접 Cartesian 실행에서 발생한 실제 좌표
+변화로 판정합니다. `send_coords()`의 허용오차를 키워 재시도하지 않습니다.
+
+### 현재 결정
+
+```text
+인지·solvePnP·PBVS 목표 계산: 계속 사용
+MyCobot send_coords 실행: 중단
+다음 실행 백엔드: MoveIt IK + 검증된 짧은 관절 waypoint
+현재 실행 게이트: joint=false, cartesian=false
+```
+
 ## 2. 현재 진행 현황
 
 ### 완료된 소프트웨어 작업
@@ -49,31 +90,33 @@ OBSERVE_POSE
 - [x] 최대 10 mm 고정-Z PBVS X/Y 목표 계산
 - [x] 목표까지 1 mm 간격 waypoint를 이용한 IK·충돌·관절 점프 사전검사
 - [x] `/robot_arm/cartesian_move` action 정의
-- [x] 브리지의 `send_coords()` Cartesian 실행 경로
+- [x] 브리지의 `send_coords()` 진단 경로와 실행 게이트
 - [x] 실행 중 Z 및 Roll/Pitch 이탈 감시와 timeout 정지
 - [x] joint action과 Cartesian action의 동시 실행 차단
 - [x] Yaw 오차와 최대 2도 제한 계산 함수
 - [x] 초기 IBVS XY P 제어 계산 함수
 - [x] 상위 삽입 상태 이름과 DRY RUN 전이 골격
-- [x] 노트북 `install_pinkk` 빌드
-- [x] 단위 테스트 28개 통과
+- [x] MyCobot 명령 큐 fresh mode·stop·정지 확인
+- [x] CUDA YOLO Pose 노드와 디버그 영상
+- [x] 노트북과 로봇 PC `install_pinkk` 빌드
+- [x] bridge·insertion·hand-eye 단위 테스트 63개 통과
 
 ### 구현됐지만 실제 장비 검증이 필요한 작업
 
-- [ ] 로봇 PC `pymycobot`에서 `send_coords(..., mode=1)` 동작 확인
-- [ ] ROS `g_base` pose와 `get_coords()` base/flange pose 일치 확인
+- [x] 로봇 PC `send_coords(..., mode=1)` 시험: Z 이탈로 사용 부적합 판정
+- [x] ROS TF와 `get_coords()` 비교: Z 약 3.4 mm 정적 차이 확인
 - [ ] Cartesian X/Y 1 mm 방향·반복성 검증
 - [ ] Cartesian X/Y 5 mm 검증
 - [ ] Cartesian X/Y 10 mm 검증
-- [ ] 이동 중 Z 2 mm 및 Roll/Pitch 3도 감시가 실제로 정지시키는지 확인
+- [x] 이동 중 Z 이탈 감시와 실제 정지 확인
 - [ ] action cancel과 timeout에서 `stop()` 동작 확인
 - [ ] 이전에 발생한 전방 기울기와 Z 이동이 재발하지 않는지 확인
 
 ### 아직 구현 또는 연결되지 않은 작업
 
-- [ ] YOLO keypoint 데이터셋
-- [ ] YOLO 모델 학습과 평가
-- [ ] `yolo_keypoint_node`
+- [x] 약 500장 YOLO keypoint 데이터셋과 1차 모델 학습
+- [x] `usb_01.pt` CUDA 추론과 `yolo_keypoint_node`
+- [ ] 추가 촬영 세션을 포함한 모델 정량 평가와 재학습
 - [ ] 다중 프레임 pose 안정화 필터
 - [ ] 검출 소실 시 정지·후퇴 연동
 - [ ] `T_flange_plug_tip` TCP 보정
@@ -107,48 +150,95 @@ PBVS 실제 실행은 설정 파일과 별도로 launch 인자
 `enable_pbvs_test_execution=true`를 명시해야 합니다. 실제 삽입은 구현되지 않았고
 허용해서도 안 됩니다.
 
-## 3. 다음 작업일 우선순위
+## 3. 다음 작업 순서
 
-### A. 노트북과 로봇 PC 동기화
+### A. 직접 Cartesian 경로 봉인
 
-- [ ] 두 장치에서 `robot_arm_1828` checkout
-- [ ] `git pull --ff-only origin robot_arm_1828`
-- [ ] `git rev-parse --short HEAD` 값 일치 확인
-- [ ] 로봇 PC에서 `pinkk_usb_insertion_interfaces`, `pinkk_mycobot_bridge` 빌드
-- [ ] 노트북에서 `scripts/calibration/laptop_build_pinkk.sh` 실행
-- [ ] 양쪽 `ROS_DOMAIN_ID=36`, `ROS_LOCALHOST_ONLY=0` 확인
+- [x] 기본 `cartesian_execution_enabled=false`
+- [x] Z 이탈 시 stop과 실패 처리 확인
+- [ ] 운영 launch와 실행 문서에서 `send_coords()`를 진단용으로만 표시
+- [ ] PBVS step executor가 직접 Cartesian action을 호출하지 않도록 실행 경로 분리
 
-### B. Cartesian 브리지 무이동 검사
+### B. MoveIt IK 고정-Z 실행 백엔드 구현
 
-- [ ] Jupyter, 기존 bridge 등 `/dev/ttyUSB0` 사용 프로세스 종료
-- [ ] `sudo lsof /dev/ttyUSB0`로 단독 소유 확인
-- [ ] 로봇 PC에서 `trajectory_bridge.launch.py` 실행
-- [ ] 로그에 `Cartesian send_coords action 준비` 표시 확인
-- [ ] reference frame=base(0), end type=flange(0) 확인
-- [ ] 노트북에서 `/robot_arm/cartesian_move` action 발견 확인
-- [ ] `/joint_states` 갱신 확인
-- [ ] `g_base → joint6_flange` TF 갱신 확인
+```text
+현재 g_base → joint6_flange TF
+→ 목표 X/Y만 변경
+→ 현재 Z/Roll/Pitch 복사
+→ MoveIt IK
+→ 충돌 및 관절 점프 검사
+→ 짧은 FollowJointTrajectory
+→ 실행 중 TF 감시
+→ 정지 후 최종 pose 검증
+```
 
-### C. Cartesian smoke test
+- [ ] 현재 TF와 목표 TF를 함께 기록
+- [ ] IK 해가 현재 관절 자세와 가까운지 검사
+- [ ] 예상 FK의 Z/Roll/Pitch가 lock 기준 안인지 검사
+- [ ] joint waypoint 최대 변화량과 속도 제한
+- [ ] 실행 중 Z 1 mm, Roll/Pitch 1도 초기 감시 기준 적용
+- [ ] TF stale, action timeout, 취소에서 즉시 stop
+- [ ] 기본 DRY RUN과 이중 실행 승인 유지
 
-첫 시험에서는 포트나 차량 가까이에서 실행하지 않습니다.
+### C. MoveIt IK 1 mm 실기 검증
 
-- [x] 현재 pose를 읽어 X 또는 Y만 0.1~10 mm 바꾸는 승인형 시험 클라이언트 작성
-- [ ] X +1 mm, X -1 mm 시험
-- [ ] Y +1 mm, Y -1 mm 시험
-- [ ] 매 시험 후 원래 관측 pose 복귀
-- [ ] 목표와 실제 X/Y/Z/Roll/Pitch/Yaw 기록
-- [ ] 1 mm 반복 시험을 통과한 경우에만 5 mm 시험
-- [ ] 5 mm 반복 시험을 통과한 경우에만 10 mm 시험
-- [ ] cancel, timeout, Z/Roll/Pitch 이탈 정지 시험
+- [ ] 장애물이 없는 초기 관측 자세에서 X +1 mm
+- [ ] 초기 관측 자세 복귀 후 X -1 mm
+- [ ] 초기 관측 자세 복귀 후 Y +1 mm
+- [ ] 초기 관측 자세 복귀 후 Y -1 mm
+- [ ] 각 시험의 실제 ΔX/Y/Z/Roll/Pitch/Yaw 기록
+- [ ] 3회 이상 반복해 방향과 편차 확인
+- [ ] 1 mm 시험 통과 전 5 mm와 PBVS 실행 금지
 
 통과 기준:
 
 - 명령 축과 실제 이동 방향 일치
-- 관절이 다른 IK branch로 급변하지 않음
-- 카메라가 급격히 기울지 않음
-- Z와 Roll/Pitch가 설정된 안전 범위 안에 있음
-- serial 오류 없이 실제 pose feedback 수신
+- |ΔZ| ≤ 1 mm
+- |ΔRoll|, |ΔPitch| ≤ 1도
+- 급격한 IK branch 변경 없음
+- 지연 이동과 잔류 명령 없음
+- action 종료 후 자세 유지
+
+### D. YOLO pose 안정화와 PBVS DRY RUN
+
+- [ ] 정지 상태 100프레임 위치·Yaw 분산 기록
+- [ ] confidence·재투영 오차·pose 이상치 필터
+- [ ] 검출 소실과 stale observation 차단 시험
+- [ ] X/Y 부호와 MoveIt IK 목표 방향 비교
+- [ ] 한 프레임이 아닌 안정 구간으로 PBVS step 생성
+
+### E. PBVS 실제 폐루프
+
+- [ ] 최초 최대 step 1 mm로 시작
+- [ ] 정지 → 새 YOLO → 재계산 방식 유지
+- [ ] X/Y 오차 감소 방향을 매 step 확인
+- [ ] 3회 이상 정상 감소 후 최대 3~5 mm 검토
+- [ ] 카메라 중심 기준 1 mm 내 반복성 기록
+- [ ] 통과 후 TCP, Yaw, PRE_INSERT 순서로 진행
+
+### 이후 큰 흐름
+
+```text
+MoveIt IK 고정-Z 검증
+→ YOLO pose 안정화
+→ 카메라 중심 PBVS 폐루프
+→ TCP offset 보정
+→ X/Y/Yaw plug-tip PBVS
+→ PRE_INSERT
+→ 필요 시 IBVS-PD
+→ 1~2 mm 단계 삽입
+→ 연결 신호 또는 실패 후퇴
+```
+
+### 매 작업일 공통 시작 확인
+
+- [ ] 양쪽 장치가 같은 `robot_arm_1828` 커밋인지 확인
+- [ ] 로봇 PC에서 bridge/interface, 노트북에서 전체 overlay 빌드
+- [ ] `ROS_DOMAIN_ID=36`, Fast DDS와 SUBNET discovery 일치
+- [ ] `/dev/ttyUSB0`는 로봇 브리지 한 프로세스만 소유
+- [ ] `/joint_states`와 `g_base → joint6_flange` TF 갱신 확인
+- [ ] 실기 전 관절/Cartesian 실행 게이트가 모두 `false`인지 확인
+- [ ] 필요한 시험 게이트 하나만 열고 종료 후 다시 모두 차단
 
 ## 4. YOLO keypoint 데이터셋
 
@@ -428,6 +518,9 @@ PBVS 단발 시험도 launch 인자를 명시적으로 열기 전에는 실행�
 cartesian_execution_enabled=false  → Cartesian action goal 거부
 cartesian_execution_enabled=true   → 제한 검사를 통과한 goal만 send_coords 실행
 ```
+
+현재 `cartesian_execution_enabled=true`는 직접 Cartesian 경로의 진단에만 해당하며,
+2026-07-27 Z 이탈 결과 때문에 운영 또는 PBVS 시험에서는 사용하지 않습니다.
 
 체크리스트:
 
