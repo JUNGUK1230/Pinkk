@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 
 def _required_method(robot: object, name: str):
     method = getattr(robot, name, None)
@@ -15,20 +17,43 @@ def _require_success(name: str, response: object) -> None:
         raise RuntimeError(f'{name}() 실패 응답: {response!r}')
 
 
+def _require_stopped(
+    robot: object,
+    *,
+    attempts: int = 5,
+    interval_seconds: float = 0.1,
+) -> None:
+    """응답 없는 stop 명령 대신 실제 이동 상태를 조회해 정지를 확인한다."""
+    is_moving = _required_method(robot, 'is_moving')
+    responses: list[object] = []
+    for attempt in range(attempts):
+        response = is_moving()
+        responses.append(response)
+        if response in (False, 0):
+            return
+        if attempt + 1 < attempts:
+            time.sleep(interval_seconds)
+    raise RuntimeError(
+        f'stop 확인 실패: is_moving() 응답={responses!r}'
+    )
+
+
 def prepare_command_queue(robot: object) -> None:
     """기존 이동을 정지·삭제하고 항상 최신 명령만 실행하도록 설정한다."""
-    _require_success('stop', _required_method(robot, 'stop')())
+    # pymycobot의 stop()과 set_fresh_mode()는 펌웨어에 따라 성공 응답을
+    # 반환하지 않는다. 명령은 전송하고, 각각 is_moving()/get_fresh_mode()로
+    # 실제 상태를 확인한다.
+    _required_method(robot, 'stop')()
     _require_success('clear_queue', _required_method(robot, 'clear_queue')())
-    _require_success(
-        'set_fresh_mode',
-        _required_method(robot, 'set_fresh_mode')(1),
-    )
+    _required_method(robot, 'set_fresh_mode')(1)
     mode = _required_method(robot, 'get_fresh_mode')()
     if mode not in (True, 1):
         raise RuntimeError(f'fresh mode 확인 실패: get_fresh_mode()={mode!r}')
+    _require_stopped(robot)
 
 
 def stop_and_clear_command_queue(robot: object) -> None:
     """현재 이동을 정지하고 남아 있는 모든 이동 명령을 삭제한다."""
-    _require_success('stop', _required_method(robot, 'stop')())
+    _required_method(robot, 'stop')()
     _require_success('clear_queue', _required_method(robot, 'clear_queue')())
+    _require_stopped(robot)
