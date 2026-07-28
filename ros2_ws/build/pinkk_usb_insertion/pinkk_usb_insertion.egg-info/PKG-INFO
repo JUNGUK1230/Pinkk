@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: pinkk-usb-insertion
+Version: 0.1.0
+Summary: USB-A 포트 인식, 접근, 영상 정렬 및 삽입을 위한 ROS 2 제어 패키지
+Maintainer: juwon
+Maintainer-email: juwon@example.com
+License: MIT

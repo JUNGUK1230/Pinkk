@@ -1,0 +1,24 @@
+[package]
+name = "pinkk_usb_insertion_interfaces"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rosidl_runtime_rs = "0.6"
+serde = { version = "1", optional = true, features = ["derive"] }
+serde-big-array = { version = "0.5.1", optional = true }
+
+# ROS Dependencies
+std_msgs = "*"
+builtin_interfaces = "*"
+vision_msgs = "*"
+geometry_msgs = "*"
+action_msgs = "*"
+service_msgs = "*"
+unique_identifier_msgs = "*"
+
+[features]
+serde = ['dep:serde', 'dep:serde-big-array', 'rosidl_runtime_rs/serde', 'std_msgs/serde', 'builtin_interfaces/serde', 'vision_msgs/serde', 'geometry_msgs/serde', 'action_msgs/serde', 'service_msgs/serde', 'unique_identifier_msgs/serde']
+
+[package.metadata.ros-env]
+include = true

@@ -1,0 +1,8 @@
+[0.000000] (-) TimerEvent: {}
+[0.000307] (-) JobUnselected: {'identifier': 'pinkk_handeye_automation'}
+[0.000357] (-) JobUnselected: {'identifier': 'pinkk_mycobot_bridge'}
+[0.000501] (-) JobUnselected: {'identifier': 'pinkk_usb_insertion_interfaces'}
+[0.000547] (pinkk_usb_insertion) JobQueued: {'identifier': 'pinkk_usb_insertion', 'dependencies': OrderedDict({'pinkk_usb_insertion_interfaces': '/home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion_interfaces'})}
+[0.000584] (pinkk_usb_insertion) JobStarted: {'identifier': 'pinkk_usb_insertion'}
+[0.007055] (pinkk_usb_insertion) JobEnded: {'identifier': 'pinkk_usb_insertion', 'rc': 1}
+[0.017729] (-) EventReactorShutdown: {}

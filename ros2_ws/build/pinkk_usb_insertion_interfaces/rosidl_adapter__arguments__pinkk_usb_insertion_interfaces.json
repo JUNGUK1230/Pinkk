@@ -1,0 +1,10 @@
+{
+  "package_name": "pinkk_usb_insertion_interfaces",
+  "non_idl_tuples": [
+    "/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion_interfaces:action/CartesianMove.action",
+    "/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion_interfaces:msg/Keypoint2D.msg",
+    "/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion_interfaces:msg/UsbPortDetection.msg",
+    "/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion_interfaces:msg/UsbPortDetectionArray.msg",
+    "/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion_interfaces:msg/UsbPortObservation.msg"
+  ]
+}

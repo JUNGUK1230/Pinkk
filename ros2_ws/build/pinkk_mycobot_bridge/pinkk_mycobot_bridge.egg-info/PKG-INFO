@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: pinkk-mycobot-bridge
+Version: 0.1.0
+Summary: MyCobot280 state, ChArUco TF and simple MoveIt execution bridge.
+Maintainer: juwon
+Maintainer-email: juwon@example.com
+License: MIT

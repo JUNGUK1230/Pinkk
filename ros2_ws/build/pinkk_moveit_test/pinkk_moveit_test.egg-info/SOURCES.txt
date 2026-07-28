@@ -1,0 +1,16 @@
+package.xml
+setup.cfg
+setup.py
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/PKG-INFO
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/dependency_links.txt
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/entry_points.txt
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/requires.txt
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/top_level.txt
+../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/zip-safe
+pinkk_moveit_test/__init__.py
+pinkk_moveit_test/joint_move_test.py
+resource/pinkk_moveit_test
+test/test_copyright.py
+test/test_flake8.py
+test/test_pep257.py

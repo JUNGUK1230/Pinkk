@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/planning_only.launch.py

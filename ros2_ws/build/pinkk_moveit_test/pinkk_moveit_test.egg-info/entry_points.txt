@@ -1,0 +1,2 @@
+[console_scripts]
+joint_move_test = pinkk_moveit_test.joint_move_test:main

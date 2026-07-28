@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_cmake/rosidl_cmake_export_typesupport_targets-extras.cmake

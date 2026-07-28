@@ -1,0 +1,274 @@
+// generated from rosidl_generator_c/resource/idl__functions.c.em
+// with input from pinkk_usb_insertion_interfaces:msg/Keypoint2D.idl
+// generated code does not contain a copyright notice
+#include "pinkk_usb_insertion_interfaces/msg/detail/keypoint2_d__functions.h"
+
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "rcutils/allocator.h"
+
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__init(pinkk_usb_insertion_interfaces__msg__Keypoint2D * msg)
+{
+  if (!msg) {
+    return false;
+  }
+  // index
+  // x
+  // y
+  // confidence
+  // visible
+  return true;
+}
+
+void
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__fini(pinkk_usb_insertion_interfaces__msg__Keypoint2D * msg)
+{
+  if (!msg) {
+    return;
+  }
+  // index
+  // x
+  // y
+  // confidence
+  // visible
+}
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__are_equal(const pinkk_usb_insertion_interfaces__msg__Keypoint2D * lhs, const pinkk_usb_insertion_interfaces__msg__Keypoint2D * rhs)
+{
+  if (!lhs || !rhs) {
+    return false;
+  }
+  // index
+  if (lhs->index != rhs->index) {
+    return false;
+  }
+  // x
+  if (lhs->x != rhs->x) {
+    return false;
+  }
+  // y
+  if (lhs->y != rhs->y) {
+    return false;
+  }
+  // confidence
+  if (lhs->confidence != rhs->confidence) {
+    return false;
+  }
+  // visible
+  if (lhs->visible != rhs->visible) {
+    return false;
+  }
+  return true;
+}
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__copy(
+  const pinkk_usb_insertion_interfaces__msg__Keypoint2D * input,
+  pinkk_usb_insertion_interfaces__msg__Keypoint2D * output)
+{
+  if (!input || !output) {
+    return false;
+  }
+  // index
+  output->index = input->index;
+  // x
+  output->x = input->x;
+  // y
+  output->y = input->y;
+  // confidence
+  output->confidence = input->confidence;
+  // visible
+  output->visible = input->visible;
+  return true;
+}
+
+pinkk_usb_insertion_interfaces__msg__Keypoint2D *
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__create(void)
+{
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  pinkk_usb_insertion_interfaces__msg__Keypoint2D * msg = (pinkk_usb_insertion_interfaces__msg__Keypoint2D *)allocator.allocate(sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D), allocator.state);
+  if (!msg) {
+    return NULL;
+  }
+  memset(msg, 0, sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D));
+  bool success = pinkk_usb_insertion_interfaces__msg__Keypoint2D__init(msg);
+  if (!success) {
+    allocator.deallocate(msg, allocator.state);
+    return NULL;
+  }
+  return msg;
+}
+
+void
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__destroy(pinkk_usb_insertion_interfaces__msg__Keypoint2D * msg)
+{
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  if (msg) {
+    pinkk_usb_insertion_interfaces__msg__Keypoint2D__fini(msg);
+  }
+  allocator.deallocate(msg, allocator.state);
+}
+
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__init(pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * array, size_t size)
+{
+  if (!array) {
+    return false;
+  }
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  pinkk_usb_insertion_interfaces__msg__Keypoint2D * data = NULL;
+
+  if (size) {
+    if (size > SIZE_MAX / sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D)) {
+      return false;
+    }
+    data = (pinkk_usb_insertion_interfaces__msg__Keypoint2D *)allocator.zero_allocate(size, sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D), allocator.state);
+    if (!data) {
+      return false;
+    }
+    // initialize all array elements
+    size_t i;
+    for (i = 0; i < size; ++i) {
+      bool success = pinkk_usb_insertion_interfaces__msg__Keypoint2D__init(&data[i]);
+      if (!success) {
+        break;
+      }
+    }
+    if (i < size) {
+      // if initialization failed finalize the already initialized array elements
+      for (; i > 0; --i) {
+        pinkk_usb_insertion_interfaces__msg__Keypoint2D__fini(&data[i - 1]);
+      }
+      allocator.deallocate(data, allocator.state);
+      return false;
+    }
+  }
+  array->data = data;
+  array->size = size;
+  array->capacity = size;
+  return true;
+}
+
+void
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__fini(pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * array)
+{
+  if (!array) {
+    return;
+  }
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+
+  if (array->data) {
+    // ensure that data and capacity values are consistent
+    assert(array->capacity > 0);
+    // finalize all array elements
+    for (size_t i = 0; i < array->capacity; ++i) {
+      pinkk_usb_insertion_interfaces__msg__Keypoint2D__fini(&array->data[i]);
+    }
+    allocator.deallocate(array->data, allocator.state);
+    array->data = NULL;
+    array->size = 0;
+    array->capacity = 0;
+  } else {
+    // ensure that data, size, and capacity values are consistent
+    assert(0 == array->size);
+    assert(0 == array->capacity);
+  }
+}
+
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence *
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__create(size_t size)
+{
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * array = (pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence *)allocator.allocate(sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence), allocator.state);
+  if (!array) {
+    return NULL;
+  }
+  bool success = pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__init(array, size);
+  if (!success) {
+    allocator.deallocate(array, allocator.state);
+    return NULL;
+  }
+  return array;
+}
+
+void
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__destroy(pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * array)
+{
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  if (array) {
+    pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__fini(array);
+  }
+  allocator.deallocate(array, allocator.state);
+}
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__are_equal(const pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * lhs, const pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * rhs)
+{
+  if (!lhs || !rhs) {
+    return false;
+  }
+  if (lhs->size != rhs->size) {
+    return false;
+  }
+  for (size_t i = 0; i < lhs->size; ++i) {
+    if (!pinkk_usb_insertion_interfaces__msg__Keypoint2D__are_equal(&(lhs->data[i]), &(rhs->data[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool
+pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence__copy(
+  const pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * input,
+  pinkk_usb_insertion_interfaces__msg__Keypoint2D__Sequence * output)
+{
+  if (!input || !output) {
+    return false;
+  }
+  if (output->capacity < input->size) {
+    if (input->size > SIZE_MAX / sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D)) {
+      return false;
+    }
+    const size_t allocation_size =
+      input->size * sizeof(pinkk_usb_insertion_interfaces__msg__Keypoint2D);
+    rcutils_allocator_t allocator = rcutils_get_default_allocator();
+    pinkk_usb_insertion_interfaces__msg__Keypoint2D * data =
+      (pinkk_usb_insertion_interfaces__msg__Keypoint2D *)allocator.reallocate(
+      output->data, allocation_size, allocator.state);
+    if (!data) {
+      return false;
+    }
+    // If reallocation succeeded, memory may or may not have been moved
+    // to fulfill the allocation request, invalidating output->data.
+    output->data = data;
+    for (size_t i = output->capacity; i < input->size; ++i) {
+      if (!pinkk_usb_insertion_interfaces__msg__Keypoint2D__init(&output->data[i])) {
+        // If initialization of any new item fails, roll back
+        // all previously initialized items. Existing items
+        // in output are to be left unmodified.
+        for (; i-- > output->capacity; ) {
+          pinkk_usb_insertion_interfaces__msg__Keypoint2D__fini(&output->data[i]);
+        }
+        return false;
+      }
+    }
+    output->capacity = input->size;
+  }
+  output->size = input->size;
+  for (size_t i = 0; i < input->size; ++i) {
+    if (!pinkk_usb_insertion_interfaces__msg__Keypoint2D__copy(
+        &(input->data[i]), &(output->data[i])))
+    {
+      return false;
+    }
+  }
+  return true;
+}

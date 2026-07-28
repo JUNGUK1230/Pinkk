@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_generator_c/pinkk_usb_insertion_interfaces/msg/rosidl_generator_c__visibility_control.h

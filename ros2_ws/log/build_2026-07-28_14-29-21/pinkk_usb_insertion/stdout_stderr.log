@@ -1,0 +1,46 @@
+running develop
+running egg_info
+creating pinkk_usb_insertion.egg-info
+writing pinkk_usb_insertion.egg-info/PKG-INFO
+writing dependency_links to pinkk_usb_insertion.egg-info/dependency_links.txt
+writing entry points to pinkk_usb_insertion.egg-info/entry_points.txt
+writing requirements to pinkk_usb_insertion.egg-info/requires.txt
+writing top-level names to pinkk_usb_insertion.egg-info/top_level.txt
+writing manifest file 'pinkk_usb_insertion.egg-info/SOURCES.txt'
+reading manifest file 'pinkk_usb_insertion.egg-info/SOURCES.txt'
+writing manifest file 'pinkk_usb_insertion.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/python3.12/site-packages/pinkk-usb-insertion.egg-link (link to .)
+Installing arm_motion_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing camera_publisher_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing cartesian_smoke_test script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing manual_detection_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing pbvs_alignment_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing pbvs_step_executor_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing port_pose_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing usb_insertion_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+Installing yolo_keypoint_node script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/lib/pinkk_usb_insertion
+
+Installed /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion
+running symlink_data
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/ament_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/ament_index/resource_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/resource/pinkk_usb_insertion -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/README.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/launch/usb_insertion.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/launch/usb_perception.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/launch
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/config/insertion_control.yaml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/config/tool_transform.yaml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/config/camera_intrinsics.yaml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/config/handeye.yaml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/config/README_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/config
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/01_ARCHITECTURE_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/04_SAFETY_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/02_COORDINATE_FRAMES_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/03_NODES_AND_TOPICS_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/05_DEVELOPMENT_ROADMAP_KO.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_usb_insertion/share/pinkk_usb_insertion/docs

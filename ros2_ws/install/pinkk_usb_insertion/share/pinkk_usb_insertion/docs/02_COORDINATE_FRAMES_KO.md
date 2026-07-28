@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/02_COORDINATE_FRAMES_KO.md

@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_typesupport_fastrtps_c/pinkk_usb_insertion_interfaces/msg/detail/usb_port_detection_array__rosidl_typesupport_fastrtps_c.h

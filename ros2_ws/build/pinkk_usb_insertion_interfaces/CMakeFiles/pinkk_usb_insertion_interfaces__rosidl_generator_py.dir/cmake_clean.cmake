@@ -1,0 +1,19 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/action/_cartesian_move_s.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/action/_cartesian_move_s.c.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_keypoint2_d_s.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_keypoint2_d_s.c.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_detection_array_s.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_detection_array_s.c.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_detection_s.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_detection_s.c.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_observation_s.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/msg/_usb_port_observation_s.c.o.d"
+  "libpinkk_usb_insertion_interfaces__rosidl_generator_py.pdb"
+  "libpinkk_usb_insertion_interfaces__rosidl_generator_py.so"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_generator_py.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

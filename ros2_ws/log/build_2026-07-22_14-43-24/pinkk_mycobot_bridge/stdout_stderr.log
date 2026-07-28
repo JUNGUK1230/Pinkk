@@ -1,0 +1,30 @@
+running develop
+running egg_info
+creating pinkk_mycobot_bridge.egg-info
+writing pinkk_mycobot_bridge.egg-info/PKG-INFO
+writing dependency_links to pinkk_mycobot_bridge.egg-info/dependency_links.txt
+writing entry points to pinkk_mycobot_bridge.egg-info/entry_points.txt
+writing requirements to pinkk_mycobot_bridge.egg-info/requires.txt
+writing top-level names to pinkk_mycobot_bridge.egg-info/top_level.txt
+writing manifest file 'pinkk_mycobot_bridge.egg-info/SOURCES.txt'
+reading manifest file 'pinkk_mycobot_bridge.egg-info/SOURCES.txt'
+writing manifest file 'pinkk_mycobot_bridge.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/lib/python3.12/site-packages/pinkk-mycobot-bridge.egg-link (link to .)
+Installing charuco_tf_publisher script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/lib/pinkk_mycobot_bridge
+Installing joint_state_publisher script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/lib/pinkk_mycobot_bridge
+Installing trajectory_bridge script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/lib/pinkk_mycobot_bridge
+
+Installed /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge
+running symlink_data
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/ament_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/ament_index/resource_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/resource/pinkk_mycobot_bridge -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/joint_state_bridge.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/charuco_tf_bridge.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/trajectory_bridge.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/real_execution.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_mycobot_bridge/launch/planning_only.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/launch

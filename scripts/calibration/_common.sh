@@ -37,9 +37,7 @@ setup_ros_network() {
 
 setup_ros_workspace() {
     source_required "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
-    source_required "${HOME}/mycobot_moveit_ws/install/setup.bash"
-    source_optional "${HOME}/mycobot_moveit_ws/install_bridge/setup.bash"
-    source_optional "${HOME}/mycobot_moveit_ws/install_pinkk/setup.bash"
+    source_required "${HOME}/Pinkk/ros2_ws/install/setup.bash"
     setup_ros_network
 }
 

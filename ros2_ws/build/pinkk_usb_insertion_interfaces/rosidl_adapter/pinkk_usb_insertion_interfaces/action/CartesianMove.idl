@@ -1,0 +1,35 @@
+// generated from rosidl_adapter/resource/action.idl.em
+// with input from pinkk_usb_insertion_interfaces/action/CartesianMove.action
+// generated code does not contain a copyright notice
+
+#include "geometry_msgs/msg/PoseStamped.idl"
+
+module pinkk_usb_insertion_interfaces {
+  module action {
+    struct CartesianMove_Goal {
+      geometry_msgs::msg::PoseStamped target;
+
+      int32 speed;
+
+      int32 mode;
+
+      boolean lock_z;
+
+      boolean lock_roll_pitch;
+    };
+    struct CartesianMove_Result {
+      boolean success;
+
+      string message;
+
+      geometry_msgs::msg::PoseStamped actual;
+    };
+    struct CartesianMove_Feedback {
+      geometry_msgs::msg::PoseStamped actual;
+
+      double position_error_m;
+
+      double orientation_error_deg;
+    };
+  };
+};

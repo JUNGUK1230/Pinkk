@@ -1,0 +1,9 @@
+source;share/pinkk_handeye_automation/hook/pythonpath.ps1
+source;share/pinkk_handeye_automation/hook/pythonpath.dsv
+source;share/pinkk_handeye_automation/hook/pythonpath.sh
+source;share/pinkk_handeye_automation/hook/ament_prefix_path.ps1
+source;share/pinkk_handeye_automation/hook/ament_prefix_path.dsv
+source;share/pinkk_handeye_automation/hook/ament_prefix_path.sh
+source;../../build/pinkk_handeye_automation/share/pinkk_handeye_automation/hook/pythonpath_develop.ps1
+source;../../build/pinkk_handeye_automation/share/pinkk_handeye_automation/hook/pythonpath_develop.dsv
+source;../../build/pinkk_handeye_automation/share/pinkk_handeye_automation/hook/pythonpath_develop.sh

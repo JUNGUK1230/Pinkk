@@ -1,0 +1,20 @@
+{
+  "package_name": "pinkk_usb_insertion_interfaces",
+  "output_dir": "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_generator_type_description/pinkk_usb_insertion_interfaces",
+  "idl_tuples": [
+    "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_adapter/pinkk_usb_insertion_interfaces:action/CartesianMove.idl",
+    "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_adapter/pinkk_usb_insertion_interfaces:msg/Keypoint2D.idl",
+    "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_adapter/pinkk_usb_insertion_interfaces:msg/UsbPortDetection.idl",
+    "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_adapter/pinkk_usb_insertion_interfaces:msg/UsbPortDetectionArray.idl",
+    "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_adapter/pinkk_usb_insertion_interfaces:msg/UsbPortObservation.idl"
+  ],
+  "include_paths": [
+    "geometry_msgs:/opt/ros/jazzy/share/geometry_msgs",
+    "std_msgs:/opt/ros/jazzy/share/std_msgs",
+    "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces",
+    "vision_msgs:/opt/ros/jazzy/share/vision_msgs",
+    "service_msgs:/opt/ros/jazzy/share/service_msgs",
+    "action_msgs:/opt/ros/jazzy/share/action_msgs",
+    "unique_identifier_msgs:/opt/ros/jazzy/share/unique_identifier_msgs"
+  ]
+}

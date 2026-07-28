@@ -1,0 +1,22 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from pinkk_usb_insertion_interfaces/msg/Keypoint2D.msg
+// generated code does not contain a copyright notice
+
+
+module pinkk_usb_insertion_interfaces {
+  module msg {
+    @verbatim (language="comment", text=
+      "YOLO가 검출한 하나의 2D keypoint.")
+    struct Keypoint2D {
+      uint8 index;
+
+      double x;
+
+      double y;
+
+      float confidence;
+
+      boolean visible;
+    };
+  };
+};

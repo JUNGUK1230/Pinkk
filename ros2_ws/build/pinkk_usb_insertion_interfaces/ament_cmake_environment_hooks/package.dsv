@@ -1,0 +1,4 @@
+source;share/pinkk_usb_insertion_interfaces/local_setup.bash
+source;share/pinkk_usb_insertion_interfaces/local_setup.dsv
+source;share/pinkk_usb_insertion_interfaces/local_setup.sh
+source;share/pinkk_usb_insertion_interfaces/local_setup.zsh

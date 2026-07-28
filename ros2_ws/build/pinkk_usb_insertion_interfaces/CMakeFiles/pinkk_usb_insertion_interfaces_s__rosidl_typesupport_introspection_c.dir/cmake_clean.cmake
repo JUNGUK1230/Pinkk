@@ -1,0 +1,11 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_introspection_c.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/_pinkk_usb_insertion_interfaces_s.ep.rosidl_typesupport_introspection_c.c.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_introspection_c.dir/rosidl_generator_py/pinkk_usb_insertion_interfaces/_pinkk_usb_insertion_interfaces_s.ep.rosidl_typesupport_introspection_c.c.o.d"
+  "rosidl_generator_py/pinkk_usb_insertion_interfaces/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_introspection_c.pdb"
+  "rosidl_generator_py/pinkk_usb_insertion_interfaces/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_introspection_c.so"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_introspection_c.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

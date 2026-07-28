@@ -1,0 +1,26 @@
+running develop
+running egg_info
+creating pinkk_handeye_automation.egg-info
+writing pinkk_handeye_automation.egg-info/PKG-INFO
+writing dependency_links to pinkk_handeye_automation.egg-info/dependency_links.txt
+writing entry points to pinkk_handeye_automation.egg-info/entry_points.txt
+writing requirements to pinkk_handeye_automation.egg-info/requires.txt
+writing top-level names to pinkk_handeye_automation.egg-info/top_level.txt
+writing manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+reading manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+writing manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/python3.12/site-packages/pinkk-handeye-automation.egg-link (link to .)
+Installing auto_collect script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/pinkk_handeye_automation
+Installing usb_pre_approach script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/pinkk_handeye_automation
+
+Installed /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation
+running symlink_data
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/resource/pinkk_handeye_automation -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index/packages
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/README.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation/launch
+symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/launch/auto_calibrate.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation/launch

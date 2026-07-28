@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "pinkk_usb_insertion_interfaces__rs",
+		"source" : "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/pinkk_usb_insertion_interfaces__rs"
+	}
+}

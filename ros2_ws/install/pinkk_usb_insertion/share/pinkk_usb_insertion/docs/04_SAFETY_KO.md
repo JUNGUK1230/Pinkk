@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/04_SAFETY_KO.md

@@ -1,0 +1,24 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/action/cartesian_move__type_support.cpp.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/action/cartesian_move__type_support.cpp.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/keypoint2_d__type_support.cpp.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/keypoint2_d__type_support.cpp.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection__type_support.cpp.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection__type_support.cpp.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection_array__type_support.cpp.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection_array__type_support.cpp.o.d"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_observation__type_support.cpp.o"
+  "CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_observation__type_support.cpp.o.d"
+  "libpinkk_usb_insertion_interfaces__rosidl_typesupport_c.pdb"
+  "libpinkk_usb_insertion_interfaces__rosidl_typesupport_c.so"
+  "rosidl_typesupport_c/pinkk_usb_insertion_interfaces/action/cartesian_move__type_support.cpp"
+  "rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/keypoint2_d__type_support.cpp"
+  "rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection__type_support.cpp"
+  "rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_detection_array__type_support.cpp"
+  "rosidl_typesupport_c/pinkk_usb_insertion_interfaces/msg/usb_port_observation__type_support.cpp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/pinkk_usb_insertion_interfaces__rosidl_typesupport_c.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

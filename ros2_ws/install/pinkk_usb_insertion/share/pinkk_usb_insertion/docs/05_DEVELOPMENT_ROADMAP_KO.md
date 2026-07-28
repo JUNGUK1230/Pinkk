@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/05_DEVELOPMENT_ROADMAP_KO.md

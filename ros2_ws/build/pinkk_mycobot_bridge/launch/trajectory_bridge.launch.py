@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_mycobot_bridge/launch/trajectory_bridge.launch.py

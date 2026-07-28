@@ -1,0 +1,10 @@
+[console_scripts]
+arm_motion_node = pinkk_usb_insertion.arm_motion_node:main
+camera_publisher_node = pinkk_usb_insertion.camera_publisher_node:main
+cartesian_smoke_test = pinkk_usb_insertion.cartesian_smoke_test_node:main
+manual_detection_node = pinkk_usb_insertion.manual_detection_node:main
+pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main
+pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main
+port_pose_node = pinkk_usb_insertion.port_pose_node:main
+usb_insertion_node = pinkk_usb_insertion.usb_insertion_node:main
+yolo_keypoint_node = pinkk_usb_insertion.yolo_keypoint_node:main

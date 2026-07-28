@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_usb_insertion/docs/01_ARCHITECTURE_KO.md

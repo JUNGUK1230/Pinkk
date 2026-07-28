@@ -1,0 +1,9 @@
+source;share/pinkk_mycobot_bridge/hook/pythonpath.ps1
+source;share/pinkk_mycobot_bridge/hook/pythonpath.dsv
+source;share/pinkk_mycobot_bridge/hook/pythonpath.sh
+source;share/pinkk_mycobot_bridge/hook/ament_prefix_path.ps1
+source;share/pinkk_mycobot_bridge/hook/ament_prefix_path.dsv
+source;share/pinkk_mycobot_bridge/hook/ament_prefix_path.sh
+source;../../build/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/hook/pythonpath_develop.ps1
+source;../../build/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/hook/pythonpath_develop.dsv
+source;../../build/pinkk_mycobot_bridge/share/pinkk_mycobot_bridge/hook/pythonpath_develop.sh

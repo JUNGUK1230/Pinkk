@@ -1,0 +1,1 @@
+ament_cmake_symlink_install_targets("TARGET_FILES" "/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_generator_py/pinkk_usb_insertion_interfaces/pinkk_usb_insertion_interfaces_s__rosidl_typesupport_c.so" "TARGETS" "pinkk_usb_insertion_interfaces_s__rosidl_typesupport_c" "DESTINATION" "lib/python3.12/site-packages/pinkk_usb_insertion_interfaces")

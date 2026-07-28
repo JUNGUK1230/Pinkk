@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion_interfaces/rosidl_generator_c/pinkk_usb_insertion_interfaces/msg/detail/usb_port_detection__functions.h

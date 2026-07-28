@@ -1,0 +1,28 @@
+[1.202s] Invoking command in '/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/build --no-deps symlink_data
+[1.498s] running develop
+[1.675s] running egg_info
+[1.675s] creating pinkk_handeye_automation.egg-info
+[1.691s] writing pinkk_handeye_automation.egg-info/PKG-INFO
+[1.692s] writing dependency_links to pinkk_handeye_automation.egg-info/dependency_links.txt
+[1.692s] writing entry points to pinkk_handeye_automation.egg-info/entry_points.txt
+[1.692s] writing requirements to pinkk_handeye_automation.egg-info/requires.txt
+[1.692s] writing top-level names to pinkk_handeye_automation.egg-info/top_level.txt
+[1.692s] writing manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+[1.726s] reading manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+[1.726s] writing manifest file 'pinkk_handeye_automation.egg-info/SOURCES.txt'
+[1.745s] running build_ext
+[1.745s] Creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/python3.12/site-packages/pinkk-handeye-automation.egg-link (link to .)
+[1.746s] Installing auto_collect script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/pinkk_handeye_automation
+[1.747s] Installing usb_pre_approach script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/pinkk_handeye_automation
+[1.747s] 
+[1.747s] Installed /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation
+[1.747s] running symlink_data
+[1.748s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index
+[1.748s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index
+[1.748s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index/packages
+[1.748s] symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/resource/pinkk_handeye_automation -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/ament_index/resource_index/packages
+[1.748s] symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation
+[1.748s] symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/README.md -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation
+[1.748s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation/launch
+[1.748s] symbolically linking /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/launch/auto_calibrate.launch.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/share/pinkk_handeye_automation/launch
+[1.782s] Invoked command in '/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_handeye_automation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_handeye_automation/build --no-deps symlink_data

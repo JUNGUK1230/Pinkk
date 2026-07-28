@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_handeye_automation/launch/auto_calibrate.launch.py

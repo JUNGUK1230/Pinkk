@@ -1,0 +1,16 @@
+README.md
+package.xml
+setup.cfg
+setup.py
+launch/auto_calibrate.launch.py
+pinkk_handeye_automation/__init__.py
+pinkk_handeye_automation/auto_collect.py
+pinkk_handeye_automation/usb_pre_approach.py
+pinkk_handeye_automation.egg-info/PKG-INFO
+pinkk_handeye_automation.egg-info/SOURCES.txt
+pinkk_handeye_automation.egg-info/dependency_links.txt
+pinkk_handeye_automation.egg-info/entry_points.txt
+pinkk_handeye_automation.egg-info/requires.txt
+pinkk_handeye_automation.egg-info/top_level.txt
+pinkk_handeye_automation.egg-info/zip-safe
+resource/pinkk_handeye_automation

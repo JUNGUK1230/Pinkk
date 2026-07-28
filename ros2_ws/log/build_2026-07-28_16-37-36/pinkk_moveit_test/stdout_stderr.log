@@ -1,0 +1,28 @@
+running egg_info
+creating ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info
+writing ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/PKG-INFO
+writing dependency_links to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/dependency_links.txt
+writing entry points to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/entry_points.txt
+writing requirements to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/requires.txt
+writing top-level names to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/top_level.txt
+writing manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+reading manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+writing manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test
+copying pinkk_moveit_test/__init__.py -> /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test
+running install
+running install_lib
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test
+copying /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test/__init__.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test
+byte-compiling /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test/__init__.py to __init__.cpython-312.pyc
+running install_data
+creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/ament_index/resource_index/packages
+copying resource/pinkk_moveit_test -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/ament_index/resource_index/packages
+copying package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/pinkk_moveit_test
+running install_egg_info
+Copying ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test-0.0.0-py3.12.egg-info
+running install_scripts
+Installing joint_move_test script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/pinkk_moveit_test
+writing list of installed files to '/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/install.log'

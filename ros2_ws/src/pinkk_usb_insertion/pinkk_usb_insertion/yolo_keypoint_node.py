@@ -13,6 +13,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
+from ament_index_python.packages import get_package_share_directory
 
 from .image_conversion import array_to_bgr8_image, bgr8_image_to_array
 from .perception.yolo_adapter import normalize_yolo_pose
@@ -24,15 +25,22 @@ class YoloKeypointNode(Node):
     def __init__(self) -> None:
         """Pose 모델과 ROS 입출력 토픽을 준비한다."""
         super().__init__('pinkk_yolo_keypoint_node')
-        self.declare_parameter('model_path', '/home/juwon/Desktop/usb_01.pt')
+        
         self.declare_parameter('image_size', 640)
         self.declare_parameter('confidence_threshold', 0.25)
         self.declare_parameter('visibility_threshold', 0.01)
         self.declare_parameter('device', 'cuda:0')
         self.declare_parameter('debug_image_enabled', True)
 
-        model_value = str(self.get_parameter('model_path').value)
-        model_path = Path(model_value).expanduser()
+        package_path = Path(
+            get_package_share_directory('pinkk_usb_insertion')
+)
+
+        model_path = (
+            package_path /
+        'models' /
+        'usb_01.pt'
+)
         if not model_path.is_file():
             raise FileNotFoundError(f'YOLO 모델을 찾을 수 없습니다: {model_path}')
         self._image_size = int(self.get_parameter('image_size').value)

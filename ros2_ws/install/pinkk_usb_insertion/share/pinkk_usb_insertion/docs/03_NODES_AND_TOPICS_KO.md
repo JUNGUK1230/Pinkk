@@ -1,0 +1,1 @@
+/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_usb_insertion/docs/03_NODES_AND_TOPICS_KO.md

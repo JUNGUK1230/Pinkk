@@ -1,0 +1,33 @@
+[0.853s] Invoking command in '/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_moveit_test': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PS1=(yolo_env) \[\e]0;\u@\h: \w\a\]${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ PYTHONPATH=/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages:${PYTHONPATH} VIRTUAL_ENV_PROMPT=(yolo_env) /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/pinkk_moveit_test build --build-base /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build install --record /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/install.log --install-scripts $base/lib/pinkk_moveit_test --single-version-externally-managed install_data
+[1.095s] running egg_info
+[1.113s] creating ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info
+[1.113s] writing ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/PKG-INFO
+[1.113s] writing dependency_links to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/dependency_links.txt
+[1.113s] writing entry points to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/entry_points.txt
+[1.114s] writing requirements to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/requires.txt
+[1.114s] writing top-level names to ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/top_level.txt
+[1.114s] writing manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+[1.153s] reading manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+[1.153s] writing manifest file '../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info/SOURCES.txt'
+[1.153s] running build
+[1.154s] running build_py
+[1.154s] creating /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test
+[1.154s] copying pinkk_moveit_test/__init__.py -> /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test
+[1.154s] copying pinkk_moveit_test/joint_move_test.py -> /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test
+[1.154s] running install
+[1.157s] running install_lib
+[1.175s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test
+[1.175s] copying /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test/__init__.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test
+[1.176s] copying /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build/lib/pinkk_moveit_test/joint_move_test.py -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test
+[1.176s] byte-compiling /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test/__init__.py to __init__.cpython-312.pyc
+[1.176s] byte-compiling /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test/joint_move_test.py to joint_move_test.cpython-312.pyc
+[1.177s] running install_data
+[1.177s] creating /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/ament_index/resource_index/packages
+[1.177s] copying resource/pinkk_moveit_test -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/ament_index/resource_index/packages
+[1.177s] copying package.xml -> /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/share/pinkk_moveit_test
+[1.177s] running install_egg_info
+[1.195s] Copying ../../build/pinkk_moveit_test/pinkk_moveit_test.egg-info to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages/pinkk_moveit_test-0.0.0-py3.12.egg-info
+[1.196s] running install_scripts
+[1.236s] Installing joint_move_test script to /home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/pinkk_moveit_test
+[1.236s] writing list of installed files to '/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/install.log'
+[1.258s] Invoked command in '/home/kim-jayeon/Pinkk/ros2_ws/src/pinkk_moveit_test' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PS1=(yolo_env) \[\e]0;\u@\h: \w\a\]${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ PYTHONPATH=/home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kim-jayeon/Pinkk/ros2_ws/install/pinkk_moveit_test/lib/python3.12/site-packages:${PYTHONPATH} VIRTUAL_ENV_PROMPT=(yolo_env) /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/pinkk_moveit_test build --build-base /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/build install --record /home/kim-jayeon/Pinkk/ros2_ws/build/pinkk_moveit_test/install.log --install-scripts $base/lib/pinkk_moveit_test --single-version-externally-managed install_data
