@@ -35,6 +35,7 @@ from .command_queue import (
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
 from .joint_completion import (
     JointStabilityMonitor,
+    compensated_joint_command_degrees,
     maximum_joint_error,
     signed_joint_errors_degrees,
 )
@@ -96,6 +97,10 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("joint_max_command_attempts", 1)
         self.declare_parameter("joint_retry_stable_sample_count", 3)
         self.declare_parameter("joint_retry_minimum_progress_deg", 0.1)
+        self.declare_parameter("joint_retry_compensation_enabled", False)
+        self.declare_parameter("joint_retry_compensation_gain", 0.8)
+        self.declare_parameter("joint_retry_max_step_deg", 1.0)
+        self.declare_parameter("joint_retry_max_total_offset_deg", 2.0)
         self.declare_parameter("max_execution_seconds", 60.0)
         self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
@@ -138,6 +143,20 @@ class MyCobotTrajectoryBridge(Node):
                     "joint_retry_minimum_progress_deg"
                 ).value
             )
+        )
+        self._joint_retry_compensation_enabled = bool(
+            self.get_parameter("joint_retry_compensation_enabled").value
+        )
+        self._joint_retry_compensation_gain = float(
+            self.get_parameter("joint_retry_compensation_gain").value
+        )
+        self._joint_retry_max_step_deg = float(
+            self.get_parameter("joint_retry_max_step_deg").value
+        )
+        self._joint_retry_max_total_offset_deg = float(
+            self.get_parameter(
+                "joint_retry_max_total_offset_deg"
+            ).value
         )
         self._max_execution_seconds = float(
             self.get_parameter("max_execution_seconds").value
@@ -192,6 +211,20 @@ class MyCobotTrajectoryBridge(Node):
         if self._joint_retry_minimum_progress_rad <= 0.0:
             raise ValueError(
                 "joint_retry_minimum_progress_deg는 0보다 커야 합니다"
+            )
+        if not 0.0 < self._joint_retry_compensation_gain <= 1.0:
+            raise ValueError(
+                "joint_retry_compensation_gain은 0보다 크고 1 이하여야 합니다"
+            )
+        if self._joint_retry_max_step_deg <= 0.0:
+            raise ValueError("joint_retry_max_step_deg는 0보다 커야 합니다")
+        if (
+            self._joint_retry_max_total_offset_deg
+            < self._joint_retry_max_step_deg
+        ):
+            raise ValueError(
+                "joint_retry_max_total_offset_deg는 "
+                "joint_retry_max_step_deg 이상이어야 합니다"
             )
         if self._max_execution_seconds <= 0.0:
             raise ValueError("max_execution_seconds는 0보다 커야 합니다")
@@ -263,7 +296,9 @@ class MyCobotTrajectoryBridge(Node):
             f"관절 send_angles action {joint_mode}: action={self.ACTION_NAME}, "
             f"tolerance={math.degrees(self._tolerance_rad):.2f}deg, "
             f"stable_samples={self._joint_stable_sample_count}, "
-            f"max_attempts={self._joint_max_command_attempts}"
+            f"max_attempts={self._joint_max_command_attempts}, "
+            "retry_compensation="
+            f"{self._joint_retry_compensation_enabled}"
         )
         api_mode = "API 준비" if self._cartesian_ready else "API 사용 불가"
         execution_mode = (
@@ -362,6 +397,7 @@ class MyCobotTrajectoryBridge(Node):
         previous_attempt_error: float | None = None
         retry_stable_samples = 0
         previous_actual: list[float] | None = None
+        last_command_deg = list(target_deg)
 
         try:
             self._send_joint_target(target_deg, attempts_sent + 1)
@@ -490,12 +526,37 @@ class MyCobotTrajectoryBridge(Node):
                         return result
 
                     previous_attempt_error = maximum_error
+                    next_command_deg = list(target_deg)
+                    if self._joint_retry_compensation_enabled:
+                        actual_deg = [
+                            math.degrees(value) for value in actual
+                        ]
+                        (
+                            next_command_deg,
+                            correction_deg,
+                            total_offset_deg,
+                        ) = compensated_joint_command_degrees(
+                            target_deg,
+                            last_command_deg,
+                            actual_deg,
+                            gain=self._joint_retry_compensation_gain,
+                            maximum_step_deg=self._joint_retry_max_step_deg,
+                            maximum_total_offset_deg=(
+                                self._joint_retry_max_total_offset_deg
+                            ),
+                        )
+                        self.get_logger().warning(
+                            '관절 오차 보상 명령 계산: '
+                            f'correction_deg={correction_deg}, '
+                            f'total_offset_deg={total_offset_deg}, '
+                            f'command_deg={next_command_deg}'
+                        )
                     self.get_logger().warning(
                         f'관절 목표 재전송 전 상태: {diagnostic}'
                     )
                     try:
                         self._send_joint_target(
-                            target_deg,
+                            next_command_deg,
                             attempts_sent + 1,
                         )
                     except Exception as error:
@@ -508,6 +569,7 @@ class MyCobotTrajectoryBridge(Node):
                             f'관절 목표 재전송 실패: {error}'
                         )
                         return result
+                    last_command_deg = list(next_command_deg)
                     attempts_sent += 1
                     retry_stable_samples = 0
                     previous_actual = None

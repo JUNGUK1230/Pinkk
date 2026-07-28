@@ -4,6 +4,7 @@ import math
 
 from pinkk_mycobot_bridge.joint_completion import (
     JointStabilityMonitor,
+    compensated_joint_command_degrees,
     maximum_joint_error,
     signed_joint_errors_degrees,
 )
@@ -60,3 +61,33 @@ def test_signed_joint_errors_degrees_preserves_direction() -> None:
     errors = signed_joint_errors_degrees(target, actual)
     assert math.isclose(errors[0], 0.5)
     assert math.isclose(errors[1], -1.0)
+
+
+def test_compensated_command_uses_bounded_error_direction() -> None:
+    """실측 target-actual 방향으로만 제한된 다음 명령을 만든다."""
+    command, correction, total = compensated_joint_command_degrees(
+        [-2.304, -11.396, -35.214],
+        [-2.304, -11.396, -35.214],
+        [-1.140, -12.040, -36.560],
+        gain=0.8,
+        maximum_step_deg=1.0,
+        maximum_total_offset_deg=2.0,
+    )
+    assert command == [-3.235, -10.881, -34.214]
+    assert correction == [-0.931, 0.515, 1.0]
+    assert total == [-0.931, 0.515, 1.0]
+
+
+def test_compensated_command_caps_cumulative_offset() -> None:
+    """반복 보상 명령은 원래 목표로부터 누적 제한을 넘지 않는다."""
+    command, correction, total = compensated_joint_command_degrees(
+        [0.0],
+        [1.8],
+        [-3.0],
+        gain=1.0,
+        maximum_step_deg=1.0,
+        maximum_total_offset_deg=2.0,
+    )
+    assert command == [2.0]
+    assert correction == [0.2]
+    assert total == [2.0]

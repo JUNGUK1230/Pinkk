@@ -44,6 +44,64 @@ def signed_joint_errors_degrees(
     ]
 
 
+def compensated_joint_command_degrees(
+    requested_target_deg: Sequence[float],
+    previous_command_deg: Sequence[float],
+    actual_deg: Sequence[float],
+    *,
+    gain: float,
+    maximum_step_deg: float,
+    maximum_total_offset_deg: float,
+) -> tuple[list[float], list[float], list[float]]:
+    """실측 관절 오차를 제한된 다음 명령으로 변환한다.
+
+    최종 완료 판정의 기준은 ``requested_target_deg``이며, 보상된 명령은
+    하드웨어의 정지 오차를 줄이기 위한 임시 입력으로만 사용한다.
+    """
+    lengths = {
+        len(requested_target_deg),
+        len(previous_command_deg),
+        len(actual_deg),
+    }
+    if len(lengths) != 1 or not requested_target_deg:
+        raise ValueError('보상 관절 배열 길이가 같고 비어 있지 않아야 합니다')
+    if not 0.0 < gain <= 1.0:
+        raise ValueError('관절 보상 gain은 0보다 크고 1 이하여야 합니다')
+    if maximum_step_deg <= 0.0:
+        raise ValueError('관절 1회 보상 제한은 0보다 커야 합니다')
+    if maximum_total_offset_deg < maximum_step_deg:
+        raise ValueError('관절 누적 보상 제한은 1회 보상 제한 이상이어야 합니다')
+
+    target = [float(value) for value in requested_target_deg]
+    previous = [float(value) for value in previous_command_deg]
+    actual = [float(value) for value in actual_deg]
+    if not all(math.isfinite(value) for values in (target, previous, actual)
+               for value in values):
+        raise ValueError('관절 보상 입력은 유한한 숫자여야 합니다')
+
+    next_command: list[float] = []
+    applied_correction: list[float] = []
+    total_offset: list[float] = []
+    for target_value, previous_value, actual_value in zip(
+        target, previous, actual, strict=True
+    ):
+        error = math.remainder(target_value - actual_value, 360.0)
+        correction = max(
+            -maximum_step_deg,
+            min(maximum_step_deg, gain * error),
+        )
+        proposed = previous_value + correction
+        offset = max(
+            -maximum_total_offset_deg,
+            min(maximum_total_offset_deg, proposed - target_value),
+        )
+        command = target_value + offset
+        next_command.append(round(command, 3))
+        applied_correction.append(round(command - previous_value, 3))
+        total_offset.append(round(offset, 3))
+    return next_command, applied_correction, total_offset
+
+
 class JointStabilityMonitor:
     """목표 오차·표본간 변화·로봇 정지를 모두 만족한 연속 횟수를 센다."""
 

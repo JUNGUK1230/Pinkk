@@ -19,6 +19,18 @@ def generate_launch_description() -> LaunchDescription:
                 "joint_max_command_attempts", default_value="1"
             ),
             DeclareLaunchArgument(
+                "joint_retry_compensation_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "joint_retry_compensation_gain", default_value="0.8"
+            ),
+            DeclareLaunchArgument(
+                "joint_retry_max_step_deg", default_value="1.0"
+            ),
+            DeclareLaunchArgument(
+                "joint_retry_max_total_offset_deg", default_value="2.0"
+            ),
+            DeclareLaunchArgument(
                 "cartesian_execution_enabled", default_value="false"
             ),
             DeclareLaunchArgument(
@@ -52,6 +64,23 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "joint_retry_stable_sample_count": 3,
                         "joint_retry_minimum_progress_deg": 0.1,
+                        "joint_retry_compensation_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "joint_retry_compensation_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "joint_retry_compensation_gain": LaunchConfiguration(
+                            "joint_retry_compensation_gain"
+                        ),
+                        "joint_retry_max_step_deg": LaunchConfiguration(
+                            "joint_retry_max_step_deg"
+                        ),
+                        "joint_retry_max_total_offset_deg": (
+                            LaunchConfiguration(
+                                "joint_retry_max_total_offset_deg"
+                            )
+                        ),
                         "publish_rate_hz": 10.0,
                         "max_execution_seconds": 60.0,
                         "cartesian_execution_enabled": ParameterValue(
