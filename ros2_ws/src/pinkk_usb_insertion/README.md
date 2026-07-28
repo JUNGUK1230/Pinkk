@@ -55,8 +55,241 @@ MyCobot의 직접 `send_coords(mode=1)`는 X 1 mm 시험에서 Z가 4.5 mm 이�
 ```
 
 현재 구현 범위는 수동 또는 YOLO 검출 메시지 수신, `solvePnP`, 좌표 계산,
-고정-Z PBVS 목표 발행, 승인형 Cartesian 실행 경로와 DRY RUN 상태 머신까지입니다.
-YOLO 모델 추론 자체는 별도 노드가 담당합니다.
+고정-Z PBVS 목표 발행과 DRY RUN 상태 머신까지입니다. YOLO 추론은
+`yolo_keypoint_node`, 실제 좌표 계산은 `port_pose_node`, 로봇 기준 변환과 PBVS
+목표 계산은 `pbvs_alignment_node`가 각각 담당합니다. 실제 이동 백엔드는
+MoveIt IK 방식으로 교체 중입니다.
+
+## 제어 전 인지·좌표 계산 순서
+
+이 구간은 영상을 받아 USB 포트 좌표와 PBVS 목표를 계산하는 단계입니다. 로봇
+이동 명령을 보내지 않으며, 현재 실기에서 확인된 인지 파이프라인입니다.
+
+```text
+/dev/video2
+   │
+   ▼
+camera_publisher_node
+   ├─ /camera/image_raw
+   └─ /camera/camera_info  ← 카메라 내부행렬 K, 왜곡계수 D
+          │
+          ▼
+yolo_keypoint_node        ← usb_01.pt, CUDA
+   │
+   └─ /robot_arm/perception/usb_port/detections
+          │                 bbox + USB 네 모서리 픽셀 + confidence
+          ▼
+port_pose_node
+   ├─ 검출 시간·class·confidence·해상도·frame 검사
+   ├─ 18×8 mm 포트 모델과 네 픽셀점으로 solvePnP
+   └─ T_camera_port 계산
+          │
+          ├─ /robot_arm/perception/usb_port/observation
+          └─ /robot_arm/perception/usb_port/pose_camera
+                     │
+                     ▼
+pbvs_alignment_node
+   ├─ T_base_flange       ← /joint_states 기반 로봇 TF
+   ├─ T_flange_camera     ← Hand-eye YAML
+   ├─ T_camera_port       ← solvePnP
+   └─ T_base_port와 고정-Z PBVS 목표 계산
+          │
+          ├─ /robot_arm/pbvs/port_pose_base
+          ├─ /robot_arm/pbvs/target_flange_pose
+          ├─ /robot_arm/pbvs/converged
+          └─ /robot_arm/pbvs/status
+```
+
+### 1. 카메라 영상과 내부 파라미터
+
+[`camera_publisher_node.py`](pinkk_usb_insertion/camera_publisher_node.py)는 USB
+카메라 영상을 원본 해상도로 발행합니다.
+
+| 출력 토픽 | 형식 | 내용 |
+|---|---|---|
+| `/camera/image_raw` | `sensor_msgs/Image` | YOLO가 사용할 원본 BGR 영상 |
+| `/camera/camera_info` | `sensor_msgs/CameraInfo` | 내부행렬 `K`, 왜곡계수 `D`, 해상도 |
+
+내부 파라미터는 [`camera_intrinsics.yaml`](config/camera_intrinsics.yaml)에서
+읽습니다. YOLO keypoint와 `CameraInfo`는 반드시 같은 원본 영상 좌표계를 사용해야
+합니다.
+
+### 2. YOLO Pose keypoint 검출
+
+[`yolo_keypoint_node.py`](pinkk_usb_insertion/yolo_keypoint_node.py)는
+`/camera/image_raw`를 구독하고 `usb_01.pt`를 CUDA에서 실행합니다. 출력은 USB
+포트의 bbox와 네 모서리 픽셀입니다.
+
+```text
+0 ───────── 1
+│           │
+3 ───────── 2
+```
+
+중심점은 별도 keypoint로 학습하지 않고 필요할 때 네 점의 평균으로 계산합니다.
+YOLO 출력은 다음 custom 메시지 토픽으로 전달됩니다.
+
+```text
+/robot_arm/perception/usb_port/detections
+pinkk_usb_insertion_interfaces/msg/UsbPortDetectionArray
+```
+
+각 detection에는 다음이 포함됩니다.
+
+- 원본 영상 timestamp와 `camera_optical_frame`
+- bbox 중심과 크기
+- 객체 confidence
+- index 0~3의 픽셀 `x`, `y`, confidence와 visibility
+- 원본 영상 폭과 높이
+
+RQT에서 보는 `/robot_arm/perception/usb_port/debug_image`는 확인용 영상이며,
+좌표 계산 입력은 `debug_image`가 아니라 `detections` 토픽입니다.
+
+### 3. 검출 선택과 안전 검사
+
+[`port_pose_node.py`](pinkk_usb_insertion/port_pose_node.py)는 YOLO detections와
+CameraInfo를 함께 구독합니다. 다음 조건을 통과한 검출만 solvePnP에 사용합니다.
+
+- 최근 timestamp이며 최대 age를 넘지 않음
+- class가 `usb_port`
+- 객체와 네 keypoint confidence가 기준 이상
+- keypoint index 0~3이 모두 유효
+- 검출 영상과 CameraInfo의 해상도·frame이 일치
+
+기준값은 [`insertion_control.yaml`](config/insertion_control.yaml)의
+`pose_estimation`과 `safety`에서 관리합니다. 검출이 없거나 조건을 통과하지 못하면
+`valid=false` 관측을 발행하고 제어 목표를 만들지 않습니다.
+
+### 4. solvePnP로 카메라 기준 포트 pose 계산
+
+실제 `cv2.solvePnP()` 호출은
+[`perception/pose_estimator.py`](pinkk_usb_insertion/perception/pose_estimator.py)에
+있습니다. 입력은 다음 네 가지입니다.
+
+```text
+YOLO 네 모서리 픽셀 좌표
++ 카메라 내부행렬 K
++ 카메라 왜곡계수 D
++ 포트 평면 모델 18 mm × 8 mm
+```
+
+3D 포트 모델점은 포트 중심을 원점으로 둡니다.
+
+```text
+(-9mm, -4mm, 0)   (+9mm, -4mm, 0)
+(-9mm, +4mm, 0)   (+9mm, +4mm, 0)
+```
+
+solvePnP 결과인 `rvec`, `tvec`을 4×4 변환행렬로 바꾸면 다음 값이 됩니다.
+
+```text
+T_camera_port
+= camera_optical_frame 기준 USB 포트의 위치와 방향
+```
+
+결과는 다음 두 토픽으로 발행합니다.
+
+| 출력 토픽 | 내용 |
+|---|---|
+| `/robot_arm/perception/usb_port/observation` | pose, keypoint, confidence, 깊이, 재투영 오차, valid 여부 |
+| `/robot_arm/perception/usb_port/pose_camera` | 카메라 기준 `PoseStamped` |
+
+`observation.pose.position`의 단위는 meter이며 frame은
+`camera_optical_frame`입니다. 이 값은 아직 로봇 base 좌표가 아닙니다.
+
+### 5. 로봇 base 기준 포트 좌표
+
+[`pbvs_alignment_node.py`](pinkk_usb_insertion/pbvs_alignment_node.py)는 solvePnP
+결과에 Hand-eye와 현재 로봇 TF를 결합합니다.
+
+```text
+T_base_port
+= T_base_flange
+× T_flange_camera
+× T_camera_port
+```
+
+| 행렬 | 출처 |
+|---|---|
+| `T_base_flange` | `/joint_states`와 `g_base → joint6_flange` TF |
+| `T_flange_camera` | [`handeye.yaml`](config/handeye.yaml) |
+| `T_camera_port` | solvePnP `UsbPortObservation` |
+
+계산된 로봇 기준 USB 포트 pose는 다음 토픽에서 확인합니다.
+
+```text
+/robot_arm/pbvs/port_pose_base
+```
+
+### 6. PBVS 목표 계산과 제어 경계
+
+PBVS 노드는 카메라 기준 X/Y 오차를 로봇 base 방향으로 변환하고 한 번의 제한된
+보정 목표를 만듭니다.
+
+```text
+현재 flange pose
++ 제한된 base X/Y 보정량
+→ target_flange_pose
+```
+
+이 단계의 출력은 계산 결과일 뿐 실제 로봇 명령이 아닙니다.
+
+```text
+/robot_arm/pbvs/target_flange_pose
+/robot_arm/pbvs/converged
+/robot_arm/pbvs/status
+```
+
+현재 제어 경계는 다음과 같습니다.
+
+```text
+[검증 완료]
+카메라 → YOLO → solvePnP → T_base_port → PBVS 목표
+
+[다음 구현]
+PBVS 목표 → MoveIt IK → 안전 검사 → 관절 waypoint → 실제 로봇
+```
+
+MyCobot 직접 `send_coords()` 경로는 Z 이탈 실기 결과 때문에 이 경계 뒤에서
+사용하지 않습니다.
+
+### 인지 단계 확인 명령
+
+```bash
+# YOLO 픽셀 검출
+ros2 topic echo \
+  /robot_arm/perception/usb_port/detections \
+  --once
+
+# solvePnP 카메라 기준 좌표
+ros2 topic echo \
+  /robot_arm/perception/usb_port/observation \
+  --once
+
+# 카메라 기준 PoseStamped
+ros2 topic echo \
+  /robot_arm/perception/usb_port/pose_camera \
+  --once
+
+# Hand-eye와 로봇 TF까지 결합한 base 기준 포트 좌표
+ros2 topic echo \
+  /robot_arm/pbvs/port_pose_base \
+  --once
+
+# 실제 이동 전 PBVS 목표와 상태
+ros2 topic echo /robot_arm/pbvs/target_flange_pose --once
+ros2 topic echo /robot_arm/pbvs/status --once
+```
+
+문제 위치를 구분할 때는 다음 순서로 확인합니다.
+
+```text
+detections 없음      → 카메라 또는 YOLO 문제
+observation invalid  → confidence, timestamp, CameraInfo 또는 solvePnP 문제
+pose_camera 정상     → 카메라 기준 인지는 정상
+port_pose_base 없음  → Hand-eye 또는 로봇 TF 문제
+PBVS target 없음     → 기준 pose capture 또는 PBVS 안전 조건 문제
+```
 
 ## 패키지 구성
 
