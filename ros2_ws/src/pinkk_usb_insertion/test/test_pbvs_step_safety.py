@@ -3,6 +3,7 @@ from pinkk_usb_insertion.control.pbvs_step_safety import (
     make_fixed_z_xy_waypoints,
     validate_fixed_z_pbvs_step,
     validate_joint_step,
+    validate_pbvs_reference_drift,
 )
 from pinkk_usb_insertion.geometry.transforms import make_transform
 import pytest
@@ -51,6 +52,28 @@ def test_exact_one_millimeter_uses_one_waypoint() -> None:
     target[0, 3] += 0.001
     waypoints = make_fixed_z_xy_waypoints(current, target, 0.001)
     assert len(waypoints) == 1
+
+
+def test_waypoints_restore_locked_reference_z() -> None:
+    """누적 Z 이탈을 시작 기준으로 되돌리는 waypoint를 보간한다."""
+    current = make_transform((0.1, 0.2, 0.396), (0.0, 0.0, 0.0, 1.0))
+    target = make_transform((0.103, 0.2, 0.4), (0.0, 0.0, 0.0, 1.0))
+    waypoints = make_fixed_z_xy_waypoints(current, target, 0.001)
+    assert len(waypoints) == 5
+    assert current[2, 3] < waypoints[0][2, 3] < target[2, 3]
+    assert np.allclose(waypoints[-1], target)
+
+
+def test_reference_drift_accepts_limit_and_rejects_accumulation() -> None:
+    """시작 기준 안의 이탈은 허용하고 누적 Z 하강은 거부한다."""
+    reference = np.eye(4)
+    inside = make_transform((0.0, 0.0, -0.0049), (0.0, 0.0, 0.0, 1.0))
+    result = validate_pbvs_reference_drift(reference, inside, 0.005, 2.0)
+    assert np.isclose(result.z_error_m, -0.0049)
+
+    outside = make_transform((0.0, 0.0, -0.0051), (0.0, 0.0, 0.0, 1.0))
+    with pytest.raises(ValueError, match='누적 이탈'):
+        validate_pbvs_reference_drift(reference, outside, 0.005, 2.0)
 
 
 def test_joint_step_rejects_alternate_ik_branch() -> None:

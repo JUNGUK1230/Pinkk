@@ -100,6 +100,9 @@ class MoveItPbvsStepExecuteNode(MoveItIkStepExecuteNode):
         move_seconds: float,
         apply_target_yaw: bool,
         warning_delay_seconds: float,
+        locked_reference_transform=None,
+        maximum_reference_z_correction_m: float = 0.0005,
+        maximum_reference_orientation_correction_deg: float = 0.5,
     ):
         """주어진 PBVS 목표를 현재 Z 기준으로 검증하고 한 번 실행한다."""
         target = pose_to_transform(target_message.pose)
@@ -107,16 +110,25 @@ class MoveItPbvsStepExecuteNode(MoveItIkStepExecuteNode):
         # 거친 정렬에서는 PBVS가 계산한 base XY만 사용한다. 기기 오차로
         # 초기 Z·자세와 차이가 생겨도 매 단발 시작 자세를 유지하고,
         # 초기 기준 Z·Roll/Pitch 복귀는 최종 삽입 직전에 별도로 수행한다.
-        target[2, 3] = current[2, 3]
+        reference = (
+            current
+            if locked_reference_transform is None
+            else locked_reference_transform
+        )
+        target[2, 3] = reference[2, 3]
         if not apply_target_yaw:
-            target[:3, :3] = current[:3, :3]
+            target[:3, :3] = reference[:3, :3]
         plan = self.calculate_target_plan(
             target=target,
             maximum_distance_m=0.003,
             waypoint_spacing_m=0.001,
             maximum_joint_step_deg=5.0,
-            maximum_z_change_m=0.0005,
-            maximum_orientation_change_deg=2.1 if apply_target_yaw else 0.5,
+            maximum_z_change_m=maximum_reference_z_correction_m,
+            maximum_orientation_change_deg=(
+                2.1
+                if apply_target_yaw
+                else maximum_reference_orientation_correction_deg
+            ),
         )
         dx_mm = (
             plan.target_transform[0, 3]

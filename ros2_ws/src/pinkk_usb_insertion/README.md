@@ -814,9 +814,17 @@ Yaw PBVS용 평면 긴 축 오차와 1회 2도 제한 계산은 준비되어 있
 ros2 run pinkk_usb_insertion moveit_pbvs_closed_loop_execute \
   --max-steps 12 \
   --move-seconds 8 \
+  --max-cumulative-z-mm 5 \
   --max-total-xy-mm 40 \
   --execute
 ```
+
+폐루프 실행기는 시작 시 실제 flange Z와 자세를 한 번 저장합니다. 이후 step은
+직전 이동 후 Z를 새 기준으로 삼지 않고 처음 저장한 Z와 자세를 계속 목표로
+사용합니다. 관절 추종 오차로 Z가 내려가면 다음 IK 목표가 시작 Z 복귀를 함께
+계획하며, 시작 Z 대비 누적 이탈이 5mm를 넘거나 시작 자세 대비 2도를 넘으면
+다음 명령을 보내지 않습니다. 단발 실행기는 기존처럼 해당 단발 시작 자세를
+기준으로 사용합니다.
 
 Yaw에는 TCP의 **위치 offset**까지는 필요하지 않다. 이 프로젝트에서는 충전기를
 고정한 뒤에도 플러그 Yaw를 `joint6_flange`의 그리퍼 Yaw와 동일하게 사용한다.

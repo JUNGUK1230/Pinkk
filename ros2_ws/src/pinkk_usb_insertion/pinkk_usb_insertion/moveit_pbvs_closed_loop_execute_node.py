@@ -13,6 +13,7 @@ import numpy as np
 import rclpy
 from std_msgs.msg import Bool
 
+from .control.pbvs_step_safety import validate_pbvs_reference_drift
 from .moveit_pbvs_step_execute_node import MoveItPbvsStepExecuteNode
 
 
@@ -128,9 +129,11 @@ class MoveItPbvsClosedLoopExecuteNode(MoveItPbvsStepExecuteNode):
         stable_samples: int,
         maximum_runtime_seconds: float,
         maximum_total_xy_m: float,
+        maximum_cumulative_z_m: float,
     ) -> None:
         """수렴 또는 안전 종료 조건까지 제한된 PBVS step을 반복한다."""
         started_at = time.monotonic()
+        loop_reference = self.read_current_transform(timeout_seconds=3.0)
         required_after = started_at
         sequence = 0
         total_planned_xy_m = 0.0
@@ -142,6 +145,8 @@ class MoveItPbvsClosedLoopExecuteNode(MoveItPbvsStepExecuteNode):
             f'  Yaw 실행: {enable_yaw}\n'
             f'  최대 step: {maximum_steps}\n'
             f'  최대 누적 계획 XY: {maximum_total_xy_m * 1000.0:.1f}mm\n'
+            f'  시작 Z 대비 최대 누적 이탈: '
+            f'{maximum_cumulative_z_m * 1000.0:.1f}mm\n'
             f'  step당 XY: 3.0mm 이하, Yaw: 2.0deg 이하\n'
             '  Z 하강과 삽입 명령은 발행하지 않습니다'
         )
@@ -149,6 +154,13 @@ class MoveItPbvsClosedLoopExecuteNode(MoveItPbvsStepExecuteNode):
         for step_index in range(maximum_steps + 1):
             if time.monotonic() - started_at > maximum_runtime_seconds:
                 raise RuntimeError('PBVS 최대 실행 시간을 초과했습니다')
+            actual_before = self.read_current_transform(timeout_seconds=3.0)
+            validate_pbvs_reference_drift(
+                loop_reference,
+                actual_before,
+                maximum_z_error_m=maximum_cumulative_z_m,
+                maximum_orientation_error_deg=2.0,
+            )
             measurement = self._wait_for_stable_measurement(
                 after_sequence=sequence,
                 received_after=required_after,
@@ -202,6 +214,9 @@ class MoveItPbvsClosedLoopExecuteNode(MoveItPbvsStepExecuteNode):
                 move_seconds=move_seconds,
                 apply_target_yaw=enable_yaw,
                 warning_delay_seconds=3.0 if step_index == 0 else 0.5,
+                locked_reference_transform=loop_reference,
+                maximum_reference_z_correction_m=maximum_cumulative_z_m,
+                maximum_reference_orientation_correction_deg=2.0,
             )
             planned_xy = float(
                 np.linalg.norm(
@@ -211,6 +226,18 @@ class MoveItPbvsClosedLoopExecuteNode(MoveItPbvsStepExecuteNode):
             )
             total_planned_xy_m += planned_xy
             actual_after = self.read_current_transform(timeout_seconds=3.0)
+            reference_drift = validate_pbvs_reference_drift(
+                loop_reference,
+                actual_after,
+                maximum_z_error_m=maximum_cumulative_z_m,
+                maximum_orientation_error_deg=2.0,
+            )
+            self.get_logger().info(
+                '폐루프 기준 유지: '
+                f'z_drift={reference_drift.z_error_m * 1000.0:+.3f}mm, '
+                'orientation_drift='
+                f'{reference_drift.orientation_error_deg:.3f}deg'
+            )
             actual_xy = float(
                 np.linalg.norm(
                     actual_after[:2, 3] - plan.current_transform[:2, 3]
@@ -240,6 +267,7 @@ def _parse_arguments(arguments: list[str]) -> argparse.Namespace:
     parser.add_argument('--stable-samples', type=int, default=5)
     parser.add_argument('--max-runtime-seconds', type=float, default=300.0)
     parser.add_argument('--max-total-xy-mm', type=float, default=40.0)
+    parser.add_argument('--max-cumulative-z-mm', type=float, default=5.0)
     parser.add_argument(
         '--enable-yaw',
         action='store_true',
@@ -265,6 +293,11 @@ def _parse_arguments(arguments: list[str]) -> argparse.Namespace:
         parser.error('--max-runtime-seconds는 30~600초여야 합니다')
     if parsed.max_total_xy_mm < 3.0 or parsed.max_total_xy_mm > 60.0:
         parser.error('--max-total-xy-mm는 3~60mm여야 합니다')
+    if (
+        parsed.max_cumulative_z_mm < 2.0
+        or parsed.max_cumulative_z_mm > 10.0
+    ):
+        parser.error('--max-cumulative-z-mm는 2~10mm여야 합니다')
     return parsed
 
 
@@ -284,6 +317,7 @@ def main(args: list[str] | None = None) -> None:
             stable_samples=cli.stable_samples,
             maximum_runtime_seconds=cli.max_runtime_seconds,
             maximum_total_xy_m=cli.max_total_xy_mm / 1000.0,
+            maximum_cumulative_z_m=cli.max_cumulative_z_mm / 1000.0,
         )
     except Exception as error:
         node.get_logger().error(f'MoveIt PBVS 폐루프 종료: {error}')

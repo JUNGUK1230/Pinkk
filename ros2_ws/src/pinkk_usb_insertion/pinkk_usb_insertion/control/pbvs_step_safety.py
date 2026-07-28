@@ -19,17 +19,25 @@ class PbvsStepValidation:
     xy_distance_m: float
 
 
+@dataclass(frozen=True)
+class PbvsReferenceDrift:
+    """폐루프 시작 기준에 대한 현재 Z·자세 이탈."""
+
+    z_error_m: float
+    orientation_error_deg: float
+
+
 def make_fixed_z_xy_waypoints(
     current_base_to_flange: np.ndarray,
     target_base_to_flange: np.ndarray,
     maximum_waypoint_spacing_m: float,
 ) -> list[np.ndarray]:
-    """현재 Z를 고정하고 XY와 작은 자세 변화를 보간한 waypoint를 생성한다."""
+    """현재 pose에서 목표 pose까지 작은 waypoint로 보간한다."""
     if maximum_waypoint_spacing_m <= 0.0:
         raise ValueError('waypoint 간격은 0보다 커야 합니다')
     current = validate_transform(current_base_to_flange)
     target = validate_transform(target_base_to_flange)
-    distance = float(np.linalg.norm(target[:2, 3] - current[:2, 3]))
+    distance = float(np.linalg.norm(target[:3, 3] - current[:3, 3]))
     # 1 mm를 meter로 더한 결과처럼 부동소수점 오차로 비율이
     # 1.0000000000000009가 되어 불필요한 waypoint가 생기는 것을 막는다.
     count = max(
@@ -60,6 +68,9 @@ def make_fixed_z_xy_waypoints(
         waypoint[:2, 3] = (
             current[:2, 3] + ratio * (target[:2, 3] - current[:2, 3])
         )
+        waypoint[2, 3] = (
+            current[2, 3] + ratio * (target[2, 3] - current[2, 3])
+        )
         interpolated_angle = rotation_angle * ratio
         axis_skew = np.array(
             (
@@ -77,6 +88,41 @@ def make_fixed_z_xy_waypoints(
         waypoint[:3, :3] = current[:3, :3] @ interpolated_rotation
         waypoints.append(validate_transform(waypoint))
     return waypoints
+
+
+def validate_pbvs_reference_drift(
+    reference_base_to_flange: np.ndarray,
+    actual_base_to_flange: np.ndarray,
+    maximum_z_error_m: float,
+    maximum_orientation_error_deg: float,
+) -> PbvsReferenceDrift:
+    """폐루프 시작 Z·자세에서 누적 이탈했는지 검사한다."""
+    if maximum_z_error_m <= 0.0:
+        raise ValueError('누적 Z 이탈 제한은 0보다 커야 합니다')
+    if maximum_orientation_error_deg <= 0.0:
+        raise ValueError('누적 자세 이탈 제한은 0보다 커야 합니다')
+    reference = validate_transform(reference_base_to_flange)
+    actual = validate_transform(actual_base_to_flange)
+    z_error = float(actual[2, 3] - reference[2, 3])
+    relative_rotation = reference[:3, :3].T @ actual[:3, :3]
+    cosine = float(
+        np.clip((np.trace(relative_rotation) - 1.0) * 0.5, -1.0, 1.0)
+    )
+    orientation_error = math.degrees(math.acos(cosine))
+    if abs(z_error) > maximum_z_error_m:
+        raise ValueError(
+            f'폐루프 시작 Z 대비 누적 이탈 {z_error * 1000.0:+.3f}mm가 '
+            f'제한 {maximum_z_error_m * 1000.0:.3f}mm를 초과합니다'
+        )
+    if orientation_error > maximum_orientation_error_deg:
+        raise ValueError(
+            f'폐루프 시작 자세 대비 누적 이탈 {orientation_error:.3f}deg가 '
+            f'제한 {maximum_orientation_error_deg:.3f}deg를 초과합니다'
+        )
+    return PbvsReferenceDrift(
+        z_error_m=z_error,
+        orientation_error_deg=orientation_error,
+    )
 
 
 def validate_joint_step(
