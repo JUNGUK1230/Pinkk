@@ -16,6 +16,9 @@ def generate_launch_description() -> LaunchDescription:
                 "joint_execution_enabled", default_value="false"
             ),
             DeclareLaunchArgument(
+                "joint_max_command_attempts", default_value="1"
+            ),
+            DeclareLaunchArgument(
                 "cartesian_execution_enabled", default_value="false"
             ),
             DeclareLaunchArgument(
@@ -41,6 +44,14 @@ def generate_launch_description() -> LaunchDescription:
                         "joint_stable_sample_count": 5,
                         "joint_stable_delta_deg": 0.2,
                         "joint_hold_check_seconds": 2.0,
+                        "joint_max_command_attempts": ParameterValue(
+                            LaunchConfiguration(
+                                "joint_max_command_attempts"
+                            ),
+                            value_type=int,
+                        ),
+                        "joint_retry_stable_sample_count": 3,
+                        "joint_retry_minimum_progress_deg": 0.1,
                         "publish_rate_hz": 10.0,
                         "max_execution_seconds": 60.0,
                         "cartesian_execution_enabled": ParameterValue(

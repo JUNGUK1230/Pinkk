@@ -24,6 +24,26 @@ def maximum_joint_error(
     )
 
 
+def signed_joint_errors_degrees(
+    target: Sequence[float],
+    actual: Sequence[float],
+) -> list[float]:
+    """각 관절의 target-actual 최단 오차를 degree로 반환한다."""
+    if len(target) != len(actual) or not target:
+        raise ValueError(
+            'target과 actual 관절 배열 길이가 같고 비어 있지 않아야 합니다'
+        )
+    return [
+        math.degrees(
+            math.remainder(
+                float(target_value) - float(actual_value),
+                2.0 * math.pi,
+            )
+        )
+        for target_value, actual_value in zip(target, actual, strict=True)
+    ]
+
+
 class JointStabilityMonitor:
     """목표 오차·표본간 변화·로봇 정지를 모두 만족한 연속 횟수를 센다."""
 

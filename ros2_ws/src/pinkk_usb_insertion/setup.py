@@ -37,6 +37,10 @@ setup(
             'usb_insertion_node = pinkk_usb_insertion.usb_insertion_node:main',
             'cartesian_smoke_test = '
             'pinkk_usb_insertion.cartesian_smoke_test_node:main',
+            'moveit_ik_step_executor = '
+            'pinkk_usb_insertion.moveit_ik_step_executor_node:main',
+            'moveit_ik_step_execute = '
+            'pinkk_usb_insertion.moveit_ik_step_execute_node:main',
         ],
     },
 )

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -30,7 +30,12 @@ def make_fixed_z_xy_waypoints(
     current = validate_transform(current_base_to_flange)
     target = validate_transform(target_base_to_flange)
     distance = float(np.linalg.norm(target[:2, 3] - current[:2, 3]))
-    count = max(1, math.ceil(distance / maximum_waypoint_spacing_m))
+    # 1 mm를 meter로 더한 결과처럼 부동소수점 오차로 비율이
+    # 1.0000000000000009가 되어 불필요한 waypoint가 생기는 것을 막는다.
+    count = max(
+        1,
+        math.ceil(distance / maximum_waypoint_spacing_m - 1e-9),
+    )
     waypoints: list[np.ndarray] = []
     for index in range(1, count + 1):
         ratio = index / count
@@ -48,7 +53,10 @@ def validate_joint_step(
     maximum_joint_step_deg: float,
 ) -> float:
     """인접 IK 해 사이의 최대 관절 변화를 검사하고 degree로 반환한다."""
-    if len(current_positions) != len(target_positions) or not current_positions:
+    if (
+        len(current_positions) != len(target_positions)
+        or not current_positions
+    ):
         raise ValueError('현재/목표 관절 배열 크기가 다릅니다')
     differences = np.abs(
         np.asarray(target_positions, dtype=np.float64)
@@ -86,7 +94,9 @@ def validate_fixed_z_pbvs_step(
         raise ValueError(f'flange Z가 {delta[2] * 1000.0:+.3f}mm 변합니다')
 
     relative_rotation = current[:3, :3].T @ target[:3, :3]
-    cosine = float(np.clip((np.trace(relative_rotation) - 1.0) * 0.5, -1.0, 1.0))
+    cosine = float(
+        np.clip((np.trace(relative_rotation) - 1.0) * 0.5, -1.0, 1.0)
+    )
     angle_deg = math.degrees(math.acos(cosine))
     if angle_deg > maximum_orientation_change_deg:
         raise ValueError(f'flange 자세가 {angle_deg:.4f}deg 변합니다')

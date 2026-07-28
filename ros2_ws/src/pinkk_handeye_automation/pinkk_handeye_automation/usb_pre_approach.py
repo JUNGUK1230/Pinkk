@@ -425,9 +425,25 @@ class UsbPreApproach(Node):
             raise RuntimeError("trajectory 목표가 거절됐습니다")
         self._active_goal_handle = handle
         try:
-            wrapped = self._wait_future(
-                handle.get_result_async(), seconds + 15.0
-            )
+            try:
+                wrapped = self._wait_future(
+                    handle.get_result_async(), seconds + 50.0
+                )
+            except TimeoutError as error:
+                self.get_logger().error(
+                    "trajectory 결과 timeout: 안전 취소를 요청합니다"
+                )
+                response = self._wait_future(
+                    handle.cancel_goal_async(),
+                    3.0,
+                )
+                if not response.goals_canceling:
+                    raise RuntimeError(
+                        "trajectory timeout 후 bridge가 취소를 수락하지 않았습니다"
+                    ) from error
+                raise RuntimeError(
+                    "trajectory 결과 timeout으로 action 취소를 요청했습니다"
+                ) from error
             if wrapped.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
                 raise RuntimeError(
                     f"trajectory 실행 실패: {wrapped.result.error_code} "

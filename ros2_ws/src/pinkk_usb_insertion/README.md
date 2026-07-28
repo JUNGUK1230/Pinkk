@@ -509,6 +509,173 @@ MyCobot의 실제 Z가 4.5 mm 이탈했습니다. 정지 상태 `get_coords()`�
 취소합니다. X/Y 각각 1 mm 왕복 시험을 통과하기 전에는 5 mm, 10 mm 또는 PBVS
 폐루프 시험으로 확대하지 않습니다.
 
+### MoveIt IK 고정-Z DRY RUN
+
+`moveit_ik_step_executor`는 위 실행 백엔드의 첫 단계인 계산 전용 검사기입니다.
+현재 `g_base → joint6_flange` 자세를 기준으로 base X 또는 Y만 바꾸며, Z와
+quaternion 전체를 그대로 복사합니다. 각 waypoint마다 다음 순서를 수행합니다.
+
+```text
+/joint_states와 최신 flange TF 읽기
+  → 1 mm 간격의 고정-Z XY waypoint 생성
+  → /compute_ik (직전 해를 다음 seed로 사용)
+  → 인접 IK 관절 점프 검사
+  → /check_state_validity 충돌·관절 제한 검사
+  → /compute_fk로 목표 Z·자세 역검증
+  → 결과 출력 후 종료
+```
+
+이 노드는 trajectory action client, Cartesian action client 및 로봇 명령
+publisher를 만들지 않습니다. 따라서 `DRY RUN 통과`는 계산 경로가 안전 조건을
+통과했다는 뜻일 뿐, 로봇이 이동했다는 뜻이 아닙니다.
+
+노트북에서 변경분을 먼저 빌드합니다.
+
+```bash
+cd ~/Desktop/Pinkk-robot-arm
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+
+colcon build \
+  --base-paths ros2_ws/src \
+  --packages-select pinkk_usb_insertion \
+  --build-base ~/mycobot_moveit_ws/build_pinkk \
+  --install-base ~/mycobot_moveit_ws/install_pinkk \
+  --symlink-install
+```
+
+터미널 1의 로봇 PC에서는 `/joint_states`만 필요하므로 관절·Cartesian 실행
+게이트를 모두 닫은 bridge를 유지합니다.
+
+```bash
+cd ~/Pinkk-robot-arm
+bash scripts/calibration/robot_start_bridge.sh \
+  5 3.5 false 0.0015 false
+```
+
+터미널 2의 노트북에서는 MoveIt 계산 service를 실행합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+source ~/mycobot_moveit_ws/install_pinkk/setup.bash
+
+export ROS_DOMAIN_ID=36
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+unset ROS_LOCALHOST_ONLY
+
+ros2 launch pinkk_mycobot_bridge planning_only.launch.py
+```
+
+터미널 3의 노트북에서 먼저 X +1 mm를 계산합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+source ~/mycobot_moveit_ws/install_pinkk/setup.bash
+
+export ROS_DOMAIN_ID=36
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+unset ROS_LOCALHOST_ONLY
+
+ros2 run pinkk_usb_insertion moveit_ik_step_executor \
+  --axis x --distance-mm 1
+```
+
+X -1 mm와 Y ±1 mm도 같은 방식으로 계산할 수 있습니다.
+
+```bash
+ros2 run pinkk_usb_insertion moveit_ik_step_executor \
+  --axis x --distance-mm -1
+ros2 run pinkk_usb_insertion moveit_ik_step_executor \
+  --axis y --distance-mm 1
+ros2 run pinkk_usb_insertion moveit_ik_step_executor \
+  --axis y --distance-mm -1
+```
+
+기본 제한은 총 이동 10 mm 이하, waypoint 간격 1 mm 이하, 인접 waypoint의
+최대 관절 변화 5도 이하입니다. 실제 이동 기능은 아직 없으므로 이 단계에서는
+bridge의 `joint_enabled=false`와 `cartesian_enabled=false`를 바꾸지 않습니다.
+출력의 `현재 관절`, `IK 관절`, `관절 차이`, `FK Z 오차`, `자세 오차`를 네
+방향 모두 기록한 뒤에만 검증된 관절 trajectory 실행 단계를 추가합니다.
+
+관절 완료 허용오차는 용도별로 구분합니다. 관측 자세 복귀의 1.5~3도는
+카메라 시야를 되찾는 근사 기준이고, 1mm PBVS 이동 성공 기준이 아닙니다.
+PBVS에서는 관절 목표를 통과해도 이동 후 TF의 Z 1mm와 자세 1도 제한을 별도로
+통과해야 합니다. 하드웨어 관절 오차를 숨기기 위해 TF 허용오차를 늘리지
+않습니다.
+
+### MoveIt IK 1mm 실제 단발 시험
+
+네 방향 DRY RUN이 모두 통과한 뒤에만 `moveit_ik_step_execute`를 사용합니다.
+이 명령은 직접 Cartesian `send_coords()`를 호출하지 않습니다. 현재 자세에서
+MoveIt IK·충돌·FK 검사를 다시 수행하고, 최종 관절값 하나를
+`FollowJointTrajectory`로 bridge에 전달합니다.
+
+로봇 PC에서 실행 중인 차단 bridge를 `Ctrl+C`로 종료한 뒤 관절 실행만
+허용하여 다시 시작합니다. 1mm X 이동의 예상 관절 변화가 약 0.75도이므로
+3.5도 허용오차는 사용할 수 없습니다. 첫 시험은 0.3도로 제한합니다.
+
+```bash
+cd ~/Pinkk-robot-arm
+
+bash scripts/calibration/robot_start_bridge.sh \
+  5 0.3 false 0.0015 true
+```
+
+인자의 의미는 순서대로 다음과 같습니다.
+
+```text
+5       : MyCobot 관절 이동 속도
+0.3     : 목표 관절 도달 허용오차(deg)
+false   : 직접 Cartesian send_coords 실행 차단
+0.0015  : Cartesian 제한값(차단 상태라 사용하지 않음)
+true    : FollowJointTrajectory 관절 실행 허용
+```
+
+노트북의 `planning_only.launch.py`는 그대로 유지합니다. 다른 노트북 터미널에서
+로봇 주변을 비우고 비상 정지 준비 후 X +1mm 한 번만 실행합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/mycobot_moveit_ws/install/setup.bash
+source ~/mycobot_moveit_ws/install_pinkk/setup.bash
+
+export ROS_DOMAIN_ID=36
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+unset ROS_LOCALHOST_ONLY
+
+ros2 run pinkk_usb_insertion moveit_ik_step_execute \
+  --axis x --distance-mm 1 --move-seconds 5 --execute
+```
+
+실행기는 다음 조건을 모두 강제합니다.
+
+- 절대 이동 명령 1mm 이하
+- 전체 관절 변화 1도 이하
+- MoveIt IK·충돌·FK 사전검사 통과
+- 실제 명령 전 3초 경고
+- 이동 후 실제 TF가 요청 방향으로 최소 0.25mm 이동
+- 목표 대비 위치 오차 0.75mm 이하
+- 목표 대비 Z 오차 1mm 이하
+- 목표 대비 자세 오차 1도 이하
+
+성공 로그의 `측정 이동 dx/dy/dz`를 기록합니다. 실패하면 반대 명령이나 다음 축을
+연속 실행하지 말고 현재 관절과 TF부터 확인합니다. X +1mm 결과가 정상일 때만
+현재 위치 기준 X -1mm를 별도로 승인하여 원래 X 위치로 복귀합니다.
+
+```bash
+ros2 run pinkk_usb_insertion moveit_ik_step_execute \
+  --axis x --distance-mm -1 --move-seconds 5 --execute
+```
+
+그다음 Y +1mm와 Y -1mm를 같은 방식으로 한 번씩 실행합니다. 실행기는 실패 시
+임의의 자동 복귀를 하지 않습니다. 잘못된 자동 복귀가 두 번째 위험 이동이 될 수
+있기 때문에 결과 확인 후 사용자가 반대 방향을 명시해야 합니다.
+
 Yaw PBVS용 평면 긴 축 오차와 1회 2도 제한 계산은 준비되어 있지만 현재
 `yaw_pbvs.enabled=false`입니다. YOLO keypoint 순서와 실제 `T_flange_plug`를
 확정한 뒤 포트 긴 축과 플러그 긴 축을 연결하기 전까지 Yaw 실제 명령은

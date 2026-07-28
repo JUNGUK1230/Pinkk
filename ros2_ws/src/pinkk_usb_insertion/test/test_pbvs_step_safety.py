@@ -44,6 +44,15 @@ def test_fixed_z_waypoints_preserve_height_and_orientation() -> None:
     assert np.allclose(waypoints[-1], target)
 
 
+def test_exact_one_millimeter_uses_one_waypoint() -> None:
+    """정확한 1mm 요청이 부동소수점 오차로 둘로 분할되지 않는다."""
+    current = make_transform((0.158803, -0.068566, 0.262973), (0, 0, 0, 1))
+    target = current.copy()
+    target[0, 3] += 0.001
+    waypoints = make_fixed_z_xy_waypoints(current, target, 0.001)
+    assert len(waypoints) == 1
+
+
 def test_joint_step_rejects_alternate_ik_branch() -> None:
     current = [0.0] * 6
     safe = [np.deg2rad(2.0)] * 6

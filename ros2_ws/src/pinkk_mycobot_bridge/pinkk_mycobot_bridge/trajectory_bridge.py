@@ -33,7 +33,11 @@ from .command_queue import (
     stop_and_clear_command_queue,
 )
 from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
-from .joint_completion import JointStabilityMonitor, maximum_joint_error
+from .joint_completion import (
+    JointStabilityMonitor,
+    maximum_joint_error,
+    signed_joint_errors_degrees,
+)
 
 
 def duration_seconds(duration: object) -> float:
@@ -89,6 +93,9 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("joint_stable_sample_count", 5)
         self.declare_parameter("joint_stable_delta_deg", 0.2)
         self.declare_parameter("joint_hold_check_seconds", 2.0)
+        self.declare_parameter("joint_max_command_attempts", 1)
+        self.declare_parameter("joint_retry_stable_sample_count", 3)
+        self.declare_parameter("joint_retry_minimum_progress_deg", 0.1)
         self.declare_parameter("max_execution_seconds", 60.0)
         self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
@@ -118,6 +125,19 @@ class MyCobotTrajectoryBridge(Node):
         )
         self._joint_hold_check_seconds = float(
             self.get_parameter("joint_hold_check_seconds").value
+        )
+        self._joint_max_command_attempts = int(
+            self.get_parameter("joint_max_command_attempts").value
+        )
+        self._joint_retry_stable_sample_count = int(
+            self.get_parameter("joint_retry_stable_sample_count").value
+        )
+        self._joint_retry_minimum_progress_rad = math.radians(
+            float(
+                self.get_parameter(
+                    "joint_retry_minimum_progress_deg"
+                ).value
+            )
         )
         self._max_execution_seconds = float(
             self.get_parameter("max_execution_seconds").value
@@ -163,6 +183,16 @@ class MyCobotTrajectoryBridge(Node):
             raise ValueError("joint_stable_delta_deg는 0보다 커야 합니다")
         if self._joint_hold_check_seconds <= 0.0:
             raise ValueError("joint_hold_check_seconds는 0보다 커야 합니다")
+        if not 1 <= self._joint_max_command_attempts <= 3:
+            raise ValueError("joint_max_command_attempts는 1~3이어야 합니다")
+        if self._joint_retry_stable_sample_count < 2:
+            raise ValueError(
+                "joint_retry_stable_sample_count는 최소 2여야 합니다"
+            )
+        if self._joint_retry_minimum_progress_rad <= 0.0:
+            raise ValueError(
+                "joint_retry_minimum_progress_deg는 0보다 커야 합니다"
+            )
         if self._max_execution_seconds <= 0.0:
             raise ValueError("max_execution_seconds는 0보다 커야 합니다")
         positive_cartesian_parameters = (
@@ -232,7 +262,8 @@ class MyCobotTrajectoryBridge(Node):
         self.get_logger().warning(
             f"관절 send_angles action {joint_mode}: action={self.ACTION_NAME}, "
             f"tolerance={math.degrees(self._tolerance_rad):.2f}deg, "
-            f"stable_samples={self._joint_stable_sample_count}"
+            f"stable_samples={self._joint_stable_sample_count}, "
+            f"max_attempts={self._joint_max_command_attempts}"
         )
         api_mode = "API 준비" if self._cartesian_ready else "API 사용 불가"
         execution_mode = (
@@ -322,23 +353,25 @@ class MyCobotTrajectoryBridge(Node):
         planned_seconds = duration_seconds(trajectory.points[-1].time_from_start)
         timeout = min(
             self._max_execution_seconds,
-            max(10.0, planned_seconds + 8.0),
+            max(10.0, planned_seconds + 8.0)
+            * self._joint_max_command_attempts,
         )
         result = FollowJointTrajectory.Result()
+        started = time.monotonic()
+        attempts_sent = 0
+        previous_attempt_error: float | None = None
+        retry_stable_samples = 0
+        previous_actual: list[float] | None = None
 
         try:
-            self.get_logger().info(f"MyCobot 목표 전송 [deg]: {target_deg}")
-            with self._serial_lock:
-                prepare_command_queue(self._robot)
-                response = self._robot.send_angles(target_deg, self._speed)
-            require_no_explicit_command_failure('send_angles', response)
+            self._send_joint_target(target_deg, attempts_sent + 1)
+            attempts_sent += 1
         except Exception as error:
             result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
             result.error_string = f"send_angles 실패: {error}"
             goal_handle.abort()
             return result
 
-        started = time.monotonic()
         stability = JointStabilityMonitor(
             self._tolerance_rad,
             self._joint_stable_delta_rad,
@@ -355,6 +388,7 @@ class MyCobotTrajectoryBridge(Node):
             actual = self._read_and_publish_state()
             if actual is not None:
                 errors = [target - value for target, value in zip(target_rad, actual, strict=True)]
+                maximum_error = maximum_joint_error(target_rad, actual)
                 feedback = FollowJointTrajectory.Feedback()
                 feedback.header.stamp = self.get_clock().now().to_msg()
                 feedback.joint_names = list(JOINT_NAMES)
@@ -403,11 +437,94 @@ class MyCobotTrajectoryBridge(Node):
                     )
                     return result
 
+                sample_stable = (
+                    previous_actual is not None
+                    and maximum_joint_error(previous_actual, actual)
+                    <= self._joint_stable_delta_rad
+                )
+                if sample_stable and not robot_is_moving:
+                    retry_stable_samples += 1
+                else:
+                    retry_stable_samples = 0
+                previous_actual = list(actual)
+
+                if (
+                    maximum_error > self._tolerance_rad
+                    and retry_stable_samples
+                    >= self._joint_retry_stable_sample_count
+                ):
+                    diagnostic = self._joint_diagnostic(
+                        target_rad,
+                        actual,
+                    )
+                    if attempts_sent >= self._joint_max_command_attempts:
+                        self._stop_robot()
+                        goal_handle.abort()
+                        result.error_code = (
+                            FollowJointTrajectory.Result
+                            .GOAL_TOLERANCE_VIOLATED
+                        )
+                        result.error_string = (
+                            '관절 재전송 제한 후에도 목표 오차가 남았습니다: '
+                            f'{diagnostic}'
+                        )
+                        self.get_logger().error(result.error_string)
+                        return result
+                    if (
+                        previous_attempt_error is not None
+                        and maximum_error
+                        > previous_attempt_error
+                        - self._joint_retry_minimum_progress_rad
+                    ):
+                        self._stop_robot()
+                        goal_handle.abort()
+                        result.error_code = (
+                            FollowJointTrajectory.Result
+                            .GOAL_TOLERANCE_VIOLATED
+                        )
+                        result.error_string = (
+                            '관절 오차가 충분히 감소하지 않아 재전송을 '
+                            f'중단합니다: {diagnostic}'
+                        )
+                        self.get_logger().error(result.error_string)
+                        return result
+
+                    previous_attempt_error = maximum_error
+                    self.get_logger().warning(
+                        f'관절 목표 재전송 전 상태: {diagnostic}'
+                    )
+                    try:
+                        self._send_joint_target(
+                            target_deg,
+                            attempts_sent + 1,
+                        )
+                    except Exception as error:
+                        self._stop_robot()
+                        goal_handle.abort()
+                        result.error_code = (
+                            FollowJointTrajectory.Result.INVALID_GOAL
+                        )
+                        result.error_string = (
+                            f'관절 목표 재전송 실패: {error}'
+                        )
+                        return result
+                    attempts_sent += 1
+                    retry_stable_samples = 0
+                    previous_actual = None
+
             if time.monotonic() - started > timeout:
                 self._stop_robot()
                 goal_handle.abort()
                 result.error_code = FollowJointTrajectory.Result.GOAL_TOLERANCE_VIOLATED
-                result.error_string = f"{timeout:.1f}초 안에 목표 자세에 도달하지 못했습니다"
+                detail = (
+                    '실제 관절을 읽지 못했습니다'
+                    if actual is None
+                    else self._joint_diagnostic(target_rad, actual)
+                )
+                result.error_string = (
+                    f"{timeout:.1f}초 안에 목표 자세에 도달하지 "
+                    f"못했습니다: {detail}"
+                )
                 self.get_logger().error(result.error_string)
                 return result
             time.sleep(0.1)
@@ -417,6 +534,54 @@ class MyCobotTrajectoryBridge(Node):
         result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
         result.error_string = "ROS가 종료되었습니다"
         return result
+
+    def _send_joint_target(
+        self,
+        target_deg: Sequence[float],
+        attempt: int,
+    ) -> None:
+        """큐를 안전 초기화하고 관절 목표를 한 번 전송하며 시간을 기록한다."""
+        started = time.monotonic()
+        self.get_logger().info(
+            f'MyCobot 목표 전송 {attempt}/'
+            f'{self._joint_max_command_attempts} [deg]: {list(target_deg)}'
+        )
+        with self._serial_lock:
+            prepare_command_queue(self._robot)
+            queue_ready_at = time.monotonic()
+            response = self._robot.send_angles(
+                list(target_deg),
+                self._speed,
+            )
+        finished = time.monotonic()
+        require_no_explicit_command_failure('send_angles', response)
+        self.get_logger().info(
+            'MyCobot 명령 호출 완료: '
+            f'queue_prepare={queue_ready_at - started:.3f}s, '
+            f'send_angles={finished - queue_ready_at:.3f}s, '
+            f'response={response!r}'
+        )
+
+    @staticmethod
+    def _joint_diagnostic(
+        target_rad: Sequence[float],
+        actual_rad: Sequence[float],
+    ) -> str:
+        """목표·실제·관절별 오차를 degree 문자열로 만든다."""
+        target_deg = radians_to_degrees(target_rad)
+        actual_deg = radians_to_degrees(actual_rad)
+        errors_deg = [
+            round(value, 3)
+            for value in signed_joint_errors_degrees(
+                target_rad,
+                actual_rad,
+            )
+        ]
+        maximum_error_deg = max(abs(value) for value in errors_deg)
+        return (
+            f'target_deg={target_deg}, actual_deg={actual_deg}, '
+            f'error_deg={errors_deg}, max_error={maximum_error_deg:.3f}deg'
+        )
 
     def _robot_is_moving(self) -> bool:
         is_moving = getattr(self._robot, "is_moving", None)

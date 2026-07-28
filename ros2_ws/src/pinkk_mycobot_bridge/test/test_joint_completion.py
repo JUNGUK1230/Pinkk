@@ -5,6 +5,7 @@ import math
 from pinkk_mycobot_bridge.joint_completion import (
     JointStabilityMonitor,
     maximum_joint_error,
+    signed_joint_errors_degrees,
 )
 
 
@@ -50,3 +51,12 @@ def test_motion_or_drift_resets_stability_count() -> None:
         target, [math.radians(0.8)], robot_is_moving=False
     ) is False
     assert monitor.consecutive_samples == 0
+
+
+def test_signed_joint_errors_degrees_preserves_direction() -> None:
+    """관절별 오차가 target-actual 방향을 유지한다."""
+    target = [math.radians(1.0), math.radians(-2.0)]
+    actual = [math.radians(0.5), math.radians(-1.0)]
+    errors = signed_joint_errors_degrees(target, actual)
+    assert math.isclose(errors[0], 0.5)
+    assert math.isclose(errors[1], -1.0)
