@@ -7,7 +7,6 @@
 - `src/central_control`: 상단 카메라, 보정·BEV, YOLO 주차 감지, 지도 정합 및 경로 계획
 - `src/vehicle_control`: `/odom`을 받아 `/cmd_vel`을 발행하는 PID 경로 추종 노드
 - `src/robot_arm`: 로봇팔 카메라·동작 제어 관련 코드와 설정
-- `robot_client`: PinkyPro 배터리 ROS 토픽을 중앙 관제 웹으로 전달하는 HTTP 브리지
 
 ## Python 의존성 설치
 
@@ -122,9 +121,6 @@ cd ~/PINKK
 `yolo11l.pt` 기본 가중치는 detection 모델이므로 mask 기반 헤딩·주차면 점유 계산에는 사용할 수 없습니다. 라벨링과 재학습이 끝나면 동일한 `car` class를 가진 YOLO11 Large **segmentation** 가중치로 `model_path`만 교체합니다.
 
 기타 카메라 보정·BEV·지도 정합·경로 계획 도구의 사용법은 [중앙 제어 도구 문서](src/central_control/camera_tools/README.md), [LiDAR 지도 문서](src/central_control/map/lidar_map/README.md), [경로 계획 문서](src/central_control/path_planning/README.md)를 참고하세요.
-
-두 PinkyPro의 배터리를 HTTP로 중앙 관제 화면에 표시하는 방법은
-[주차 관제 웹 서버 문서](src/central_control/parking_management_web/README.md)를 참고하세요.
 
 ## 참고
 

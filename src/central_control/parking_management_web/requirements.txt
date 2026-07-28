@@ -1,6 +1,5 @@
-Flask>=3.0,<4
+flask
 numpy
 opencv-python
 PyYAML
 typeguard
-gunicorn>=22,<24

@@ -18,7 +18,6 @@ log/
 *.pth
 *.onnx
 *.engine
-src/central_control/parking_management_web/instance/
 
 src/vehicle_control/
 

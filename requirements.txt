@@ -2,6 +2,5 @@ numpy
 opencv-python
 PyYAML
 Flask>=3.0,<4
-gunicorn>=22,<24
 scipy
 typeguard
