@@ -971,7 +971,15 @@ def main() -> int:
         ros_publish_enabled = (
             not args.no_ros and bool(config.get("ros_publish_enabled", True))
         )
-        ros_publisher = DirectRosPublisher() if ros_publish_enabled else None
+        ros_publisher = (
+            DirectRosPublisher(
+                image_topic=str(
+                    config.get("ros_image_topic", "/pinkk/localization/image")
+                )
+            )
+            if ros_publish_enabled
+            else None
+        )
         target_slot_value = config.get("target_slot_name")
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
@@ -1005,7 +1013,7 @@ def main() -> int:
         print(
             "Direct ROS topics: "
             f"{ros_publisher.pose_topic}, {ros_publisher.path_topic}, "
-            f"{ros_publisher.trajectory_topic}"
+            f"{ros_publisher.trajectory_topic}, {ros_publisher.image_topic}"
         )
     if target_slot_name is not None:
         print(f"Fixed target parking slot: {target_slot_name}")
@@ -1148,7 +1156,8 @@ def main() -> int:
                 )
                 last_print_time = now
 
-            if not args.no_display:
+            # --no-display는 GUI만 끄며 웹용 ROS 영상 발행은 계속한다.
+            if ros_publisher is not None or not args.no_display:
                 canvas = draw_scene(
                     bev,
                     scene,
@@ -1192,6 +1201,9 @@ def main() -> int:
                     2,
                     cv2.LINE_AA,
                 )
+                if ros_publisher is not None:
+                    ros_publisher.publish_image(canvas)
+            if not args.no_display:
                 cv2.imshow(WINDOW_NAME, canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):

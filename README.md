@@ -79,6 +79,26 @@ cd ~/PINKK
 .venv/bin/python -m src.central_control.overhead_vision.localization.live_localization
 ```
 
+처리된 annotation 화면은 `/pinkk/localization/image` (`sensor_msgs/Image`,
+`bgr8`)로 함께 발행됩니다. Flask 없이 웹에서 보려면 ROS 2
+`web_video_server`를 실행한 뒤 정적 페이지를 여십시오.
+
+```bash
+sudo apt install ros-$ROS_DISTRO-web-video-server
+ros2 run web_video_server web_video_server
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+python3 -m http.server 8000 --directory src/central_control/parking_management_web
+```
+
+브라우저에서 `http://ROS_PC_IP:8000`으로 접속합니다. 통합 관제 화면은
+영상에 `web_video_server`, 배터리와 제어 명령에 rosbridge를 사용해
+각 차량의 `/pinky1/battery/percent`, `/pinky1/battery/voltage`,
+`/pinky2/battery/percent`, `/pinky2/battery/voltage`와
+`/pinkk/web/control` 토픽을 직접 사용합니다. LiDAR
+영상 토픽 기본값은 `/pinkk/lidar_map/image`이며 URL의 `lidarTopic` 쿼리로
+바꿀 수 있습니다. `--no-display`로 로컬 OpenCV 창을 꺼도 ROS 영상 발행은
+유지됩니다.
+
 직접 파일 실행도 지원하지만 YOLO·OpenCV가 설치된 프로젝트 `.venv`의 module 실행을 권장합니다. 시스템 `python3`를 사용하면 환경에 따라 `ultralytics`가 없을 수 있습니다.
 
 최신 결과는 `src/central_control/path_planning/output/live_vision_scene.json`에 매 프레임 원자적으로 저장됩니다. 다른 터미널에서 경로계획 입력을 확인할 수 있습니다.

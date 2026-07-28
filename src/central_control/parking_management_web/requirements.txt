@@ -1,5 +1,0 @@
-flask
-numpy
-opencv-python
-PyYAML
-typeguard

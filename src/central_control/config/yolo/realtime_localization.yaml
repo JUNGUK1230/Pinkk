@@ -13,6 +13,8 @@ realtime_localization:
   # 발행한다. 기존 JSON/PNG 진단이 필요할 때만 true로 바꾼다.
   write_runtime_files: false
   ros_publish_enabled: true
+  # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
+  ros_image_topic: /pinkk/localization/image
 
   camera_id: 2
   camera_width: 1920

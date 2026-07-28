@@ -7,6 +7,7 @@ from typing import Sequence
 PATH_TOPIC = "/pinkk/planned_path"
 TRAJECTORY_TOPIC = "/pinkk/planned_trajectory"
 POSE_TOPIC = "/pinkk/vehicle_pose"
+IMAGE_TOPIC = "/pinkk/localization/image"
 TRAJECTORY_FIELDS = (
     "x_m",
     "y_m",
@@ -26,6 +27,7 @@ class DirectRosPublisher:
         path_topic: str = PATH_TOPIC,
         trajectory_topic: str = TRAJECTORY_TOPIC,
         pose_topic: str = POSE_TOPIC,
+        image_topic: str = IMAGE_TOPIC,
     ) -> None:
         try:
             import rclpy
@@ -33,6 +35,7 @@ class DirectRosPublisher:
             from nav_msgs.msg import Path as RosPath
             from rclpy.node import Node
             from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+            from sensor_msgs.msg import Image
             from std_msgs.msg import Float64MultiArray, MultiArrayDimension
         except ImportError as error:
             raise RuntimeError(
@@ -45,6 +48,7 @@ class DirectRosPublisher:
         self._RosPath = RosPath
         self._Float64MultiArray = Float64MultiArray
         self._MultiArrayDimension = MultiArrayDimension
+        self._Image = Image
         self._owns_context = not rclpy.ok()
         if self._owns_context:
             rclpy.init(args=None)
@@ -70,9 +74,35 @@ class DirectRosPublisher:
             pose_topic,
             pose_qos,
         )
+        image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self._image_publisher = self._node.create_publisher(
+            Image,
+            image_topic,
+            image_qos,
+        )
         self.path_topic = path_topic
         self.trajectory_topic = trajectory_topic
         self.pose_topic = pose_topic
+        self.image_topic = image_topic
+
+    def publish_image(self, image: object) -> None:
+        """OpenCV BGR 화면을 cv_bridge 없이 sensor_msgs/Image로 발행한다."""
+        if not hasattr(image, "shape") or len(image.shape) != 3:
+            raise ValueError("image must be an HxWx3 BGR array")
+        height, width, channels = image.shape
+        if channels != 3:
+            raise ValueError("image must have exactly 3 BGR channels")
+        contiguous = image if image.flags.c_contiguous else image.copy(order="C")
+        message = self._Image()
+        message.header.stamp = self._node.get_clock().now().to_msg()
+        message.header.frame_id = "overhead_camera_bev"
+        message.height = int(height)
+        message.width = int(width)
+        message.encoding = "bgr8"
+        message.is_bigendian = False
+        message.step = int(width * channels)
+        message.data = contiguous.tobytes()
+        self._image_publisher.publish(message)
 
     def publish_pose(self, vehicle: object) -> None:
         """VehicleObservation rear axle pose를 `lidar_map` m 단위로 발행한다."""
