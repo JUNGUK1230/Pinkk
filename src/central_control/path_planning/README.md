@@ -71,6 +71,11 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 yaw는 `fixed_mission_routes.yaml`의 endpoint pose에서 가져옵니다. 차량이
 `TRANSIT` 상태이면 새 경로를 선택하지 않습니다.
 
+새 경로는 선택 즉시 발행하고, 이후
+`config/yolo/realtime_localization.yaml`의
+`route_republish_period_sec` 주기로 동일 경로를 반복 발행합니다. 기본값은
+1초입니다. 목표 변경이나 경로 무효화 시 이전 경로 재발행은 즉시 중단됩니다.
+
 발행 토픽:
 
 - `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 rear-axle pose

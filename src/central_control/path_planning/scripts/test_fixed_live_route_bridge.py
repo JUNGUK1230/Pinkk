@@ -17,6 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from fixed_route_selector import FixedRouteSelector  # noqa: E402
 from src.central_control.overhead_vision.localization.live_localization import (  # noqa: E402
     IntegratedPlanningController,
+    RoutePublishScheduler,
 )
 from src.central_control.overhead_vision.localization.scene_localizer import (  # noqa: E402
     AffineBevToLidar,
@@ -68,9 +69,20 @@ def main() -> int:
     assert TRAJECTORY_FIELDS == ("x_m", "y_m", "yaw_rad", "direction")
     assert not hasattr(outcome.trajectory[0], "target_speed_mps")
     assert not hasattr(outcome.trajectory[0], "steer_rad")
+
+    scheduler = RoutePublishScheduler(1.0)
+    assert not scheduler.due(10.0, has_route=False)
+    assert scheduler.due(10.1, has_route=True)
+    assert not scheduler.due(11.0, has_route=True)
+    assert scheduler.due(11.1, has_route=True)
+    assert scheduler.due(11.2, has_route=True, is_new_route=True)
+    assert not scheduler.due(11.3, has_route=False)
+    assert scheduler.due(11.4, has_route=True)
+
     print("Fixed yaw planning-ready check passed")
     print(f"Fixed route bridge points: {len(outcome.trajectory)}")
     print(f"ROS trajectory fields: {', '.join(TRAJECTORY_FIELDS)}")
+    print("Route republish scheduler: immediate + 1.0 sec periodic")
     return 0
 
 

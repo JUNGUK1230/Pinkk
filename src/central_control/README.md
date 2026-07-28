@@ -88,7 +88,10 @@ x_m, y_m, yaw_rad, direction
 `direction`은 전진 `1`, 후진 `-1`입니다. speed, steering angle, angular
 velocity, stop flag는 보내지 않으며 차량 주행 코드가 경로를 바탕으로 직접
 계산합니다. 경로와 trajectory 토픽은 reliable/transient-local QoS로 마지막
-경로를 유지하고, pose 토픽은 최신 차량 위치를 연속 발행합니다.
+경로를 유지합니다. 새 경로는 즉시 발행하고 같은 경로를 기본 1초 간격으로
+재발행하며, pose 토픽은 최신 차량 위치를 연속 발행합니다. 재발행 주기는
+`config/yolo/realtime_localization.yaml`의
+`route_republish_period_sec`에서 변경합니다.
 
 ## 동작 흐름
 

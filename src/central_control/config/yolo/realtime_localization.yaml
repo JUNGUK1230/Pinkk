@@ -15,10 +15,13 @@ realtime_localization:
   # 발행한다. 기존 JSON/PNG 진단이 필요할 때만 true로 바꾼다.
   write_runtime_files: false
   ros_publish_enabled: true
+  # 새 경로는 즉시 발행하고, 제어기가 놓치지 않도록 같은 경로를 이 주기로
+  # 재발행한다. 경로가 무효화되거나 목표가 바뀌면 이전 경로 발행은 중단한다.
+  route_republish_period_sec: 1.0
 
   # 2026-07-27 확인: 상단 USB Camera는 /dev/video3 (1920x1080 MJPG)다.
   # USB 재연결 후 번호가 달라지면 `v4l2-ctl --list-devices`로 다시 확인한다.
-  camera_id: 3
+  camera_id: 2
   camera_width: 1920
   camera_height: 1080
   camera_fps: 30

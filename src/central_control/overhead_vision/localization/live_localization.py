@@ -211,6 +211,31 @@ class FixedRouteOutcome:
     trajectory: tuple[object, ...]
 
 
+class RoutePublishScheduler:
+    """새 경로는 즉시, 유지 중인 경로는 설정 주기로 발행한다."""
+
+    def __init__(self, period_sec: float) -> None:
+        if not math.isfinite(period_sec) or period_sec <= 0.0:
+            raise ValueError("route republish period must be positive and finite")
+        self.period_sec = period_sec
+        self.last_publish_time: float | None = None
+
+    def due(self, now: float, has_route: bool, is_new_route: bool = False) -> bool:
+        if not math.isfinite(now):
+            raise ValueError("route publish time must be finite")
+        if not has_route:
+            self.last_publish_time = None
+            return False
+        if (
+            is_new_route
+            or self.last_publish_time is None
+            or now - self.last_publish_time >= self.period_sec
+        ):
+            self.last_publish_time = now
+            return True
+        return False
+
+
 class IntegratedPlanningController:
     """Select one fixed route for each new vehicle/target episode."""
 
@@ -944,6 +969,13 @@ def main() -> int:
         )
     print("SPACE: charge complete | p: replan | q/ESC: quit")
     planning_controller = IntegratedPlanningController(route_selector)
+    route_publish_scheduler = RoutePublishScheduler(
+        float(config.get("route_republish_period_sec", 1.0))
+    )
+    print(
+        "Fixed route publish: immediate + every "
+        f"{route_publish_scheduler.period_sec:.2f} sec"
+    )
     replan_revision = 0
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -1042,9 +1074,15 @@ def main() -> int:
                 replan_revision,
             )
             completed_outcome = planning_controller.consume_new_outcome()
-            if completed_outcome is not None and ros_publisher is not None:
+            active_outcome = planning_controller.outcome
+            publish_now = route_publish_scheduler.due(
+                time.monotonic(),
+                has_route=active_outcome is not None,
+                is_new_route=completed_outcome is not None,
+            )
+            if publish_now and ros_publisher is not None:
                 ros_publisher.publish_trajectory(
-                    getattr(completed_outcome, "trajectory")
+                    getattr(active_outcome, "trajectory")
                 )
             if ros_publisher is not None and scene.vehicle is not None:
                 if scene.vehicle.planning_ready:
