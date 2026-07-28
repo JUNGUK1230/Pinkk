@@ -676,6 +676,66 @@ ros2 run pinkk_usb_insertion moveit_ik_step_execute \
 임의의 자동 복귀를 하지 않습니다. 잘못된 자동 복귀가 두 번째 위험 이동이 될 수
 있기 때문에 결과 확인 후 사용자가 반대 방향을 명시해야 합니다.
 
+### YOLO PBVS 실제 3mm 단발 실행
+
+`moveit_pbvs_step_execute`는 YOLO keypoint와 solvePnP를 통해 발행된 최신
+`/robot_arm/pbvs/target_flange_pose`를 실제 관절 명령으로 한 번만 실행합니다.
+첫 실기 상한은 3mm이며, 한 번 실행 후 반드시 새 YOLO 관측을 기다리는
+stop-and-go 방식입니다.
+
+```text
+YOLO keypoint
+→ solvePnP 포트 자세
+→ PBVS 고정-Z XY 목표
+→ 목표 age·frame·converged 검사
+→ MoveIt IK·충돌·FK 검사
+→ FollowJointTrajectory 한 번
+→ 실제 TF의 이동 방향·Z·자세 검사
+→ 종료하고 새 관측 대기
+```
+
+로봇 PC bridge는 직접 Cartesian을 차단하고 관절 재전송을 최대 3회로 제한합니다.
+
+```bash
+bash scripts/calibration/robot_start_bridge.sh \
+  10 1.5 false 0.0015 true 3
+```
+
+노트북에서는 MoveIt, USB 인지, PBVS 목표 계산을 각각 실행합니다.
+
+```bash
+ros2 launch pinkk_mycobot_bridge planning_only.launch.py
+```
+
+```bash
+ros2 launch pinkk_usb_insertion usb_perception.launch.py \
+  camera_device:=/dev/video2 \
+  model_path:=/home/juwon/Desktop/usb_01.pt \
+  inference_device:=cuda:0
+```
+
+```bash
+ros2 run pinkk_usb_insertion pbvs_alignment_node
+```
+
+PBVS 상태가 `converged=False`이고 목표가 최대 3mm인지 먼저 확인합니다.
+
+```bash
+ros2 topic echo /robot_arm/pbvs/status --once
+```
+
+주변을 비우고 명시적으로 한 번만 승인합니다.
+
+```bash
+ros2 run pinkk_usb_insertion moveit_pbvs_step_execute \
+  --move-seconds 8 --execute
+```
+
+실행기는 1초보다 오래된 PBVS 목표, 3mm 초과 이동, Z 0.5mm 초과 목표 변화,
+자세 0.5도 초과 목표 변화 및 이미 수렴한 목표를 거부합니다. 이동 후에는 목표
+대비 위치 오차 1.5mm, 시작 Z 대비 1mm, 자세 1도 제한을 검사합니다. 성공해도
+자동으로 다음 PBVS 명령을 실행하지 않습니다.
+
 Yaw PBVS용 평면 긴 축 오차와 1회 2도 제한 계산은 준비되어 있지만 현재
 `yaw_pbvs.enabled=false`입니다. YOLO keypoint 순서와 실제 `T_flange_plug`를
 확정한 뒤 포트 긴 축과 플러그 긴 축을 연결하기 전까지 Yaw 실제 명령은

@@ -41,6 +41,8 @@ setup(
             'pinkk_usb_insertion.moveit_ik_step_executor_node:main',
             'moveit_ik_step_execute = '
             'pinkk_usb_insertion.moveit_ik_step_execute_node:main',
+            'moveit_pbvs_step_execute = '
+            'pinkk_usb_insertion.moveit_pbvs_step_execute_node:main',
         ],
     },
 )

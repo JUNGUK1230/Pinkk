@@ -38,7 +38,7 @@ pbvs:
   desired_port_x_m: 0.0
   desired_port_y_m: 0.0
   xy_tolerance_m: 0.003
-  maximum_xy_step_m: 0.010
+  maximum_xy_step_m: 0.003
   keep_flange_z: true
 
 alignment_reference:

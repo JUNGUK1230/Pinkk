@@ -26,9 +26,12 @@ ACTION_NAME = '/arm_group_controller/follow_joint_trajectory'
 class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
     """1mm 이하의 검증된 IK 목표 한 개만 관절 action으로 실행한다."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        node_name: str = 'pinkk_moveit_ik_step_execute',
+    ) -> None:
         """DRY RUN 계산 기능에 관절 trajectory client만 추가한다."""
-        super().__init__('pinkk_moveit_ik_step_execute')
+        super().__init__(node_name)
         self._action = ActionClient(self, FollowJointTrajectory, ACTION_NAME)
 
     def execute(
@@ -49,10 +52,29 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
             waypoint_spacing_m=0.001,
             maximum_joint_step_deg=1.0,
         )
+        self.execute_plan(
+            plan,
+            label=f'base {axis.upper()} {distance_m * 1000.0:+.3f}mm',
+            move_seconds=move_seconds,
+            maximum_total_joint_change_deg=1.0,
+            maximum_target_error_m=0.00075,
+            minimum_progress_m=0.00025,
+        )
+
+    def execute_plan(
+        self,
+        plan,
+        label: str,
+        move_seconds: float,
+        maximum_total_joint_change_deg: float,
+        maximum_target_error_m: float,
+        minimum_progress_m: float,
+    ) -> None:
+        """검증된 IK 계획을 한 번 실행하고 실제 TF 결과를 검사한다."""
         total_joint_change = validate_joint_step(
             plan.start_joints,
             plan.target_joints,
-            maximum_joint_step_deg=1.0,
+            maximum_joint_step_deg=maximum_total_joint_change_deg,
         )
         if not self._action.wait_for_server(timeout_sec=5.0):
             raise RuntimeError(f'관절 action server가 없습니다: {ACTION_NAME}')
@@ -67,7 +89,7 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
         ]
         self.get_logger().warning(
             '실제 로봇 1회 이동 승인됨\n'
-            f'  요청: base {axis.upper()} {distance_m * 1000.0:+.3f}mm\n'
+            f'  요청: {label}\n'
             f'  시작 관절 [deg]: {start_deg}\n'
             f'  목표 관절 [deg]: {target_deg}\n'
             f'  최대 총 관절 변화: {total_joint_change:.3f}deg\n'
@@ -126,7 +148,7 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
         error = validate_fk_pose(
             plan.target_transform,
             actual,
-            maximum_position_error_m=0.00075,
+            maximum_position_error_m=maximum_target_error_m,
             maximum_z_error_m=0.001,
             maximum_orientation_error_deg=1.0,
         )
@@ -139,12 +161,30 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
         actual_dz = (
             actual[2, 3] - plan.current_transform[2, 3]
         ) * 1000.0
-        actual_axis_move = actual_dx if axis == 'x' else actual_dy
-        if actual_axis_move * distance_m <= 0.0:
+        planned_delta = (
+            plan.target_transform[:2, 3]
+            - plan.current_transform[:2, 3]
+        )
+        actual_delta = (
+            actual[:2, 3]
+            - plan.current_transform[:2, 3]
+        )
+        planned_distance = float(math.hypot(*planned_delta))
+        if planned_distance < 1e-9:
+            raise RuntimeError('계획된 XY 이동량이 0입니다')
+        progress = float(
+            (
+                actual_delta[0] * planned_delta[0]
+                + actual_delta[1] * planned_delta[1]
+            )
+            / planned_distance
+        )
+        if progress <= 0.0:
             raise RuntimeError('실제 이동 방향이 요청 방향과 반대입니다')
-        if abs(actual_axis_move) < 0.25:
+        if progress < minimum_progress_m:
             raise RuntimeError(
-                f'요청 축 실제 이동이 너무 작습니다: {actual_axis_move:+.3f}mm'
+                '요청 방향 실제 이동이 너무 작습니다: '
+                f'{progress * 1000.0:+.3f}mm'
             )
         self.get_logger().info(
             '실제 1회 이동 및 이동 후 TF 검사 통과\n'

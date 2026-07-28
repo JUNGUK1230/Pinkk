@@ -25,6 +25,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .control.moveit_ik_safety import make_locked_xy_target, validate_fk_pose
 from .control.pbvs_step_safety import (
     make_fixed_z_xy_waypoints,
+    validate_fixed_z_pbvs_step,
     validate_joint_step,
 )
 from .geometry.transforms import make_transform
@@ -239,6 +240,46 @@ class MoveItIkDryRunNode(Node):
         maximum_joint_step_deg: float,
     ) -> IkStepPlan:
         """한 개의 X/Y 상대 목표를 계산하고 모든 사전검사를 수행한다."""
+        joints, current = self._current_state()
+        target = make_locked_xy_target(
+            current, axis, distance_m, maximum_distance_m
+        )
+        return self._calculate_plan_from_state(
+            joints,
+            current,
+            target,
+            waypoint_spacing_m,
+            maximum_joint_step_deg,
+        )
+
+    def calculate_target_plan(
+        self,
+        target,
+        maximum_distance_m: float,
+        waypoint_spacing_m: float,
+        maximum_joint_step_deg: float,
+        maximum_z_change_m: float = 0.0005,
+        maximum_orientation_change_deg: float = 0.5,
+    ) -> IkStepPlan:
+        """외부 PBVS 목표를 고정-Z 조건으로 검증하고 IK 계획을 계산한다."""
+        joints, current = self._current_state()
+        validate_fixed_z_pbvs_step(
+            current,
+            target,
+            maximum_distance_m,
+            maximum_z_change_m,
+            maximum_orientation_change_deg,
+        )
+        return self._calculate_plan_from_state(
+            joints,
+            current,
+            target,
+            waypoint_spacing_m,
+            maximum_joint_step_deg,
+        )
+
+    def _current_state(self):
+        """최신 관절과 base→flange 4×4 transform을 함께 반환한다."""
         joints, tf_message = self._wait_for_inputs(10.0)
         transform = tf_message.transform
         current = make_transform(
@@ -254,9 +295,17 @@ class MoveItIkDryRunNode(Node):
                 transform.rotation.w,
             ),
         )
-        target = make_locked_xy_target(
-            current, axis, distance_m, maximum_distance_m
-        )
+        return joints, current
+
+    def _calculate_plan_from_state(
+        self,
+        joints: list[float],
+        current,
+        target,
+        waypoint_spacing_m: float,
+        maximum_joint_step_deg: float,
+    ) -> IkStepPlan:
+        """이미 읽은 현재 상태와 목표로 IK waypoint 전체를 검사한다."""
         waypoints = make_fixed_z_xy_waypoints(
             current, target, waypoint_spacing_m
         )
