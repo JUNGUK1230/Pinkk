@@ -221,6 +221,32 @@ T_base_port
 /robot_arm/pbvs/port_pose_base
 ```
 
+PBVS 노드는 유효한 YOLO keypoint와 SolvePnP 결과를 base 좌표계로 변환한 뒤
+같은 자세를 `g_base → usb_port` 동적 TF로도 발행한다. 이 TF는 RViz
+시각화용이며 로봇 이동 명령이 아니다. 검출이 없거나 관측이 거부된 동안에는
+새 TF를 발행하지 않는다. 포트 TF에는 OBSERVE_POSE 확인이 필요하지 않지만,
+PBVS 목표는 현재 관절이 설정된 OBSERVE_POSE에서 최대 3도 안인지 확인된 뒤에만
+발행된다. 별도의 수동 `capture` 명령은 사용하지 않는다.
+
+노트북에서 perception과 로봇의 `g_base → joint6_flange` TF가 들어오는 상태에서
+다음 노드를 실행한다.
+
+```bash
+ros2 run pinkk_usb_insertion pbvs_alignment_node \
+  --ros-args -p use_latest_flange_tf:=true
+```
+
+별도 터미널에서 수치와 TF 연결을 확인한다.
+
+```bash
+ros2 run tf2_ros tf2_echo g_base usb_port
+```
+
+RViz2의 `Global Options → Fixed Frame`을 `g_base`로 지정하고 `TF` display를
+추가한다. 포트 축만 크게 보고 싶으면 `Axes` display를 추가해
+`Reference Frame=usb_port`로 지정한다. 축의 원점은 YOLO 네 keypoint로 구한
+18×8mm 포트 모델의 중심이며, 방향은 keypoint 순서와 SolvePnP 결과를 따른다.
+
 ### 6. PBVS 목표 계산과 제어 경계
 
 PBVS 노드는 카메라 기준 X/Y 오차를 로봇 base 방향으로 변환하고 한 번의 제한된
@@ -288,7 +314,7 @@ detections 없음      → 카메라 또는 YOLO 문제
 observation invalid  → confidence, timestamp, CameraInfo 또는 solvePnP 문제
 pose_camera 정상     → 카메라 기준 인지는 정상
 port_pose_base 없음  → Hand-eye 또는 로봇 TF 문제
-PBVS target 없음     → 기준 pose capture 또는 PBVS 안전 조건 문제
+PBVS target 없음     → OBSERVE_POSE 관절 검사 또는 PBVS 안전 조건 문제
 ```
 
 ## 패키지 구성
@@ -601,11 +627,12 @@ bridge의 `joint_enabled=false`와 `cartesian_enabled=false`를 바꾸지 않습
 출력의 `현재 관절`, `IK 관절`, `관절 차이`, `FK Z 오차`, `자세 오차`를 네
 방향 모두 기록한 뒤에만 검증된 관절 trajectory 실행 단계를 추가합니다.
 
-관절 완료 허용오차는 용도별로 구분합니다. 관측 자세 복귀의 1.5~3도는
+관절 완료 허용오차는 용도별로 구분합니다. 관측 자세 복귀의 1.5~3.5도는
 카메라 시야를 되찾는 근사 기준이고, 1mm PBVS 이동 성공 기준이 아닙니다.
-PBVS에서는 관절 목표를 통과해도 이동 후 TF의 Z 1mm와 자세 1도 제한을 별도로
-통과해야 합니다. 하드웨어 관절 오차를 숨기기 위해 TF 허용오차를 늘리지
-않습니다.
+1mm MoveIt IK 단발 시험에서는 관절 목표를 통과해도 이동 후 TF의 Z 1mm와
+자세 1도 제한을 별도로 통과해야 합니다. 이후 거친 PBVS에는 정지 후 Z 2mm와
+자세 2도 제한을 적용합니다. 하드웨어 관절 오차를 숨기기 위해 이 완료 기준을
+더 늘리지 않습니다.
 
 ### MoveIt IK 1mm 실제 단발 시험
 
@@ -694,12 +721,17 @@ YOLO keypoint
 → 종료하고 새 관측 대기
 ```
 
-로봇 PC bridge는 직접 Cartesian을 차단하고 관절 재전송을 최대 3회로 제한합니다.
+로봇 PC bridge는 직접 Cartesian을 차단하고 관절 명령을 한 번만 보냅니다.
 
 ```bash
 bash scripts/calibration/robot_start_bridge.sh \
-  10 1.5 false 0.0015 true 3
+  5 0.5 false 0.0015 true 3 true 0.8 1.0 2.0
 ```
+
+마지막 네 값은 관절 오차 보상 허용, 보상 gain, 관절별 1회 보상 제한(deg),
+원래 MoveIt 목표로부터 관절별 누적 보상 제한(deg)입니다. 보상은 로봇이
+정지했는데도 원래 목표 오차가 0.5도보다 클 때만 실행되며, 오차가 감소하지
+않으면 남은 횟수와 관계없이 중단합니다.
 
 노트북에서는 MoveIt, USB 인지, PBVS 목표 계산을 각각 실행합니다.
 
@@ -715,7 +747,8 @@ ros2 launch pinkk_usb_insertion usb_perception.launch.py \
 ```
 
 ```bash
-ros2 run pinkk_usb_insertion pbvs_alignment_node
+ros2 run pinkk_usb_insertion pbvs_alignment_node \
+  --ros-args -p use_latest_flange_tf:=true
 ```
 
 PBVS 상태가 `converged=False`이고 목표가 최대 3mm인지 먼저 확인합니다.
@@ -732,14 +765,97 @@ ros2 run pinkk_usb_insertion moveit_pbvs_step_execute \
 ```
 
 실행기는 1초보다 오래된 PBVS 목표, 3mm 초과 이동, Z 0.5mm 초과 목표 변화,
-자세 0.5도 초과 목표 변화 및 이미 수렴한 목표를 거부합니다. 이동 후에는 목표
-대비 위치 오차 1.5mm, 시작 Z 대비 1mm, 자세 1도 제한을 검사합니다. 성공해도
-자동으로 다음 PBVS 명령을 실행하지 않습니다.
+자세 0.5도 초과 목표 변화 및 이미 수렴한 목표를 거부합니다. 성공해도 자동으로
+다음 PBVS 명령을 실행하지 않으며 새 YOLO 관측의 오차 감소 여부로 다음 단계를
+결정합니다.
+
+거친 PBVS와 최종 삽입 직전의 안전 기준은 분리합니다. 관절 공간 보간 중에는
+기기 오차만으로 불필요하게 action을 취소하지 않도록 시작 Z 10mm, 자세 5도,
+계획 XY보다 10mm 과주행, 요청 반대 방향 3mm를 비상 취소 기준으로 사용합니다.
+로봇이 정지한 뒤에는 Z 오차 2mm, 자세 오차 2도를 적용하며 하나라도 넘으면
+해당 이동을 실패로 처리하고 다음 PBVS step을 보내지 않습니다. 최종 삽입
+직전에는 Z 1mm, 자세 1도 기준으로 다시 전환해야 합니다.
+
+거친 PBVS 실행기는 PBVS 목표에서 base X/Y만 사용하고 각 단발 실행 직전의
+현재 Z와 quaternion을 목표에 복사합니다. 따라서 기기 오차로 초기 기준 자세와
+조금 달라져도 다음 XY 보정을 계속할 수 있습니다. 초기 관측 Z와 Roll/Pitch를
+되찾는 동작은 XY가 수렴한 뒤 PRE_INSERT 단계에서 별도로 수행합니다.
+
+시리얼 큐 준비나 `send_angles()` 호출 중에는 TF 갱신 자체가 지연될 수 있으므로
+이 감시는 물리적 비상정지를 대신하지 않습니다.
 
 Yaw PBVS용 평면 긴 축 오차와 1회 2도 제한 계산은 준비되어 있지만 현재
 `yaw_pbvs.enabled=false`입니다. YOLO keypoint 순서와 실제 `T_flange_plug`를
 확정한 뒤 포트 긴 축과 플러그 긴 축을 연결하기 전까지 Yaw 실제 명령은
 발행하지 않습니다. 최종 제어 자유도는 `X/Y/Yaw 허용, Z/Roll/Pitch 고정`입니다.
+
+### YOLO X/Y/Yaw 실제 stop-and-go 폐루프
+
+`moveit_pbvs_closed_loop_execute`는 한 번의 명시적 실행 승인 뒤 아래 순서를
+제한 횟수만 반복한다.
+
+```text
+안정된 YOLO 5개 확인
+→ SolvePnP와 base-frame X/Y/Yaw 오차 계산
+→ X/Y 최대 3mm, Yaw 최대 2도 목표
+→ MoveIt IK·충돌·FK 검사
+→ FollowJointTrajectory 한 번
+→ 로봇 정지와 실제 TF 확인
+→ 1초 대기
+→ 이동 후 새 YOLO 5개로 오차 감소 확인
+```
+
+먼저 X/Y만 실제 폐루프로 확인한다. `pbvs_alignment_node`는
+`enable_yaw_pbvs`를 주지 않고 실행한다. 로봇이 OBSERVE_POSE에 있으면
+`/joint_states` 검사 후 현재 TF가 자동 저장되므로 별도 capture 명령은 없다.
+
+```bash
+# 실제 X/Y 폐루프
+ros2 run pinkk_usb_insertion moveit_pbvs_closed_loop_execute \
+  --max-steps 12 \
+  --move-seconds 8 \
+  --max-total-xy-mm 40 \
+  --execute
+```
+
+Yaw에는 TCP의 **위치 offset**까지는 필요하지 않다. 이 프로젝트에서는 충전기를
+고정한 뒤에도 플러그 Yaw를 `joint6_flange`의 그리퍼 Yaw와 동일하게 사용한다.
+따라서 `flange_to_plug_yaw_offset_deg: 0.0`, `flange_long_axis: x`로 두고
+포트 18mm 장축인 `port_long_axis: x`와 맞춘다. 실제 실행 전에는 YOLO
+keypoint 0→1 방향이 포트 18mm 장축과 일치하는지만 확인하고 정렬 노드와
+실행기 양쪽에서 Yaw를 동시에 승인한다.
+
+```bash
+# PBVS 목표 계산 터미널
+ros2 run pinkk_usb_insertion pbvs_alignment_node \
+  --ros-args \
+  -p use_latest_flange_tf:=true \
+  -p enable_yaw_pbvs:=true
+
+# 실제 폐루프 실행 터미널
+ros2 run pinkk_usb_insertion moveit_pbvs_closed_loop_execute \
+  --enable-yaw \
+  --max-steps 12 \
+  --move-seconds 8 \
+  --max-total-xy-mm 40 \
+  --execute
+```
+
+폐루프는 다음 경우 다음 명령을 보내지 않고 실패 종료한다.
+
+- 안정된 새 검출을 8초 안에 받지 못함
+- X/Y 영상 오차가 직전보다 3mm 이상 증가
+- Yaw 영상 오차가 직전보다 1.5도 이상 증가
+- 한 번의 MoveIt·충돌·FK·실제 이동 검사 실패
+- 최대 12 step, 300초 또는 누적 XY 40mm 도달
+
+정상 종료 조건은 X/Y 3mm 이내이며 Yaw 활성 시 Yaw 1도 이내도 동시에
+만족하는 것이다. 정상 종료 후에도 로봇은 그 자리에서 정지할 뿐이고 Z 하강,
+PRE_INSERT 이동, 삽입 및 자동 복귀는 실행하지 않는다.
+
+나중에 측정할 TCP translation은 `T_flange_plug_tip`의 X/Y/Z 위치에만 적용한다.
+현재 확정한 Yaw offset 0도는 유지하므로 TCP 추가 뒤에도 같은 Yaw PBVS 계산을
+재사용한다.
 
 ### 나중에 교체할 입력
 

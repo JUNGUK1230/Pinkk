@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import time
 
@@ -14,6 +15,10 @@ from std_msgs.msg import Bool
 
 from .moveit_ik_step_execute_node import MoveItIkStepExecuteNode
 from .ros_utils import pose_to_transform
+
+
+PBVS_MAXIMUM_POST_Z_ERROR_M = 0.002
+PBVS_MAXIMUM_POST_ORIENTATION_ERROR_DEG = 2.0
 
 
 class MoveItPbvsStepExecuteNode(MoveItIkStepExecuteNode):
@@ -82,14 +87,36 @@ class MoveItPbvsStepExecuteNode(MoveItIkStepExecuteNode):
             timeout_seconds=10.0,
             maximum_age_seconds=1.0,
         )
+        self.execute_pbvs_target(
+            target_message,
+            move_seconds=move_seconds,
+            apply_target_yaw=False,
+            warning_delay_seconds=3.0,
+        )
+
+    def execute_pbvs_target(
+        self,
+        target_message: PoseStamped,
+        move_seconds: float,
+        apply_target_yaw: bool,
+        warning_delay_seconds: float,
+    ):
+        """주어진 PBVS 목표를 현재 Z 기준으로 검증하고 한 번 실행한다."""
         target = pose_to_transform(target_message.pose)
+        current = self.read_current_transform(timeout_seconds=2.0)
+        # 거친 정렬에서는 PBVS가 계산한 base XY만 사용한다. 기기 오차로
+        # 초기 Z·자세와 차이가 생겨도 매 단발 시작 자세를 유지하고,
+        # 초기 기준 Z·Roll/Pitch 복귀는 최종 삽입 직전에 별도로 수행한다.
+        target[2, 3] = current[2, 3]
+        if not apply_target_yaw:
+            target[:3, :3] = current[:3, :3]
         plan = self.calculate_target_plan(
             target=target,
             maximum_distance_m=0.003,
             waypoint_spacing_m=0.001,
             maximum_joint_step_deg=5.0,
             maximum_z_change_m=0.0005,
-            maximum_orientation_change_deg=0.5,
+            maximum_orientation_change_deg=2.1 if apply_target_yaw else 0.5,
         )
         dx_mm = (
             plan.target_transform[0, 3]
@@ -99,14 +126,44 @@ class MoveItPbvsStepExecuteNode(MoveItIkStepExecuteNode):
             plan.target_transform[1, 3]
             - plan.current_transform[1, 3]
         ) * 1000.0
+        relative_rotation = (
+            plan.current_transform[:3, :3].T
+            @ plan.target_transform[:3, :3]
+        )
+        orientation_step_deg = float(
+            math.degrees(
+                math.acos(
+                    max(
+                        -1.0,
+                        min(1.0, (float(relative_rotation.trace()) - 1.0) * 0.5),
+                    )
+                )
+            )
+        )
         self.execute_plan(
             plan,
-            label=f'PBVS dx={dx_mm:+.3f}mm, dy={dy_mm:+.3f}mm',
+            label=(
+                f'PBVS dx={dx_mm:+.3f}mm, dy={dy_mm:+.3f}mm, '
+                f'orientation_step={orientation_step_deg:.3f}deg'
+            ),
             move_seconds=move_seconds,
             maximum_total_joint_change_deg=5.0,
-            maximum_target_error_m=0.0015,
+            maximum_target_error_m=0.015,
             minimum_progress_m=0.0005,
+            maximum_post_z_error_m=PBVS_MAXIMUM_POST_Z_ERROR_M,
+            maximum_post_orientation_error_deg=(
+                PBVS_MAXIMUM_POST_ORIENTATION_ERROR_DEG
+            ),
+            # 관절 공간 보간 중의 순간 경로 이탈은 별도 비상 기준으로
+            # 감시한다. 정지 후에는 위의 더 엄격한 고정-Z 기준을 적용해
+            # 다음 PBVS step으로 넘어가지 않는다.
+            motion_guard_z_change_m=0.010,
+            motion_guard_orientation_change_deg=5.0,
+            motion_guard_xy_overshoot_m=0.010,
+            motion_guard_opposite_progress_m=0.003,
+            warning_delay_seconds=warning_delay_seconds,
         )
+        return plan
 
 
 def _parse_arguments(arguments: list[str]) -> argparse.Namespace:

@@ -42,13 +42,23 @@ pbvs:
   keep_flange_z: true
 
 alignment_reference:
-  capture_on_first_valid_observation: false
+  automatic_from_observe_pose: true
+  # usb_pre_approach.py의 OBSERVATION_JOINTS_DEG와 동일한 기준 [degree]
+  observation_joint_degrees: [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
+  maximum_observation_joint_error_deg: 3.5
+  maximum_joint_state_age_seconds: 1.0
   lock_base_z: true
   lock_initial_orientation: true
 
 yaw_pbvs:
   enabled: false
-  pending_requirement: calibrated_tcp_and_yolo_keypoint_order
+  reference: flange
+  flange_to_plug_yaw_offset_deg: 0.0
+  pending_requirement: yolo_keypoint_order_verification
+  # 플러그 Yaw는 joint6_flange Yaw와 동일하며 장축은 flange X축을 사용.
+  flange_long_axis: x
+  # 18×8mm 포트 모델에서 긴 18mm 변에 해당하는 축.
+  port_long_axis: x
   maximum_step_deg: 2.0
   tolerance_deg: 1.0
   preserve_locked_tilt: true

@@ -86,7 +86,7 @@ MyCobot send_coords 실행: 중단
 - [x] 네 keypoint와 실제 포트 치수를 이용한 `solvePnP`
 - [x] 깊이·confidence·재투영 오차·키포인트 순서 검사
 - [x] `T_base_flange × T_flange_camera × T_camera_port` 계산
-- [x] 초기 기준 pose를 명시적으로 `capture/reset`하는 PBVS 인터페이스
+- [x] OBSERVE_POSE 관절 확인 후 현재 TF를 PBVS 기준으로 자동 저장
 - [x] 최대 10 mm 고정-Z PBVS X/Y 목표 계산
 - [x] 목표까지 1 mm 간격 waypoint를 이용한 IK·충돌·관절 점프 사전검사
 - [x] `/robot_arm/cartesian_move` action 정의
@@ -326,7 +326,7 @@ train 350장 / validation 100장 / test 50장
 
 ### DRY RUN
 
-- [ ] OBSERVE_POSE에서 기준 pose 명시적 capture
+- [x] OBSERVE_POSE 관절 오차 3도 이내에서 기준 pose 자동 저장
 - [ ] X/Y 오차 부호와 실제 이동 방향 확인
 - [ ] 목표 Z가 기준 Z와 같은지 확인
 - [ ] 목표 자세가 현재 정책과 일치하는지 확인
@@ -419,8 +419,10 @@ PBVS X/Y 대략 정렬
 - [ ] PRE_INSERT 직전에 관측 Roll/Pitch로 복귀
 - [ ] 정렬된 Yaw와 결합해 `q_insert_lock` 저장
 
-현재 `yaw_pbvs.enabled=false`를 유지하며 TCP와 YOLO keypoint 방향을 확인한 뒤에만
-실행합니다.
+플러그 Yaw는 `joint6_flange`의 그리퍼 Yaw와 동일하게 사용하고 회전 offset은
+0도로 확정했습니다. TCP translation과 무관하게 Yaw PBVS를 적용할 수 있지만,
+`yaw_pbvs.enabled=false`를 기본으로 유지하고 YOLO keypoint 장축 방향을 확인한
+실기 시험에서만 런타임 인자로 활성화합니다.
 
 ## 10. PRE_INSERT와 IBVS 선택
 

@@ -24,7 +24,7 @@ def make_fixed_z_xy_waypoints(
     target_base_to_flange: np.ndarray,
     maximum_waypoint_spacing_m: float,
 ) -> list[np.ndarray]:
-    """현재 Z와 자세를 복사한 등간격 XY waypoint를 생성한다."""
+    """현재 Z를 고정하고 XY와 작은 자세 변화를 보간한 waypoint를 생성한다."""
     if maximum_waypoint_spacing_m <= 0.0:
         raise ValueError('waypoint 간격은 0보다 커야 합니다')
     current = validate_transform(current_base_to_flange)
@@ -37,12 +37,44 @@ def make_fixed_z_xy_waypoints(
         math.ceil(distance / maximum_waypoint_spacing_m - 1e-9),
     )
     waypoints: list[np.ndarray] = []
+    relative_rotation = current[:3, :3].T @ target[:3, :3]
+    cosine = float(
+        np.clip((np.trace(relative_rotation) - 1.0) * 0.5, -1.0, 1.0)
+    )
+    rotation_angle = math.acos(cosine)
+    if rotation_angle > 1e-9:
+        rotation_axis = np.array(
+            (
+                relative_rotation[2, 1] - relative_rotation[1, 2],
+                relative_rotation[0, 2] - relative_rotation[2, 0],
+                relative_rotation[1, 0] - relative_rotation[0, 1],
+            ),
+            dtype=np.float64,
+        )
+        rotation_axis /= 2.0 * math.sin(rotation_angle)
+    else:
+        rotation_axis = np.array((0.0, 0.0, 1.0), dtype=np.float64)
     for index in range(1, count + 1):
         ratio = index / count
         waypoint = current.copy()
         waypoint[:2, 3] = (
             current[:2, 3] + ratio * (target[:2, 3] - current[:2, 3])
         )
+        interpolated_angle = rotation_angle * ratio
+        axis_skew = np.array(
+            (
+                (0.0, -rotation_axis[2], rotation_axis[1]),
+                (rotation_axis[2], 0.0, -rotation_axis[0]),
+                (-rotation_axis[1], rotation_axis[0], 0.0),
+            ),
+            dtype=np.float64,
+        )
+        interpolated_rotation = (
+            np.eye(3)
+            + math.sin(interpolated_angle) * axis_skew
+            + (1.0 - math.cos(interpolated_angle)) * (axis_skew @ axis_skew)
+        )
+        waypoint[:3, :3] = current[:3, :3] @ interpolated_rotation
         waypoints.append(validate_transform(waypoint))
     return waypoints
 

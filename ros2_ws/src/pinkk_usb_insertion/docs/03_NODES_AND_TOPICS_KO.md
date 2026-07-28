@@ -71,14 +71,21 @@ false입니다.
 | 방향 | 토픽 | 형식 | 설명 |
 |---|---|---|---|
 | 입력 | `/robot_arm/perception/usb_port/observation` | `UsbPortObservation` | solvePnP 관측 |
+| 입력 | `/joint_states` | `JointState` | OBSERVE_POSE 근접 검사와 자동 기준 저장 |
 | TF 입력 | `g_base → joint6_flange` | TF2 | 관측 시각의 flange pose |
 | 출력 | `/robot_arm/pbvs/port_pose_base` | `PoseStamped` | base 기준 포트 pose |
 | 출력 | `/robot_arm/pbvs/target_flange_pose` | `PoseStamped` | 고정-Z 다음 XY 목표 |
+| 출력 TF | `g_base → usb_port` | 동적 TF | 유효한 YOLO·SolvePnP 포트 자세의 RViz 표시 |
 | 출력 | `/robot_arm/pbvs/converged` | `Bool` | XY 허용오차 도달 여부 |
+| 출력 | `/robot_arm/pbvs/error` | `Vector3Stamped` | base X/Y 오차(m), Yaw 오차(rad) |
+| 출력 | `/robot_arm/pbvs/yaw_enabled` | `Bool` | 목표 자세에 Yaw step 포함 여부 |
 | 출력 | `/robot_arm/pbvs/status` | `String` | 오차, 제한된 step, 거부 이유 |
 
 이 출력은 `/robot_arm/target_pose`와 분리된 DRY RUN 결과입니다. PBVS 노드는 실제
-이동 명령을 발행하지 않습니다.
+이동 명령을 발행하지 않습니다. 처음 유효한 관측에서 현재 관절이 설정된
+OBSERVE_POSE로부터 최대 3.5도 안이면 현재 flange TF를 정렬 기준으로 자동
+저장합니다. 기준 관절 범위를 벗어나면 포트 TF만 발행하고 PBVS 목표는
+차단하며, 수동 `capture` 토픽은 사용하지 않습니다.
 
 ## 5. `pbvs_step_executor_node`
 
@@ -94,7 +101,26 @@ false입니다.
 
 실행 launch 인자 `enable_pbvs_test_execution`의 기본값은 `false`입니다.
 
-## 6. `arm_motion_node`
+## 6. `moveit_pbvs_closed_loop_execute`
+
+유효한 새 YOLO 관측을 여러 개 확인한 다음 `MoveIt IK → 관절 action → 정지 →
+새 YOLO 관측`을 반복합니다. 이 노드가 실행하는 것은 X/Y와 명시적으로 승인한
+Yaw뿐이며 Z 하강과 삽입은 포함하지 않습니다.
+
+다음 조건에서는 다음 이동을 보내지 않고 종료합니다.
+
+- YOLO/PBVS 관측 소실 또는 불안정
+- 실행기와 정렬 노드의 Yaw 활성 상태 불일치
+- 새 영상 XY 오차가 직전보다 3mm 이상 증가
+- 새 영상 Yaw 오차가 직전보다 1.5도 이상 증가
+- 최대 step, 최대 실행 시간 또는 누적 XY 제한 도달
+- MoveIt IK·충돌·FK 또는 실제 TF 이동 검사 실패
+- 정지 후 Z 오차 2mm 또는 자세 오차 2도 초과
+
+기본 수렴 조건은 X/Y 3mm 이내이며 Yaw를 켠 경우 Yaw 1도 이내도 함께
+만족해야 합니다.
+
+## 7. `arm_motion_node`
 
 상위 제어기와 실제 로봇 실행기의 경계입니다.
 

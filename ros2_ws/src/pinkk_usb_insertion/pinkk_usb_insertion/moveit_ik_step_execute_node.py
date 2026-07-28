@@ -15,7 +15,11 @@ from rclpy.duration import Duration
 
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from .control.moveit_ik_safety import validate_fk_pose
+from .control.moveit_ik_safety import (
+    pose_error,
+    validate_fk_pose,
+    validate_motion_guard,
+)
 from .control.pbvs_step_safety import validate_joint_step
 from .moveit_ik_step_executor_node import JOINT_NAMES, MoveItIkDryRunNode
 
@@ -59,6 +63,12 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
             maximum_total_joint_change_deg=1.0,
             maximum_target_error_m=0.00075,
             minimum_progress_m=0.00025,
+            maximum_post_z_error_m=0.001,
+            maximum_post_orientation_error_deg=1.0,
+            motion_guard_z_change_m=0.001,
+            motion_guard_orientation_change_deg=1.0,
+            motion_guard_xy_overshoot_m=0.0015,
+            motion_guard_opposite_progress_m=0.0005,
         )
 
     def execute_plan(
@@ -69,6 +79,13 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
         maximum_total_joint_change_deg: float,
         maximum_target_error_m: float,
         minimum_progress_m: float,
+        maximum_post_z_error_m: float,
+        maximum_post_orientation_error_deg: float,
+        motion_guard_z_change_m: float,
+        motion_guard_orientation_change_deg: float,
+        motion_guard_xy_overshoot_m: float,
+        motion_guard_opposite_progress_m: float,
+        warning_delay_seconds: float = 3.0,
     ) -> None:
         """검증된 IK 계획을 한 번 실행하고 실제 TF 결과를 검사한다."""
         total_joint_change = validate_joint_step(
@@ -93,9 +110,12 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
             f'  시작 관절 [deg]: {start_deg}\n'
             f'  목표 관절 [deg]: {target_deg}\n'
             f'  최대 총 관절 변화: {total_joint_change:.3f}deg\n'
-            '  3초 후 한 개의 FollowJointTrajectory 목표를 전송합니다'
+            f'  {warning_delay_seconds:.1f}초 후 한 개의 '
+            'FollowJointTrajectory 목표를 전송합니다'
         )
-        time.sleep(3.0)
+        if warning_delay_seconds < 0.0:
+            raise ValueError('실행 전 경고 대기 시간은 0 이상이어야 합니다')
+        time.sleep(warning_delay_seconds)
 
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = list(JOINT_NAMES)
@@ -110,48 +130,22 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
                 'joint_execution_enabled 설정을 확인하세요'
             )
         result_future = handle.get_result_async()
-        try:
-            wrapped = self._wait_future(
-                result_future,
-                move_seconds + 50.0,
-            )
-        except TimeoutError as error:
-            self.get_logger().error(
-                'trajectory 결과 timeout: 안전 취소를 요청합니다'
-            )
-            try:
-                cancel_response = self._wait_future(
-                    handle.cancel_goal_async(),
-                    3.0,
-                )
-                if not cancel_response.goals_canceling:
-                    raise RuntimeError('bridge가 action 취소를 수락하지 않았습니다')
-            except Exception as cancel_error:
-                raise RuntimeError(
-                    'trajectory 결과 timeout 후 취소 확인에도 실패했습니다. '
-                    '로봇 PC bridge를 즉시 종료하세요: '
-                    f'{cancel_error}'
-                ) from error
-            raise RuntimeError(
-                'trajectory 결과 timeout으로 action 취소를 요청했습니다'
-            ) from error
-        if (
-            wrapped.result.error_code
-            != FollowJointTrajectory.Result.SUCCESSFUL
-        ):
-            raise RuntimeError(
-                f'trajectory 실행 실패: code={wrapped.result.error_code}, '
-                f'message={wrapped.result.error_string}'
-            )
+        wrapped = self._wait_for_result_with_motion_guard(
+            handle,
+            result_future,
+            plan,
+            timeout_seconds=move_seconds + 50.0,
+            maximum_z_change_m=motion_guard_z_change_m,
+            maximum_orientation_change_deg=(
+                motion_guard_orientation_change_deg
+            ),
+            maximum_xy_overshoot_m=motion_guard_xy_overshoot_m,
+            maximum_opposite_progress_m=(
+                motion_guard_opposite_progress_m
+            ),
+        )
 
         actual = self.read_current_transform(timeout_seconds=3.0)
-        error = validate_fk_pose(
-            plan.target_transform,
-            actual,
-            maximum_position_error_m=maximum_target_error_m,
-            maximum_z_error_m=0.001,
-            maximum_orientation_error_deg=1.0,
-        )
         actual_dx = (
             actual[0, 3] - plan.current_transform[0, 3]
         ) * 1000.0
@@ -161,6 +155,33 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
         actual_dz = (
             actual[2, 3] - plan.current_transform[2, 3]
         ) * 1000.0
+        raw_target_error = pose_error(plan.target_transform, actual)
+        self.get_logger().warning(
+            '이동 후 실제 TF 측정\n'
+            f'  측정 이동: dx={actual_dx:+.3f}mm, '
+            f'dy={actual_dy:+.3f}mm, dz={actual_dz:+.3f}mm\n'
+            f'  목표 대비 위치 오차: '
+            f'{raw_target_error.position_error_m * 1000.0:.3f}mm\n'
+            f'  목표 대비 자세 오차: '
+            f'{raw_target_error.orientation_error_deg:.3f}deg'
+        )
+        if (
+            wrapped.result.error_code
+            != FollowJointTrajectory.Result.SUCCESSFUL
+        ):
+            raise RuntimeError(
+                f'trajectory 실행 실패: code={wrapped.result.error_code}, '
+                f'message={wrapped.result.error_string}'
+            )
+        error = validate_fk_pose(
+            plan.target_transform,
+            actual,
+            maximum_position_error_m=maximum_target_error_m,
+            maximum_z_error_m=maximum_post_z_error_m,
+            maximum_orientation_error_deg=(
+                maximum_post_orientation_error_deg
+            ),
+        )
         planned_delta = (
             plan.target_transform[:2, 3]
             - plan.current_transform[:2, 3]
@@ -170,22 +191,21 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
             - plan.current_transform[:2, 3]
         )
         planned_distance = float(math.hypot(*planned_delta))
-        if planned_distance < 1e-9:
-            raise RuntimeError('계획된 XY 이동량이 0입니다')
-        progress = float(
-            (
-                actual_delta[0] * planned_delta[0]
-                + actual_delta[1] * planned_delta[1]
+        if planned_distance >= 1e-9:
+            progress = float(
+                (
+                    actual_delta[0] * planned_delta[0]
+                    + actual_delta[1] * planned_delta[1]
+                )
+                / planned_distance
             )
-            / planned_distance
-        )
-        if progress <= 0.0:
-            raise RuntimeError('실제 이동 방향이 요청 방향과 반대입니다')
-        if progress < minimum_progress_m:
-            raise RuntimeError(
-                '요청 방향 실제 이동이 너무 작습니다: '
-                f'{progress * 1000.0:+.3f}mm'
-            )
+            if progress <= 0.0:
+                raise RuntimeError('실제 이동 방향이 요청 방향과 반대입니다')
+            if progress < minimum_progress_m:
+                raise RuntimeError(
+                    '요청 방향 실제 이동이 너무 작습니다: '
+                    f'{progress * 1000.0:+.3f}mm'
+                )
         self.get_logger().info(
             '실제 1회 이동 및 이동 후 TF 검사 통과\n'
             f'  측정 이동: dx={actual_dx:+.3f}mm, '
@@ -196,6 +216,69 @@ class MoveItIkStepExecuteNode(MoveItIkDryRunNode):
             f'  목표 대비 자세 오차: {error.orientation_error_deg:.3f}deg\n'
             '  자동 복귀하지 않습니다'
         )
+
+    def _wait_for_result_with_motion_guard(
+        self,
+        handle,
+        result_future,
+        plan,
+        timeout_seconds: float,
+        maximum_z_change_m: float,
+        maximum_orientation_change_deg: float,
+        maximum_xy_overshoot_m: float,
+        maximum_opposite_progress_m: float,
+    ):
+        """Wait for the action result while repeatedly checking TF safety."""
+        deadline = time.monotonic() + timeout_seconds
+        while rclpy.ok() and not result_future.done():
+            if time.monotonic() >= deadline:
+                self._cancel_motion(
+                    handle,
+                    f'trajectory 결과가 {timeout_seconds:.1f}초 안에 없습니다',
+                )
+            rclpy.spin_once(self, timeout_sec=0.05)
+            try:
+                actual = self.read_current_transform(timeout_seconds=0.1)
+                validate_motion_guard(
+                    plan.current_transform,
+                    plan.target_transform,
+                    actual,
+                    maximum_z_change_m=maximum_z_change_m,
+                    maximum_orientation_change_deg=(
+                        maximum_orientation_change_deg
+                    ),
+                    maximum_xy_overshoot_m=maximum_xy_overshoot_m,
+                    maximum_opposite_progress_m=(
+                        maximum_opposite_progress_m
+                    ),
+                )
+            except RuntimeError:
+                continue
+            except ValueError as error:
+                self._cancel_motion(
+                    handle,
+                    f'이동 중 TF 안전 조건 위반: {error}',
+                )
+        if result_future.exception() is not None:
+            raise RuntimeError(str(result_future.exception()))
+        return result_future.result()
+
+    def _cancel_motion(self, handle, reason: str) -> None:
+        """Request cancellation, verify bridge acceptance, and fail."""
+        self.get_logger().error(f'{reason}; 안전 취소를 요청합니다')
+        try:
+            response = self._wait_future(
+                handle.cancel_goal_async(),
+                3.0,
+            )
+            if not response.goals_canceling:
+                raise RuntimeError('bridge가 action 취소를 수락하지 않았습니다')
+        except Exception as cancel_error:
+            raise RuntimeError(
+                f'{reason}; 취소 확인 실패, 로봇 PC bridge를 즉시 '
+                f'종료하세요: {cancel_error}'
+            ) from cancel_error
+        raise RuntimeError(f'{reason}; action 취소를 요청했습니다')
 
 
 def _parse_arguments(arguments: list[str]) -> argparse.Namespace:

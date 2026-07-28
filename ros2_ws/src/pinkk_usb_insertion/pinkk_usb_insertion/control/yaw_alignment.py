@@ -6,6 +6,18 @@ import math
 
 import numpy as np
 
+from ..geometry.transforms import validate_transform
+
+
+def named_axis_vector(axis_name: str) -> np.ndarray:
+    """x/y 축 이름을 3차원 단위벡터로 변환한다."""
+    normalized = axis_name.strip().lower()
+    if normalized == 'x':
+        return np.array((1.0, 0.0, 0.0), dtype=np.float64)
+    if normalized == 'y':
+        return np.array((0.0, 1.0, 0.0), dtype=np.float64)
+    raise ValueError('평면 장축 이름은 x 또는 y여야 합니다')
+
 
 def undirected_planar_axis_error_rad(
     current_axis_base: np.ndarray,
@@ -42,3 +54,27 @@ def limited_yaw_step_rad(
     maximum_step = math.radians(maximum_step_deg)
     converged = abs(error) <= tolerance
     return float(np.clip(error, -maximum_step, maximum_step)), converged
+
+
+def apply_base_yaw_step(
+    current_base_to_flange: np.ndarray,
+    yaw_step_rad: float,
+) -> np.ndarray:
+    """현재 위치와 tilt를 유지하며 base Z축 기준 Yaw step을 적용한다."""
+    current = validate_transform(current_base_to_flange)
+    angle = float(yaw_step_rad)
+    if not math.isfinite(angle):
+        raise ValueError('Yaw step이 유한값이 아닙니다')
+    cosine = math.cos(angle)
+    sine = math.sin(angle)
+    base_yaw = np.array(
+        (
+            (cosine, -sine, 0.0),
+            (sine, cosine, 0.0),
+            (0.0, 0.0, 1.0),
+        ),
+        dtype=np.float64,
+    )
+    target = current.copy()
+    target[:3, :3] = base_yaw @ current[:3, :3]
+    return validate_transform(target)

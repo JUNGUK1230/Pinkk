@@ -19,6 +19,18 @@ class FkPoseError:
     orientation_error_deg: float
 
 
+@dataclass(frozen=True)
+class MotionGuardMeasurement:
+    """이동 시작 자세를 기준으로 측정한 실시간 안전 상태."""
+
+    delta_x_m: float
+    delta_y_m: float
+    delta_z_m: float
+    xy_distance_m: float
+    direction_progress_m: float
+    orientation_change_deg: float
+
+
 def make_locked_xy_target(
     current_base_to_flange: np.ndarray,
     axis: str,
@@ -89,3 +101,63 @@ def validate_fk_pose(
             f'허용값 {maximum_orientation_error_deg:.4f}deg를 초과합니다'
         )
     return error
+
+
+def validate_motion_guard(
+    start_base_to_flange: np.ndarray,
+    target_base_to_flange: np.ndarray,
+    actual_base_to_flange: np.ndarray,
+    maximum_z_change_m: float,
+    maximum_orientation_change_deg: float,
+    maximum_xy_overshoot_m: float,
+    maximum_opposite_progress_m: float,
+) -> MotionGuardMeasurement:
+    """이동 중 Z·자세·XY 과주행·반대 방향 이동을 검사한다."""
+    start = validate_transform(start_base_to_flange)
+    target = validate_transform(target_base_to_flange)
+    actual = validate_transform(actual_base_to_flange)
+    planned_xy = target[:2, 3] - start[:2, 3]
+    actual_delta = actual[:3, 3] - start[:3, 3]
+    planned_distance = float(np.linalg.norm(planned_xy))
+    direction_progress = (
+        0.0
+        if planned_distance < 1e-9
+        else float(np.dot(actual_delta[:2], planned_xy) / planned_distance)
+    )
+    orientation_change = pose_error(start, actual).orientation_error_deg
+    measurement = MotionGuardMeasurement(
+        delta_x_m=float(actual_delta[0]),
+        delta_y_m=float(actual_delta[1]),
+        delta_z_m=float(actual_delta[2]),
+        xy_distance_m=float(np.linalg.norm(actual_delta[:2])),
+        direction_progress_m=direction_progress,
+        orientation_change_deg=orientation_change,
+    )
+    if abs(measurement.delta_z_m) > maximum_z_change_m:
+        raise ValueError(
+            f'이동 중 Z 변화 {measurement.delta_z_m * 1000.0:+.3f}mm가 '
+            f'제한 {maximum_z_change_m * 1000.0:.3f}mm를 초과합니다'
+        )
+    if measurement.orientation_change_deg > maximum_orientation_change_deg:
+        raise ValueError(
+            f'이동 중 자세 변화 {measurement.orientation_change_deg:.3f}deg가 '
+            f'제한 {maximum_orientation_change_deg:.3f}deg를 초과합니다'
+        )
+    if measurement.xy_distance_m > planned_distance + maximum_xy_overshoot_m:
+        maximum_xy_distance_mm = (
+            planned_distance + maximum_xy_overshoot_m
+        ) * 1000.0
+        raise ValueError(
+            f'이동 중 XY 거리 {measurement.xy_distance_m * 1000.0:.3f}mm가 '
+            f'계획+여유 {maximum_xy_distance_mm:.3f}mm를 '
+            '초과합니다'
+        )
+    if (
+        planned_distance >= 1e-9
+        and measurement.direction_progress_m < -maximum_opposite_progress_m
+    ):
+        raise ValueError(
+            '이동 중 요청 반대 방향 진행량이 '
+            f'{measurement.direction_progress_m * 1000.0:+.3f}mm입니다'
+        )
+    return measurement
