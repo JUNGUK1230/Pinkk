@@ -1,0 +1,29 @@
+pinkk_mycobot_trajectory_bridge:
+  ros__parameters:
+    port: /dev/ttyUSB0
+    baud: 1000000
+    speed: 10
+    publish_rate_hz: 10.0
+    goal_tolerance_deg: 2.0
+    joint_execution_enabled: true
+    joint_stable_sample_count: 5
+    joint_stable_delta_deg: 0.2
+    joint_hold_check_seconds: 2.0
+    joint_max_command_attempts: 1
+    joint_retry_stable_sample_count: 3
+    joint_retry_minimum_progress_deg: 0.1
+    joint_retry_compensation_enabled: false
+    joint_retry_compensation_gain: 0.8
+    joint_retry_max_step_deg: 1.0
+    joint_retry_max_total_offset_deg: 2.0
+    max_execution_seconds: 60.0
+    cartesian_execution_enabled: true
+    cartesian_base_frame: g_base
+    cartesian_position_tolerance_m: 0.0005
+    cartesian_orientation_tolerance_deg: 1.0
+    cartesian_max_translation_m: 0.20
+    cartesian_max_rotation_deg: 90.0
+    cartesian_path_z_tolerance_m: 0.002
+    cartesian_path_tilt_tolerance_deg: 3.0
+    cartesian_timeout_seconds: 90.0
+    cartesian_ignore_z_tracking_error: true

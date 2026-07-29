@@ -111,6 +111,7 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("cartesian_path_z_tolerance_m", 0.002)
         self.declare_parameter("cartesian_path_tilt_tolerance_deg", 3.0)
         self.declare_parameter("cartesian_timeout_seconds", 15.0)
+        self.declare_parameter("cartesian_ignore_z_tracking_error", False)
 
         port = str(self.get_parameter("port").value)
         baud = int(self.get_parameter("baud").value)
@@ -187,6 +188,9 @@ class MyCobotTrajectoryBridge(Node):
         )
         self._cartesian_timeout = float(
             self.get_parameter("cartesian_timeout_seconds").value
+        )
+        self._cartesian_ignore_z_tracking_error = bool(
+            self.get_parameter("cartesian_ignore_z_tracking_error").value
         )
         if not Path(port).exists():
             raise FileNotFoundError(f"로봇 serial port가 없습니다: {port}")
@@ -307,7 +311,9 @@ class MyCobotTrajectoryBridge(Node):
         self.get_logger().warning(
             f"Cartesian send_coords action {api_mode}, {execution_mode}: "
             f"action={self.CARTESIAN_ACTION_NAME}, max_step="
-            f"{self._cartesian_max_translation * 1000.0:.1f}mm"
+            f"{self._cartesian_max_translation * 1000.0:.1f}mm, "
+            "ignore_z_tracking_error="
+            f"{self._cartesian_ignore_z_tracking_error}"
         )
 
     def _check_cartesian_api(self) -> bool:
@@ -756,7 +762,24 @@ class MyCobotTrajectoryBridge(Node):
             goal_handle.abort()
             return result
 
+        planned_xy = (
+            (target_coords[0] - start_coords[0]) / 1000.0,
+            (target_coords[1] - start_coords[1]) / 1000.0,
+        )
+        planned_distance = math.hypot(*planned_xy)
+        planned_z_m = (target_coords[2] - start_coords[2]) / 1000.0
+        planned_yaw_deg = wrapped_angle_difference_deg(
+            target_coords[5],
+            start_coords[5],
+        )
+        free_z_only_command = (
+            self._cartesian_ignore_z_tracking_error
+            and planned_distance < 1e-9
+            and abs(planned_yaw_deg) < 1e-9
+            and abs(planned_z_m) >= 1e-9
+        )
         started = time.monotonic()
+        stationary_samples = 0
         while rclpy.ok():
             if goal_handle.is_cancel_requested:
                 self._stop_robot()
@@ -774,7 +797,13 @@ class MyCobotTrajectoryBridge(Node):
                     actual_position,
                     actual_quaternion,
                 )
+                if self._cartesian_ignore_z_tracking_error:
+                    position_error_m = math.hypot(
+                        target_position[0] - actual_position[0],
+                        target_position[1] - actual_position[1],
+                    )
                 self._validate_locked_path(request, start_coords, actual_coords)
+                robot_is_moving = self._robot_is_moving()
             except Exception as error:
                 self._stop_robot()
                 result.success = False
@@ -790,6 +819,7 @@ class MyCobotTrajectoryBridge(Node):
             if (
                 position_error_m <= self._cartesian_position_tolerance
                 and orientation_error_deg <= self._cartesian_orientation_tolerance
+                and not free_z_only_command
             ):
                 if not self._stop_robot():
                     result.success = False
@@ -805,6 +835,78 @@ class MyCobotTrajectoryBridge(Node):
                 goal_handle.succeed()
                 self.get_logger().info(result.message)
                 return result
+            if self._cartesian_ignore_z_tracking_error:
+                actual_xy = (
+                    (actual_coords[0] - start_coords[0]) / 1000.0,
+                    (actual_coords[1] - start_coords[1]) / 1000.0,
+                )
+                directional_progress = (
+                    0.0
+                    if planned_distance < 1e-9
+                    else (
+                        actual_xy[0] * planned_xy[0]
+                        + actual_xy[1] * planned_xy[1]
+                    )
+                    / planned_distance
+                )
+                actual_yaw_deg = wrapped_angle_difference_deg(
+                    actual_coords[5],
+                    start_coords[5],
+                )
+                directional_yaw_progress_deg = (
+                    0.0
+                    if abs(planned_yaw_deg) < 1e-9
+                    else actual_yaw_deg
+                    * math.copysign(1.0, planned_yaw_deg)
+                )
+                actual_z_m = (actual_coords[2] - start_coords[2]) / 1000.0
+                directional_z_progress_m = (
+                    0.0
+                    if abs(planned_z_m) < 1e-9
+                    else actual_z_m * math.copysign(1.0, planned_z_m)
+                )
+                sufficient_directional_progress = (
+                    directional_progress >= 0.00025
+                    if planned_distance >= 1e-9
+                    else (
+                        directional_yaw_progress_deg >= 0.25
+                        if abs(planned_yaw_deg) >= 1e-9
+                        else directional_z_progress_m >= 0.00025
+                    )
+                )
+                stationary_samples = (
+                    stationary_samples + 1
+                    if (
+                        not robot_is_moving
+                        and time.monotonic() - started >= 0.5
+                        and sufficient_directional_progress
+                    )
+                    else 0
+                )
+                if stationary_samples >= 3:
+                    if not self._stop_robot():
+                        result.success = False
+                        result.message = (
+                            'Cartesian 정지 위치 수용 전 큐 정리에 실패했습니다'
+                        )
+                        result.actual = actual
+                        goal_handle.abort()
+                        return result
+                    result.success = True
+                    result.message = (
+                        'free-Z stop-and-go 정지 위치 수용: '
+                        f'xy_residual={position_error_m * 1000.0:.3f}mm, '
+                        f'directional_progress='
+                        f'{directional_progress * 1000.0:.3f}mm, '
+                        f'directional_yaw_progress='
+                        f'{directional_yaw_progress_deg:.3f}deg, '
+                        f'directional_z_progress='
+                        f'{directional_z_progress_m * 1000.0:.3f}mm'
+                    )
+                    result.actual = actual
+                    goal_handle.succeed()
+                    self.get_logger().warning(result.message)
+                    return result
             if time.monotonic() - started > self._cartesian_timeout:
                 self._stop_robot()
                 result.success = False
@@ -826,7 +928,7 @@ class MyCobotTrajectoryBridge(Node):
     def _validate_locked_path(
         self, request, start: list[float], actual: list[float]
     ) -> None:
-        if request.lock_z:
+        if request.lock_z and not self._cartesian_ignore_z_tracking_error:
             z_error_m = abs(actual[2] - start[2]) / 1000.0
             if z_error_m > self._cartesian_path_z_tolerance:
                 raise ValueError(
