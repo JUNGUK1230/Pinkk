@@ -7,3 +7,8 @@ __pycache__/
 /build/
 /install/
 /log/
+
+# 저장소 안의 ROS 2 워크스페이스에서 생성되는 colcon 산출물
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
