@@ -1,13 +1,13 @@
-"""사용자 승인 한 번에 최신 PBVS 목표를 한 번만 실행한다."""
+"""PBVS 거친 이동과 영상 기반 미세 보정을 제조사 API bridge로 실행한다."""
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 
+from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped
-from moveit_msgs.msg import MoveItErrorCodes
-from moveit_msgs.srv import GetPositionIK
 from pinkk_usb_insertion_interfaces.action import CartesianMove
 import rclpy
 from rclpy.action import ActionClient
@@ -17,17 +17,15 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Float64, String
 from tf2_ros import Buffer, TransformException, TransformListener
+from trajectory_msgs.msg import JointTrajectoryPoint
 
-from .configuration import load_yaml
-from .control.pbvs_step_safety import (
-    make_fixed_z_xy_waypoints,
-    validate_fixed_z_pbvs_step,
-    validate_joint_step,
+from .control.yaw_alignment import (
+    joint6_yaw_target_rad,
+    keypoint_image_yaw_step_rad,
 )
 from .geometry.transforms import make_transform
-from .port_pose_node import _default_config
 from .ros_utils import pose_to_transform, transform_to_pose
 
 
@@ -39,273 +37,235 @@ JOINT_NAMES = (
     'joint6_to_joint5',
     'joint6output_to_joint6',
 )
-IK_SERVICE = '/compute_ik'
-CARTESIAN_ACTION_NAME = '/robot_arm/cartesian_move'
+CARTESIAN_ACTION = '/robot_arm/cartesian_move'
+JOINT_ACTION = '/arm_group_controller/follow_joint_trajectory'
+COMMAND_TOPIC = '/robot_arm/hybrid/command'
+STATUS_TOPIC = '/robot_arm/hybrid/status'
 
 
 class PbvsStepExecutorNode(Node):
-    """명시적인 execute_once 명령에만 최신 고정-Z 목표를 실행한다."""
+    """명시적인 단발 명령만 제조사 bridge에 전달한다."""
 
     def __init__(self) -> None:
         super().__init__('pinkk_pbvs_step_executor_node')
-        self.declare_parameter('control_config', _default_config('insertion_control.yaml'))
-        self.declare_parameter('enable_test_execution', False)
-        control = load_yaml(str(self.get_parameter('control_config').value))
-        frames = control['frames']
-        pbvs = control['pbvs']
-        test = control['pbvs_test_execution']
-        self._enabled = bool(self.get_parameter('enable_test_execution').value)
-        self._base_frame = str(frames['base'])
-        self._flange_frame = str(frames['flange'])
-        self._maximum_step = float(pbvs['maximum_xy_step_m'])
-        self._maximum_age = float(test['maximum_target_age_seconds'])
-        self._maximum_z_change = float(test['maximum_z_change_m'])
-        self._maximum_orientation_change = float(
-            test['maximum_orientation_change_deg']
+        self.declare_parameter('enable_execution', False)
+        self.declare_parameter('base_frame', 'g_base')
+        self.declare_parameter('flange_frame', 'joint6_flange')
+        self.declare_parameter('maximum_input_age_seconds', 1.0)
+        self.declare_parameter('maximum_xy_step_m', 0.100)
+        self.declare_parameter('cartesian_speed', 10)
+        self.declare_parameter('cartesian_mode', 0)
+        self.declare_parameter('cartesian_timeout_seconds', 100.0)
+        self.declare_parameter('warning_delay_seconds', 3.0)
+        self.declare_parameter('keypoint_desired_axis_deg', 0.0)
+        self.declare_parameter('keypoint_maximum_step_deg', 1.0)
+        self.declare_parameter('keypoint_tolerance_deg', 1.0)
+        self.declare_parameter('keypoint_command_sign', -1.0)
+        self.declare_parameter('joint6_direction', -1.0)
+        self.declare_parameter('joint6_limit_deg', 175.0)
+        self.declare_parameter('joint6_move_seconds', 6.0)
+
+        self._enabled = bool(self.get_parameter('enable_execution').value)
+        self._base_frame = str(self.get_parameter('base_frame').value)
+        self._flange_frame = str(self.get_parameter('flange_frame').value)
+        self._maximum_age = float(
+            self.get_parameter('maximum_input_age_seconds').value
         )
-        self._waypoint_spacing = float(test['cartesian_waypoint_spacing_m'])
-        self._maximum_joint_step_deg = float(test['maximum_joint_step_deg'])
-        self._post_move_z_tolerance = float(test['post_move_z_tolerance_m'])
-        self._post_move_orientation_tolerance = float(
-            test['post_move_orientation_tolerance_deg']
+        self._maximum_xy_step = float(
+            self.get_parameter('maximum_xy_step_m').value
         )
-        self._cartesian_speed = int(test['cartesian_speed'])
-        self._cartesian_mode = int(test['cartesian_mode'])
-        self._cartesian_timeout = float(test['cartesian_action_timeout_seconds'])
+        self._cartesian_speed = int(
+            self.get_parameter('cartesian_speed').value
+        )
+        self._cartesian_mode = int(
+            self.get_parameter('cartesian_mode').value
+        )
+        self._cartesian_timeout = float(
+            self.get_parameter('cartesian_timeout_seconds').value
+        )
+        self._warning_delay = float(
+            self.get_parameter('warning_delay_seconds').value
+        )
+        self._desired_axis = float(
+            self.get_parameter('keypoint_desired_axis_deg').value
+        )
+        self._maximum_yaw_step = float(
+            self.get_parameter('keypoint_maximum_step_deg').value
+        )
+        self._yaw_tolerance = float(
+            self.get_parameter('keypoint_tolerance_deg').value
+        )
+        self._keypoint_command_sign = float(
+            self.get_parameter('keypoint_command_sign').value
+        )
+        self._joint6_direction = float(
+            self.get_parameter('joint6_direction').value
+        )
+        self._joint6_limit = float(
+            self.get_parameter('joint6_limit_deg').value
+        )
+        self._joint6_move_seconds = float(
+            self.get_parameter('joint6_move_seconds').value
+        )
+        self._validate_parameters()
+
         self._latest_target: PoseStamped | None = None
-        self._latest_converged: bool | None = None
+        self._target_received_at: float | None = None
         self._latest_joints: list[float] | None = None
+        self._joints_received_at: float | None = None
+        self._latest_keypoint_axis: float | None = None
+        self._keypoint_received_at: float | None = None
         self._executing = False
         self._lock = threading.Lock()
 
-        callback_group = ReentrantCallbackGroup()
+        callbacks = ReentrantCallbackGroup()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._ik = self.create_client(
-            GetPositionIK, IK_SERVICE, callback_group=callback_group
-        )
-        self._action = ActionClient(
+        self._cartesian_action = ActionClient(
             self,
             CartesianMove,
-            CARTESIAN_ACTION_NAME,
-            callback_group=callback_group,
+            CARTESIAN_ACTION,
+            callback_group=callbacks,
         )
-        self._status_publisher = self.create_publisher(
-            String, '/robot_arm/pbvs/execution_status', 10
+        self._joint_action = ActionClient(
+            self,
+            FollowJointTrajectory,
+            JOINT_ACTION,
+            callback_group=callbacks,
         )
+        self._status = self.create_publisher(String, STATUS_TOPIC, 10)
         self.create_subscription(
             PoseStamped,
             '/robot_arm/pbvs/target_flange_pose',
             self._target_callback,
             10,
-            callback_group=callback_group,
-        )
-        self.create_subscription(
-            Bool,
-            '/robot_arm/pbvs/converged',
-            self._converged_callback,
-            10,
-            callback_group=callback_group,
+            callback_group=callbacks,
         )
         self.create_subscription(
             JointState,
             '/joint_states',
             self._joint_callback,
             10,
-            callback_group=callback_group,
+            callback_group=callbacks,
+        )
+        self.create_subscription(
+            Float64,
+            '/robot_arm/perception/usb_port/keypoint_axis_angle_deg',
+            self._keypoint_callback,
+            10,
+            callback_group=callbacks,
         )
         self.create_subscription(
             String,
-            '/robot_arm/pbvs/step_command',
+            COMMAND_TOPIC,
             self._command_callback,
             10,
-            callback_group=callback_group,
+            callback_group=callbacks,
         )
-        mode = '실행 허용' if self._enabled else '실행 차단'
-        self.get_logger().warning(f'PBVS Cartesian 단발 실행기 시작: {mode}')
+        mode = '허용' if self._enabled else '차단'
+        self.get_logger().warning(
+            f'하이브리드 단발 실행기: 실행={mode}, '
+            f'commands=coarse_xy/refine_xy/refine_yaw, '
+            f'max_xy={self._maximum_xy_step * 1000.0:.1f}mm, '
+            f'yaw_step={self._maximum_yaw_step:.1f}deg, '
+            f'joint6_direction={self._joint6_direction:+.0f}'
+        )
 
-    def _publish_status(self, text: str) -> None:
-        self._status_publisher.publish(String(data=text))
+    def _validate_parameters(self) -> None:
+        if not 0.0 < self._maximum_age <= 5.0:
+            raise ValueError('maximum_input_age_seconds는 0~5초 범위여야 합니다')
+        if not 0.0 < self._maximum_xy_step <= 0.200:
+            raise ValueError('maximum_xy_step_m은 0~0.2m 범위여야 합니다')
+        if not 1 <= self._cartesian_speed <= 100:
+            raise ValueError('cartesian_speed는 1~100이어야 합니다')
+        if self._cartesian_mode not in (0, 1):
+            raise ValueError('cartesian_mode는 0 또는 1이어야 합니다')
+        if not 1.0 <= self._cartesian_timeout <= 120.0:
+            raise ValueError('cartesian_timeout_seconds는 1~120초여야 합니다')
+        if not 0.0 <= self._warning_delay <= 10.0:
+            raise ValueError('warning_delay_seconds는 0~10초여야 합니다')
+        finite = (
+            self._desired_axis,
+            self._maximum_yaw_step,
+            self._yaw_tolerance,
+            self._keypoint_command_sign,
+            self._joint6_direction,
+            self._joint6_limit,
+            self._joint6_move_seconds,
+        )
+        if not all(math.isfinite(value) for value in finite):
+            raise ValueError('Yaw 파라미터는 유한값이어야 합니다')
+        if not 0.0 < self._maximum_yaw_step <= 10.0:
+            raise ValueError('keypoint_maximum_step_deg는 0~10도여야 합니다')
+        if not 0.0 <= self._yaw_tolerance <= 5.0:
+            raise ValueError('keypoint_tolerance_deg는 0~5도여야 합니다')
+        if self._keypoint_command_sign not in (-1.0, 1.0):
+            raise ValueError('keypoint_command_sign은 -1 또는 +1이어야 합니다')
+        if self._joint6_direction not in (-1.0, 1.0):
+            raise ValueError('joint6_direction은 -1 또는 +1이어야 합니다')
+        if not 0.0 < self._joint6_limit < 180.0:
+            raise ValueError('joint6_limit_deg는 0~180도 범위여야 합니다')
+        if not 1.0 <= self._joint6_move_seconds <= 30.0:
+            raise ValueError('joint6_move_seconds는 1~30초여야 합니다')
+
+    def _publish(self, text: str) -> None:
+        self._status.publish(String(data=text))
         self.get_logger().info(text)
 
     def _target_callback(self, message: PoseStamped) -> None:
         with self._lock:
             self._latest_target = message
-
-    def _converged_callback(self, message: Bool) -> None:
-        with self._lock:
-            self._latest_converged = bool(message.data)
+            self._target_received_at = time.monotonic()
 
     def _joint_callback(self, message: JointState) -> None:
         values = dict(zip(message.name, message.position))
         if all(name in values for name in JOINT_NAMES):
             with self._lock:
-                self._latest_joints = [float(values[name]) for name in JOINT_NAMES]
+                self._latest_joints = [
+                    float(values[name]) for name in JOINT_NAMES
+                ]
+                self._joints_received_at = time.monotonic()
 
-    def _wait_future(self, future, timeout_seconds: float):
-        deadline = time.monotonic() + timeout_seconds
-        while rclpy.ok() and not future.done():
-            if time.monotonic() >= deadline:
-                raise TimeoutError('ROS 응답 대기 시간이 초과됐습니다')
-            time.sleep(0.05)
-        if future.exception() is not None:
-            raise RuntimeError(str(future.exception()))
-        return future.result()
+    def _keypoint_callback(self, message: Float64) -> None:
+        value = float(message.data)
+        if math.isfinite(value):
+            with self._lock:
+                self._latest_keypoint_axis = value
+                self._keypoint_received_at = time.monotonic()
 
     def _command_callback(self, message: String) -> None:
-        if message.data.strip().lower() != 'execute_once':
-            self._publish_status('REJECTED: 명령은 execute_once만 허용합니다')
+        command = message.data.strip().lower()
+        if command not in ('coarse_xy', 'refine_xy', 'refine_yaw'):
+            self._publish(
+                'REJECTED: 명령은 coarse_xy, refine_xy, refine_yaw 중 하나입니다'
+            )
             return
         with self._lock:
             if self._executing:
-                self._publish_status('REJECTED: 이전 이동이 실행 중입니다')
+                self._publish('REJECTED: 이전 이동이 실행 중입니다')
                 return
             self._executing = True
         try:
-            self._execute_latest_target()
+            if not self._enabled:
+                raise ValueError('enable_execution=false')
+            if command == 'refine_yaw':
+                self._execute_yaw()
+            else:
+                self._execute_xy(command)
         except Exception as error:
-            self._publish_status(f'REJECTED: {error}')
+            self._publish(f'REJECTED: {error}')
         finally:
             with self._lock:
-                self._latest_target = None
-                self._latest_converged = None
                 self._executing = False
 
-    def _execute_latest_target(self) -> None:
-        if not self._enabled:
-            raise ValueError('enable_test_execution=false')
-        with self._lock:
-            target = self._latest_target
-            converged = self._latest_converged
-            joints = None if self._latest_joints is None else list(self._latest_joints)
-        if target is None or converged is None:
-            raise ValueError('새 PBVS 목표와 converged 결과가 모두 필요합니다')
-        if converged:
-            raise ValueError('이미 PBVS 허용오차 안이므로 이동하지 않습니다')
-        if joints is None:
-            raise ValueError('/joint_states를 받지 못했습니다')
-        if target.header.frame_id != self._base_frame:
-            raise ValueError(f'목표 frame이 {self._base_frame}가 아닙니다')
-        stamp_seconds = target.header.stamp.sec + target.header.stamp.nanosec * 1e-9
-        age = self.get_clock().now().nanoseconds * 1e-9 - stamp_seconds
+    def _fresh(self, received_at: float | None, label: str) -> None:
+        if received_at is None:
+            raise ValueError(f'{label} 입력이 없습니다')
+        age = time.monotonic() - received_at
         if not 0.0 <= age <= self._maximum_age:
-            raise ValueError(f'PBVS 목표가 오래됐습니다: age={age:.3f}s')
+            raise ValueError(f'{label} 입력이 오래됐습니다: age={age:.3f}s')
 
-        try:
-            current_message = self._tf_buffer.lookup_transform(
-                self._base_frame,
-                self._flange_frame,
-                Time(),
-                timeout=Duration(seconds=1.0),
-            )
-        except TransformException as error:
-            raise ValueError(f'현재 flange TF를 읽지 못했습니다: {error}') from error
-        transform = current_message.transform
-        current = make_transform(
-            (transform.translation.x, transform.translation.y, transform.translation.z),
-            (
-                transform.rotation.x,
-                transform.rotation.y,
-                transform.rotation.z,
-                transform.rotation.w,
-            ),
-        )
-        validation = validate_fixed_z_pbvs_step(
-            current,
-            pose_to_transform(target.pose),
-            self._maximum_step,
-            self._maximum_z_change,
-            self._maximum_orientation_change,
-        )
-        if validation.xy_distance_m < 1e-5:
-            raise ValueError('XY 이동량이 너무 작습니다')
-        waypoints = make_fixed_z_xy_waypoints(
-            current,
-            pose_to_transform(target.pose),
-            self._waypoint_spacing,
-        )
-        if not self._ik.wait_for_service(timeout_sec=3.0):
-            raise RuntimeError(f'IK service가 없습니다: {IK_SERVICE}')
-        if not self._action.wait_for_server(timeout_sec=3.0):
-            raise RuntimeError(f'action server가 없습니다: {CARTESIAN_ACTION_NAME}')
-
-        solutions: list[list[float]] = []
-        seed = joints
-        maximum_joint_change = 0.0
-        for index, waypoint in enumerate(waypoints, start=1):
-            waypoint_pose = PoseStamped()
-            waypoint_pose.header.frame_id = self._base_frame
-            waypoint_pose.header.stamp = self.get_clock().now().to_msg()
-            waypoint_pose.pose = transform_to_pose(waypoint)
-            solution = self._solve_ik(waypoint_pose, seed)
-            joint_change = validate_joint_step(
-                seed, solution, self._maximum_joint_step_deg
-            )
-            maximum_joint_change = max(maximum_joint_change, joint_change)
-            solutions.append(solution)
-            seed = solution
-
-        self._publish_status(
-            f'Cartesian 사전검사 통과: waypoints={len(waypoints)}, '
-            f'spacing≤{self._waypoint_spacing * 1000.0:.1f}mm, '
-            f'max_joint_step={maximum_joint_change:.3f}deg'
-        )
-
-        self._publish_status(
-            '3초 후 PBVS 단발 이동: '
-            f'dx={validation.delta_x_m * 1000.0:+.3f}mm, '
-            f'dy={validation.delta_y_m * 1000.0:+.3f}mm, '
-            f'distance={validation.xy_distance_m * 1000.0:.3f}mm'
-        )
-        time.sleep(3.0)
-        self._execute_cartesian_goal(target)
-        self._verify_actual_fixed_z(current)
-        self._publish_status(
-            'EXECUTED: 연속 Cartesian 이동 완료; Z·자세 검사 통과. '
-            '이전 목표를 폐기하고 새 관측을 기다립니다'
-        )
-
-    def _solve_ik(
-        self, target: PoseStamped, seed: list[float]
-    ) -> list[float]:
-        request = GetPositionIK.Request()
-        request.ik_request.group_name = 'arm_group'
-        request.ik_request.ik_link_name = self._flange_frame
-        request.ik_request.pose_stamped = target
-        request.ik_request.robot_state.joint_state.name = list(JOINT_NAMES)
-        request.ik_request.robot_state.joint_state.position = seed
-        request.ik_request.robot_state.is_diff = True
-        request.ik_request.avoid_collisions = True
-        request.ik_request.timeout = Duration(seconds=2.0).to_msg()
-        response = self._wait_future(self._ik.call_async(request), 5.0)
-        if response.error_code.val != MoveItErrorCodes.SUCCESS:
-            raise RuntimeError(f'MoveIt IK 실패: code={response.error_code.val}')
-        solution_map = dict(
-            zip(response.solution.joint_state.name, response.solution.joint_state.position)
-        )
-        if not all(name in solution_map for name in JOINT_NAMES):
-            raise RuntimeError('IK 결과에 필요한 관절이 없습니다')
-        return [float(solution_map[name]) for name in JOINT_NAMES]
-
-    def _execute_cartesian_goal(self, target: PoseStamped) -> None:
-        goal = CartesianMove.Goal()
-        goal.target = target
-        goal.speed = self._cartesian_speed
-        goal.mode = self._cartesian_mode
-        goal.lock_z = True
-        goal.lock_roll_pitch = True
-        handle = self._wait_future(self._action.send_goal_async(goal), 5.0)
-        if not handle.accepted:
-            raise RuntimeError('Cartesian 목표가 거절됐습니다')
-        wrapped = self._wait_future(
-            handle.get_result_async(), self._cartesian_timeout
-        )
-        if not wrapped.result.success:
-            raise RuntimeError(
-                f'Cartesian 이동 실패: {wrapped.result.message}'
-            )
-
-    def _verify_actual_fixed_z(self, start_transform) -> None:
+    def _current_flange(self):
         try:
             message = self._tf_buffer.lookup_transform(
                 self._base_frame,
@@ -314,10 +274,14 @@ class PbvsStepExecutorNode(Node):
                 timeout=Duration(seconds=1.0),
             )
         except TransformException as error:
-            raise RuntimeError(f'이동 후 flange TF를 읽지 못했습니다: {error}') from error
+            raise ValueError(f'현재 flange TF를 읽지 못했습니다: {error}') from error
         transform = message.transform
-        actual = make_transform(
-            (transform.translation.x, transform.translation.y, transform.translation.z),
+        return make_transform(
+            (
+                transform.translation.x,
+                transform.translation.y,
+                transform.translation.z,
+            ),
             (
                 transform.rotation.x,
                 transform.rotation.y,
@@ -325,13 +289,146 @@ class PbvsStepExecutorNode(Node):
                 transform.rotation.w,
             ),
         )
-        validate_fixed_z_pbvs_step(
-            start_transform,
-            actual,
-            self._maximum_step + 0.002,
-            self._post_move_z_tolerance,
-            self._post_move_orientation_tolerance,
+
+    def _execute_xy(self, command: str) -> None:
+        with self._lock:
+            target = self._latest_target
+            received_at = self._target_received_at
+        self._fresh(received_at, 'PBVS target')
+        if target is None:
+            raise ValueError('PBVS target 입력이 없습니다')
+        if target.header.frame_id != self._base_frame:
+            raise ValueError(f'목표 frame이 {self._base_frame}가 아닙니다')
+        current = self._current_flange()
+        goal_transform = pose_to_transform(target.pose)
+        goal_transform[:3, :3] = current[:3, :3]
+        if command == 'refine_xy':
+            goal_transform[2, 3] = current[2, 3]
+        delta_xy = goal_transform[:2, 3] - current[:2, 3]
+        distance = math.hypot(float(delta_xy[0]), float(delta_xy[1]))
+        if distance > self._maximum_xy_step:
+            raise ValueError(
+                f'XY 이동 {distance * 1000.0:.1f}mm가 제한 '
+                f'{self._maximum_xy_step * 1000.0:.1f}mm를 초과합니다'
+            )
+        if distance < 0.0002:
+            raise ValueError('XY 오차가 0.2mm 미만이므로 이동하지 않습니다')
+        execution_target = PoseStamped()
+        execution_target.header = target.header
+        execution_target.header.stamp = self.get_clock().now().to_msg()
+        execution_target.pose = transform_to_pose(goal_transform)
+        self._publish(
+            f'{self._warning_delay:.1f}초 후 {command}: '
+            f'dx={delta_xy[0] * 1000.0:+.1f}mm, '
+            f'dy={delta_xy[1] * 1000.0:+.1f}mm, '
+            f'z={goal_transform[2, 3] * 1000.0:.1f}mm'
         )
+        time.sleep(self._warning_delay)
+        self._send_cartesian(execution_target)
+        with self._lock:
+            self._latest_target = None
+            self._target_received_at = None
+        self._publish(f'EXECUTED: {command} 완료, 새 관측을 기다립니다')
+
+    def _execute_yaw(self) -> None:
+        with self._lock:
+            joints = (
+                None
+                if self._latest_joints is None
+                else list(self._latest_joints)
+            )
+            joints_received_at = self._joints_received_at
+            axis = self._latest_keypoint_axis
+            axis_received_at = self._keypoint_received_at
+        self._fresh(joints_received_at, '/joint_states')
+        self._fresh(axis_received_at, 'keypoint angle')
+        if joints is None or axis is None:
+            raise ValueError('Joint6 Yaw 입력이 없습니다')
+        yaw_step, converged = keypoint_image_yaw_step_rad(
+            axis,
+            self._desired_axis,
+            self._maximum_yaw_step,
+            self._yaw_tolerance,
+            self._keypoint_command_sign,
+        )
+        if converged:
+            raise ValueError(
+                f'영상 Yaw가 이미 허용오차 안입니다: {axis:+.3f}deg'
+            )
+        target_joints = list(joints)
+        target_joints[-1] = joint6_yaw_target_rad(
+            joints[-1],
+            yaw_step,
+            direction=self._joint6_direction,
+            limit_deg=self._joint6_limit,
+        )
+        delta_deg = math.degrees(target_joints[-1] - joints[-1])
+        self._publish(
+            f'{self._warning_delay:.1f}초 후 refine_yaw: '
+            f'image={axis:+.2f}deg, joint6_delta={delta_deg:+.2f}deg'
+        )
+        time.sleep(self._warning_delay)
+        self._send_joint_target(target_joints)
+        self._publish('EXECUTED: refine_yaw 완료, 새 관측을 기다립니다')
+
+    def _wait_future(self, future, timeout_seconds: float):
+        deadline = time.monotonic() + timeout_seconds
+        while rclpy.ok() and not future.done():
+            if time.monotonic() >= deadline:
+                raise TimeoutError('ROS action 응답 시간이 초과됐습니다')
+            time.sleep(0.05)
+        if future.exception() is not None:
+            raise RuntimeError(str(future.exception()))
+        return future.result()
+
+    def _send_cartesian(self, target: PoseStamped) -> None:
+        if not self._cartesian_action.wait_for_server(timeout_sec=3.0):
+            raise RuntimeError(f'action server가 없습니다: {CARTESIAN_ACTION}')
+        goal = CartesianMove.Goal()
+        goal.target = target
+        goal.speed = self._cartesian_speed
+        goal.mode = self._cartesian_mode
+        goal.lock_z = False
+        goal.lock_roll_pitch = False
+        handle = self._wait_future(
+            self._cartesian_action.send_goal_async(goal),
+            5.0,
+        )
+        if not handle.accepted:
+            raise RuntimeError('Cartesian 목표가 거절됐습니다')
+        wrapped = self._wait_future(
+            handle.get_result_async(),
+            self._cartesian_timeout,
+        )
+        if not wrapped.result.success:
+            raise RuntimeError(wrapped.result.message)
+
+    def _send_joint_target(self, target_joints: list[float]) -> None:
+        if not self._joint_action.wait_for_server(timeout_sec=3.0):
+            raise RuntimeError(f'action server가 없습니다: {JOINT_ACTION}')
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory.joint_names = list(JOINT_NAMES)
+        point = JointTrajectoryPoint()
+        point.positions = target_joints
+        point.time_from_start = Duration(
+            seconds=self._joint6_move_seconds
+        ).to_msg()
+        goal.trajectory.points = [point]
+        handle = self._wait_future(
+            self._joint_action.send_goal_async(goal),
+            5.0,
+        )
+        if not handle.accepted:
+            raise RuntimeError('Joint6 목표가 거절됐습니다')
+        wrapped = self._wait_future(
+            handle.get_result_async(),
+            self._joint6_move_seconds + 20.0,
+        )
+        if wrapped.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+            raise RuntimeError(
+                wrapped.result.error_string
+                or f'Joint6 error={wrapped.result.error_code}'
+            )
 
 
 def main(args: list[str] | None = None) -> None:

@@ -1,0 +1,51 @@
+pinkk_usb_camera_node:
+  ros__parameters:
+    camera_device: /dev/video0
+    publish_rate_hz: 30.0
+
+pinkk_yolo_keypoint_node:
+  ros__parameters:
+    model_path: /home/juwon/Desktop/usb_01.pt
+    image_size: 640
+    confidence_threshold: 0.25
+    visibility_threshold: 0.01
+    device: cuda:0
+    debug_image_enabled: true
+
+pinkk_port_pose_node:
+  ros__parameters: {}
+
+pinkk_pbvs_alignment_node:
+  ros__parameters:
+    use_latest_flange_tf: true
+    enable_yaw_pbvs: true
+    absolute_port_xy_yaw_mode: true
+    absolute_pre_approach_height_m: 0.15
+    maximum_xy_step_m: 0.003
+
+pinkk_pbvs_step_executor_node:
+  ros__parameters:
+    enable_execution: true
+    base_frame: g_base
+    flange_frame: joint6_flange
+    maximum_input_age_seconds: 1.0
+    maximum_xy_step_m: 0.10
+    cartesian_speed: 10
+    cartesian_mode: 0
+    cartesian_timeout_seconds: 100.0
+    warning_delay_seconds: 3.0
+    keypoint_desired_axis_deg: 0.0
+    keypoint_maximum_step_deg: 1.0
+    keypoint_tolerance_deg: 1.0
+    keypoint_command_sign: -1.0
+    joint6_direction: -1.0
+    joint6_limit_deg: 175.0
+    joint6_move_seconds: 6.0
+
+pinkk_return_to_observe:
+  ros__parameters:
+    observation_joint_degrees:
+      [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
+    motion_seconds: 20.0
+    warning_delay_seconds: 3.0
+    accepted_error_deg: 3.5

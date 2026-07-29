@@ -18,7 +18,6 @@ setup(
         (f'share/{PACKAGE_NAME}/docs', glob('docs/*.md')),
     ],
     install_requires=['setuptools'],
-    tests_require=['pytest'],
     zip_safe=True,
     maintainer='juwon',
     maintainer_email='juwon@example.com',
@@ -32,19 +31,8 @@ setup(
             'port_pose_node = pinkk_usb_insertion.port_pose_node:main',
             'pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main',
             'pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main',
-            'manual_detection_node = pinkk_usb_insertion.manual_detection_node:main',
-            'arm_motion_node = pinkk_usb_insertion.arm_motion_node:main',
-            'usb_insertion_node = pinkk_usb_insertion.usb_insertion_node:main',
-            'cartesian_smoke_test = '
-            'pinkk_usb_insertion.cartesian_smoke_test_node:main',
-            'moveit_ik_step_executor = '
-            'pinkk_usb_insertion.moveit_ik_step_executor_node:main',
-            'moveit_ik_step_execute = '
-            'pinkk_usb_insertion.moveit_ik_step_execute_node:main',
-            'moveit_pbvs_step_execute = '
-            'pinkk_usb_insertion.moveit_pbvs_step_execute_node:main',
-            'moveit_pbvs_closed_loop_execute = '
-            'pinkk_usb_insertion.moveit_pbvs_closed_loop_execute_node:main',
+            'return_to_observe = '
+            'pinkk_usb_insertion.return_to_observe_node:main',
         ],
     },
 )

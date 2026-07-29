@@ -14,14 +14,18 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float64, String
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 
 from .configuration import load_yaml
-from .control.pbvs_controller import calculate_fixed_z_camera_pbvs
+from .control.pbvs_controller import (
+    calculate_absolute_port_xy_yaw_target,
+    calculate_fixed_z_camera_pbvs,
+)
 from .control.observation_reference import validate_observation_joint_pose
 from .control.yaw_alignment import (
     apply_base_yaw_step,
+    keypoint_long_axis_angle_deg,
     limited_yaw_step_rad,
     named_axis_vector,
     undirected_planar_axis_error_rad,
@@ -67,6 +71,9 @@ class PbvsAlignmentNode(Node):
         self.declare_parameter('handeye_config', _default_config('handeye.yaml'))
         self.declare_parameter('use_latest_flange_tf', False)
         self.declare_parameter('enable_yaw_pbvs', False)
+        self.declare_parameter('absolute_port_xy_yaw_mode', False)
+        self.declare_parameter('absolute_pre_approach_height_m', 0.0)
+        self.declare_parameter('maximum_xy_step_m', 0.0)
 
         control = load_yaml(str(self.get_parameter('control_config').value))
         handeye = load_yaml(str(self.get_parameter('handeye_config').value))['handeye']
@@ -94,13 +101,37 @@ class PbvsAlignmentNode(Node):
         if bool(pbvs['publish_motion_commands']):
             raise ValueError('DRY RUN 노드에서는 publish_motion_commands=true를 거부합니다')
 
-        self._maximum_step = float(pbvs['maximum_xy_step_m'])
+        configured_maximum_step = float(pbvs['maximum_xy_step_m'])
+        step_override = float(
+            self.get_parameter('maximum_xy_step_m').value
+        )
+        self._maximum_step = (
+            configured_maximum_step
+            if step_override <= 0.0
+            else step_override
+        )
+        if self._maximum_step <= 0.0 or self._maximum_step > 0.035:
+            raise ValueError('maximum_xy_step_m은 0보다 크고 0.035 이하여야 합니다')
         self._tolerance = float(pbvs['xy_tolerance_m'])
         self._desired_x = float(pbvs['desired_port_x_m'])
         self._desired_y = float(pbvs['desired_port_y_m'])
         self._yaw_enabled = bool(yaw_pbvs['enabled']) or bool(
             self.get_parameter('enable_yaw_pbvs').value
         )
+        self._absolute_port_pose_mode = bool(
+            self.get_parameter('absolute_port_xy_yaw_mode').value
+        )
+        self._absolute_pre_approach_height = float(
+            self.get_parameter('absolute_pre_approach_height_m').value
+        )
+        if not 0.0 <= self._absolute_pre_approach_height <= 0.200:
+            raise ValueError(
+                'absolute_pre_approach_height_m은 0~0.200 범위여야 합니다'
+            )
+        if self._absolute_port_pose_mode and not self._yaw_enabled:
+            raise ValueError(
+                'absolute_port_xy_yaw_mode=true에는 enable_yaw_pbvs=true가 필요합니다'
+            )
         flange_long_axis = named_axis_vector(
             str(yaw_pbvs['flange_long_axis'])
         )
@@ -153,6 +184,9 @@ class PbvsAlignmentNode(Node):
         self._target_publisher = self.create_publisher(
             PoseStamped, '/robot_arm/pbvs/target_flange_pose', 10
         )
+        self._observation_reference_publisher = self.create_publisher(
+            PoseStamped, '/robot_arm/pbvs/observation_reference_pose', 10
+        )
         self._converged_publisher = self.create_publisher(
             Bool, '/robot_arm/pbvs/converged', 10
         )
@@ -164,6 +198,11 @@ class PbvsAlignmentNode(Node):
         )
         self._yaw_enabled_publisher = self.create_publisher(
             Bool, '/robot_arm/pbvs/yaw_enabled', 10
+        )
+        self._keypoint_axis_publisher = self.create_publisher(
+            Float64,
+            '/robot_arm/perception/usb_port/keypoint_axis_angle_deg',
+            10,
         )
         self.create_subscription(
             UsbPortObservation,
@@ -236,6 +275,28 @@ class PbvsAlignmentNode(Node):
                 f'관측 거부: frame={observation.header.frame_id}, expected={self._camera_frame}'
             )
             return
+        keypoint_axis_angle_deg: float | None = None
+        try:
+            ordered = sorted(
+                observation.keypoints,
+                key=lambda point: int(point.index),
+            )
+            if (
+                [int(point.index) for point in ordered] != [0, 1, 2, 3]
+                or not all(bool(point.visible) for point in ordered)
+            ):
+                raise ValueError('보이는 keypoint 0~3이 모두 필요합니다')
+            keypoint_axis_angle_deg = keypoint_long_axis_angle_deg(
+                np.asarray(
+                    [(float(point.x), float(point.y)) for point in ordered],
+                    dtype=np.float64,
+                )
+            )
+            axis_message = Float64()
+            axis_message.data = keypoint_axis_angle_deg
+            self._keypoint_axis_publisher.publish(axis_message)
+        except ValueError:
+            keypoint_axis_angle_deg = None
         try:
             lookup_time = (
                 Time()
@@ -287,6 +348,14 @@ class PbvsAlignmentNode(Node):
                 )
                 return
 
+        observation_reference = PoseStamped()
+        observation_reference.header.stamp = self.get_clock().now().to_msg()
+        observation_reference.header.frame_id = self._base_frame
+        observation_reference.pose = transform_to_pose(
+            self._locked_base_to_flange
+        )
+        self._observation_reference_publisher.publish(observation_reference)
+
         try:
             result = calculate_fixed_z_camera_pbvs(
                 base_to_flange,
@@ -305,8 +374,35 @@ class PbvsAlignmentNode(Node):
         yaw_error_rad = 0.0
         yaw_step_rad = 0.0
         yaw_converged = True
+        direct_delta_xy = result.applied_step_base_xy_m
         target_base_to_flange = result.target_base_to_flange.copy()
-        if self._yaw_enabled:
+        absolute_converged: bool | None = None
+        if self._absolute_port_pose_mode:
+            if keypoint_axis_angle_deg is None:
+                self._publish_status(
+                    '절대 포트 목표 거부: Yaw 검증용 keypoint 장축이 없습니다'
+                )
+                return
+            try:
+                absolute = calculate_absolute_port_xy_yaw_target(
+                    base_to_flange,
+                    self._locked_base_to_flange,
+                    base_to_port,
+                    self._plug_long_axis_in_flange,
+                    self._port_long_axis,
+                    self._tolerance,
+                    self._yaw_tolerance_deg,
+                    self._absolute_pre_approach_height,
+                )
+                target_base_to_flange = absolute.target_base_to_flange
+                direct_delta_xy = absolute.delta_base_xy_m
+                yaw_error_rad = absolute.yaw_error_rad
+                yaw_step_rad = absolute.target_yaw_offset_rad
+                absolute_converged = absolute.converged
+            except ValueError as error:
+                self._publish_status(f'절대 포트 목표 계산 거부: {error}')
+                return
+        elif self._yaw_enabled:
             try:
                 current_axis_base = (
                     base_to_flange[:3, :3]
@@ -337,13 +433,17 @@ class PbvsAlignmentNode(Node):
         self._target_publisher.publish(target_pose)
 
         converged = Bool()
-        converged.data = result.converged and yaw_converged
+        converged.data = (
+            absolute_converged
+            if absolute_converged is not None
+            else result.converged and yaw_converged
+        )
         self._converged_publisher.publish(converged)
 
         error_message = Vector3Stamped()
         error_message.header = target_pose.header
-        error_message.vector.x = float(result.error_base_xy_m[0])
-        error_message.vector.y = float(result.error_base_xy_m[1])
+        error_message.vector.x = float(direct_delta_xy[0])
+        error_message.vector.y = float(direct_delta_xy[1])
         error_message.vector.z = float(yaw_error_rad)
         self._error_publisher.publish(error_message)
 
@@ -351,18 +451,40 @@ class PbvsAlignmentNode(Node):
         yaw_enabled_message.data = self._yaw_enabled
         self._yaw_enabled_publisher.publish(yaw_enabled_message)
 
+        status_mode = (
+            'ABSOLUTE_PORT_XY_YAW'
+            if self._absolute_port_pose_mode
+            else 'TARGET_ONLY'
+        )
+        step_label = (
+            'absolute_delta_xy_m'
+            if self._absolute_port_pose_mode
+            else 'base_step_xy_m'
+        )
         self._publish_status(
-            'TARGET_ONLY | camera_error_xy_m='
+            f'{status_mode} | camera_error_xy_m='
             f'[{result.error_camera_xy_m[0]:+.6f}, {result.error_camera_xy_m[1]:+.6f}] '
-            'base_step_xy_m='
-            f'[{result.applied_step_base_xy_m[0]:+.6f}, '
-            f'{result.applied_step_base_xy_m[1]:+.6f}] '
+            f'{step_label}='
+            f'[{direct_delta_xy[0]:+.6f}, '
+            f'{direct_delta_xy[1]:+.6f}] '
+            'target_xyz_m='
+            f'[{target_base_to_flange[0, 3]:+.6f}, '
+            f'{target_base_to_flange[1, 3]:+.6f}, '
+            f'{target_base_to_flange[2, 3]:+.6f}] '
             f'yaw_error_deg={np.degrees(yaw_error_rad):+.3f} '
             f'yaw_step_deg={np.degrees(yaw_step_rad):+.3f} '
             f'converged={converged.data} '
             f'tf_mode={"latest_stationary" if self._use_latest_flange_tf else "timestamp"} '
             f'z_lock={self._locked_base_to_flange[2, 3]:.6f}m '
-            f'yaw_pbvs={"enabled" if self._yaw_enabled else "disabled"}'
+            f'pre_approach_height='
+            f'{self._absolute_pre_approach_height:.6f}m '
+            f'yaw_pbvs={"enabled" if self._yaw_enabled else "disabled"} '
+            + (
+                'keypoint_axis_deg='
+                f'{keypoint_axis_angle_deg:+.3f}'
+                if keypoint_axis_angle_deg is not None
+                else 'keypoint_axis_deg=unavailable'
+            )
         )
 
 

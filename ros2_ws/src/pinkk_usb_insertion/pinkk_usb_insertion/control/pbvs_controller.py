@@ -12,6 +12,10 @@ from ..geometry.transforms import (
     inverse,
     validate_transform,
 )
+from .yaw_alignment import (
+    apply_base_yaw_step,
+    undirected_planar_axis_error_rad,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,77 @@ class FixedZPbvsResult:
     error_base_xy_m: np.ndarray
     applied_step_base_xy_m: np.ndarray
     converged: bool
+
+
+@dataclass(frozen=True)
+class AbsolutePortPoseResult:
+    """포트 절대 X/Y와 초기 관측 Z/tilt를 결합한 목표."""
+
+    target_base_to_flange: np.ndarray
+    delta_base_xy_m: np.ndarray
+    yaw_error_rad: float
+    target_yaw_offset_rad: float
+    converged: bool
+
+
+def calculate_absolute_port_xy_yaw_target(
+    current_base_to_flange: np.ndarray,
+    locked_base_to_flange: np.ndarray,
+    base_to_port: np.ndarray,
+    plug_long_axis_in_flange: np.ndarray,
+    port_long_axis: np.ndarray,
+    xy_tolerance_m: float,
+    yaw_tolerance_deg: float,
+    pre_approach_height_m: float = 0.0,
+) -> AbsolutePortPoseResult:
+    """
+    TCP offset을 0으로 보고 flange를 포트의 base X/Y로 직접 보낸다.
+
+    pre_approach_height_m이 양수면 목표 Z는 port Z + 높이를 사용한다. 0이면
+    기존 동작처럼 초기 OBSERVE_POSE Z를 사용한다. tilt는 초기 자세를
+    사용하고 base Z축 둘레의 Yaw만 포트 장축의 180도 대칭 방향에 맞춘다.
+    """
+    current = validate_transform(current_base_to_flange)
+    reference = validate_transform(locked_base_to_flange)
+    port = validate_transform(base_to_port)
+    plug_axis = np.asarray(plug_long_axis_in_flange, dtype=np.float64).reshape(3)
+    port_axis = np.asarray(port_long_axis, dtype=np.float64).reshape(3)
+    if not np.all(np.isfinite(plug_axis)) or not np.all(np.isfinite(port_axis)):
+        raise ValueError('플러그/포트 장축은 유한값이어야 합니다')
+    if xy_tolerance_m < 0.0 or yaw_tolerance_deg < 0.0:
+        raise ValueError('XY/Yaw 허용오차는 0 이상이어야 합니다')
+    height = float(pre_approach_height_m)
+    if not np.isfinite(height) or height < 0.0:
+        raise ValueError('pre-approach 높이는 0 이상의 유한값이어야 합니다')
+
+    current_axis_base = current[:3, :3] @ plug_axis
+    reference_axis_base = reference[:3, :3] @ plug_axis
+    target_axis_base = port[:3, :3] @ port_axis
+    target_yaw_offset = undirected_planar_axis_error_rad(
+        reference_axis_base,
+        target_axis_base,
+    )
+    yaw_error = undirected_planar_axis_error_rad(
+        current_axis_base,
+        target_axis_base,
+    )
+    target = apply_base_yaw_step(reference, target_yaw_offset)
+    target[0, 3] = port[0, 3]
+    target[1, 3] = port[1, 3]
+    if height > 0.0:
+        target[2, 3] = port[2, 3] + height
+    delta_xy = target[:2, 3] - current[:2, 3]
+    converged = (
+        float(np.linalg.norm(delta_xy)) <= xy_tolerance_m
+        and abs(np.degrees(yaw_error)) <= yaw_tolerance_deg
+    )
+    return AbsolutePortPoseResult(
+        target_base_to_flange=validate_transform(target),
+        delta_base_xy_m=delta_xy,
+        yaw_error_rad=float(yaw_error),
+        target_yaw_offset_rad=float(target_yaw_offset),
+        converged=converged,
+    )
 
 
 def calculate_fixed_z_camera_pbvs(

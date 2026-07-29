@@ -24,8 +24,18 @@ def undirected_planar_axis_error_rad(
     target_axis_base: np.ndarray,
 ) -> float:
     """방향 부호가 없는 두 XY 축의 최소 signed angle을 반환한다."""
-    current = np.asarray(current_axis_base, dtype=np.float64).reshape(3)[:2]
-    target = np.asarray(target_axis_base, dtype=np.float64).reshape(3)[:2]
+    # 행렬의 column view가 들어와도 아래 in-place 정규화가 원본 회전행렬을
+    # 훼손하지 않도록 독립 배열로 복사한다.
+    current = (
+        np.asarray(current_axis_base, dtype=np.float64)
+        .reshape(3)[:2]
+        .copy()
+    )
+    target = (
+        np.asarray(target_axis_base, dtype=np.float64)
+        .reshape(3)[:2]
+        .copy()
+    )
     current_norm = float(np.linalg.norm(current))
     target_norm = float(np.linalg.norm(target))
     if current_norm < 1e-9 or target_norm < 1e-9:
@@ -56,6 +66,60 @@ def limited_yaw_step_rad(
     return float(np.clip(error, -maximum_step, maximum_step)), converged
 
 
+def keypoint_image_yaw_step_rad(
+    measured_axis_deg: float,
+    desired_axis_deg: float,
+    maximum_step_deg: float,
+    tolerance_deg: float,
+    command_sign: float = -1.0,
+) -> tuple[float, bool]:
+    """영상 장축 오차를 base Yaw 단발 명령으로 변환한다."""
+    measured = float(measured_axis_deg)
+    desired = float(desired_axis_deg)
+    sign = float(command_sign)
+    if not all(math.isfinite(value) for value in (measured, desired, sign)):
+        raise ValueError('keypoint Yaw 입력은 유한값이어야 합니다')
+    if sign not in (-1.0, 1.0):
+        raise ValueError('keypoint Yaw 명령 부호는 -1 또는 +1이어야 합니다')
+    # 포트 장축은 방향성이 없으므로 영상 오차도 [-90, 90)로 정규화한다.
+    image_error_deg = (measured - desired + 90.0) % 180.0 - 90.0
+    return limited_yaw_step_rad(
+        math.radians(sign * image_error_deg),
+        maximum_step_deg,
+        tolerance_deg,
+    )
+
+
+def joint6_yaw_target_rad(
+    current_joint_rad: float,
+    yaw_step_rad: float,
+    direction: float = 1.0,
+    limit_deg: float = 175.0,
+) -> float:
+    """영상 Yaw step을 안전 범위 안의 6번 관절 절대 목표로 변환한다."""
+    current = float(current_joint_rad)
+    step = float(yaw_step_rad)
+    sign = float(direction)
+    limit = float(limit_deg)
+    if not all(
+        math.isfinite(value) for value in (current, step, sign, limit)
+    ):
+        raise ValueError('joint6 Yaw 입력은 유한값이어야 합니다')
+    if sign not in (-1.0, 1.0):
+        raise ValueError('joint6 Yaw 방향은 -1 또는 +1이어야 합니다')
+    if not 0.0 < limit < 180.0:
+        raise ValueError('joint6 제한각은 0보다 크고 180보다 작아야 합니다')
+    target = current + sign * step
+    if abs(target) > math.radians(limit):
+        raise ValueError(
+            'joint6 Yaw 목표가 안전 제한을 초과합니다: '
+            f'current={math.degrees(current):+.3f}deg, '
+            f'target={math.degrees(target):+.3f}deg, '
+            f'limit={limit:.3f}deg'
+        )
+    return target
+
+
 def apply_base_yaw_step(
     current_base_to_flange: np.ndarray,
     yaw_step_rad: float,
@@ -78,3 +142,40 @@ def apply_base_yaw_step(
     target = current.copy()
     target[:3, :3] = base_yaw @ current[:3, :3]
     return validate_transform(target)
+
+
+def invert_orientation_step(
+    current_base_to_flange: np.ndarray,
+    target_base_to_flange: np.ndarray,
+) -> np.ndarray:
+    """현재 자세 기준 목표 상대 회전을 반대 방향으로 뒤집는다."""
+    current = validate_transform(current_base_to_flange)
+    target = validate_transform(target_base_to_flange)
+    relative_rotation = current[:3, :3].T @ target[:3, :3]
+    inverted = target.copy()
+    inverted[:3, :3] = current[:3, :3] @ relative_rotation.T
+    return validate_transform(inverted)
+
+
+def keypoint_long_axis_angle_deg(points_xy: np.ndarray) -> float:
+    """네 모서리의 두 긴 변 평균 각도를 영상 좌표계 degree로 반환한다.
+
+    keypoint 순서는 0→1과 3→2가 서로 평행한 긴 변이어야 한다. 영상의
+    +Y가 아래쪽이므로 양의 각도는 화면에서 시계 방향이다. 축은 방향성이
+    없으므로 결과를 [-90, 90) 범위로 정규화한다.
+    """
+    points = np.asarray(points_xy, dtype=np.float64)
+    if points.shape != (4, 2) or not np.all(np.isfinite(points)):
+        raise ValueError('Yaw 픽셀 각도에는 유한한 keypoint 4×2가 필요합니다')
+    edges = (points[1] - points[0], points[2] - points[3])
+    angles: list[float] = []
+    for edge in edges:
+        if float(np.linalg.norm(edge)) < 1e-6:
+            raise ValueError('Yaw 픽셀 장축 keypoint 간격이 너무 작습니다')
+        angles.append(math.atan2(float(edge[1]), float(edge[0])))
+    doubled_sine = sum(math.sin(2.0 * angle) for angle in angles)
+    doubled_cosine = sum(math.cos(2.0 * angle) for angle in angles)
+    if math.hypot(doubled_sine, doubled_cosine) < 1e-6:
+        raise ValueError('두 긴 변의 픽셀 각도가 서로 일치하지 않습니다')
+    mean = 0.5 * math.atan2(doubled_sine, doubled_cosine)
+    return math.degrees(mean)

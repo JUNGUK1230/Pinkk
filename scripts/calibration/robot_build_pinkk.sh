@@ -17,13 +17,15 @@ if [[ -d "${SYSTEM_PYTHON_DIST}" ]]; then
 fi
 
 cd "${HOME}/mycobot_moveit_ws"
-echo "로봇 PC용 Pinkk interface와 bridge를 install_pinkk에 빌드합니다"
+echo "로봇 PC용 Pinkk interface, bridge, 관측 복귀 노드를 install_pinkk에 빌드합니다"
 exec colcon --log-base log_pinkk build \
     --build-base build_pinkk \
     --install-base install_pinkk \
     --base-paths \
         "${REPO_ROOT}/ros2_ws/src/pinkk_usb_insertion_interfaces" \
         "${REPO_ROOT}/ros2_ws/src/pinkk_mycobot_bridge" \
+        "${REPO_ROOT}/ros2_ws/src/pinkk_usb_insertion" \
     --packages-select \
         pinkk_usb_insertion_interfaces \
-        pinkk_mycobot_bridge
+        pinkk_mycobot_bridge \
+        pinkk_usb_insertion
