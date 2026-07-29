@@ -10,11 +10,11 @@ Python 기반 스마트 주차 및 자동 충전 프로젝트 기본 구조입�
 - `ros2_ws/src/pinkk_usb_insertion`: USB-A 포트 인식, 접근, 정렬 및 삽입 제어
 - `ros2_ws/src/pinkk_usb_insertion_interfaces`: YOLO keypoint와 포트 관측 ROS 메시지
 
-로봇팔 USB 삽입 제어의 구조, 좌표계, ROS 2 인터페이스와 개발 순서는
+로봇팔 USB 정렬 제어의 실행 방법은
 [`pinkk_usb_insertion/README.md`](ros2_ws/src/pinkk_usb_insertion/README.md)를
 참고하세요. 캘리브레이션 패키지와 실제 운용 제어 패키지는 분리해서 관리합니다.
-현재 완료된 기능, 실기 미검증 항목과 앞으로의 전체 체크리스트는
-[`진행 현황과 개발 체크리스트`](ros2_ws/src/pinkk_usb_insertion/docs/05_DEVELOPMENT_ROADMAP_KO.md)에서
+현재 완료된 기능, 문제와 다음 계획은
+[`USB 포트 정렬 개발일지`](ros2_ws/src/pinkk_usb_insertion/docs/DEVELOPMENT_LOG_KO.md)에서
 관리합니다.
 
 프로젝트 루트에는 안내 문서인 `README.md`와 라이브러리 의존성 파일인
