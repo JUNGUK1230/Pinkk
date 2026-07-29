@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PINKY Parking</title>
+<title>PINKY_01 Parking</title>
 <style>
 :root{
   --bg:#f2f5f8;
@@ -153,7 +153,7 @@ button{font:inherit}
     <div class="brand">
       <div class="brand-mark">P</div>
       <div>
-        <h1>PINKY Parking</h1>
+        <h1>PINKY_01 Parking</h1>
         <p>Smart Valet & Charging Service</p>
       </div>
     </div>
@@ -185,7 +185,7 @@ button{font:inherit}
         <div class="vehicle-top">
           <div>
             <div class="vehicle-label">등록 차량</div>
-            <div class="vehicle-id" id="vehicleId">CAR_01</div>
+            <div class="vehicle-id" id="vehicleId">PINKY_01</div>
           </div>
           <span class="state-badge" id="stateBadge">주차 완료</span>
         </div>
@@ -264,7 +264,7 @@ function updateProgress(value){
 }
 
 function applyStatus(data){
-  document.getElementById('vehicleId').textContent = data.vehicle_id ?? 'CAR_01';
+  document.getElementById('vehicleId').textContent = data.vehicle_id ?? 'PINKY_01';
   const battery = data.battery_connected ? data.battery : null;
   document.getElementById('batteryValue').textContent =
     battery == null ? '--%' : `${battery}%`;

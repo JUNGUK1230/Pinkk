@@ -41,6 +41,10 @@ CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FPS = 30
 
+ROBOT_NAMESPACE = "/pinky1"
+BATTERY_PERCENT_TOPIC = f"{ROBOT_NAMESPACE}/battery/percent"
+BATTERY_VOLTAGE_TOPIC = f"{ROBOT_NAMESPACE}/battery/voltage"
+
 app = Flask(
     __name__,
     template_folder=str(TEMPLATE_DIR),
@@ -56,7 +60,7 @@ bev_width = 1600
 bev_height = 800
 
 system_state = {
-    "vehicle_id": "CAR_01",
+    "vehicle_id": "PINKY_01",
     "battery": None,
     "battery_voltage": None,
     "battery_connected": False,
@@ -79,13 +83,13 @@ class BatterySubscriber(Node):
         super().__init__("parking_user_web_battery_subscriber")
         self.create_subscription(
             Float32,
-            "/battery/percent",
+            BATTERY_PERCENT_TOPIC,
             self.percent_callback,
             10,
         )
         self.create_subscription(
             Float32,
-            "/battery/voltage",
+            BATTERY_VOLTAGE_TOPIC,
             self.voltage_callback,
             10,
         )

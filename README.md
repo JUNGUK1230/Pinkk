@@ -92,8 +92,7 @@ python3 -m http.server 8000 --directory src/central_control/parking_management_w
 
 브라우저에서 `http://ROS_PC_IP:8000`으로 접속합니다. 통합 관제 화면은
 영상에 `web_video_server`, 배터리와 제어 명령에 rosbridge를 사용해
-각 차량의 `/pinky1/battery/percent`, `/pinky1/battery/voltage`,
-`/pinky2/battery/percent`, `/pinky2/battery/voltage`와
+PINKY_01의 `/pinky1/battery/percent`, `/pinky1/battery/voltage`와
 `/pinkk/web/control` 토픽을 직접 사용합니다. LiDAR
 영상 토픽 기본값은 `/pinkk/lidar_map/image`이며 URL의 `lidarTopic` 쿼리로
 바꿀 수 있습니다. `--no-display`로 로컬 OpenCV 창을 꺼도 ROS 영상 발행은
