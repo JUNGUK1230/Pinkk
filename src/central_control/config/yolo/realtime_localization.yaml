@@ -15,6 +15,8 @@ realtime_localization:
   ros_publish_enabled: true
   # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
   ros_image_topic: /pinkk/localization/image
+  ros_lidar_image_topic: /pinkk/lidar_map/image
+  lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
 
   camera_id: 2
   camera_width: 1920
@@ -27,7 +29,7 @@ realtime_localization:
   # 현재 학습·검증 해상도를 유지한다. 화면의 capture age가 계속 크면
   # 정확도를 현장 검증한 뒤 960으로 낮추는 것을 다음 최적화로 검토한다.
   inference_imgsz: 1600
-  inference_device: 0
+  inference_device: cpu
   # ByteTrack은 car mask의 프레임 간 ID를 유지한다. ego는 처음 선택된 ID만
   # 따르므로 다른 차량과 가까워져도 planner start가 바뀌지 않는다.
   tracker_config: bytetrack.yaml

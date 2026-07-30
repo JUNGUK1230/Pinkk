@@ -28,6 +28,143 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+## PINKY_01 브링업
+
+PINKY_01의 주소는 `192.168.0.99`, 계정은 `pinky`, ROS 도메인은 `36`을
+기준으로 합니다. 중앙 관제 PC와 PINKY_01은 같은 네트워크에 연결되어 있어야
+합니다.
+
+### SSH 키 등록
+
+아래 명령은 PINKY_01 터미널이 아니라 **PINKY_01에 접속할 중앙 관제 PC
+터미널**에서 한 번만 실행합니다.
+
+```bash
+ssh-keygen -t ed25519
+ssh-copy-id pinky@192.168.0.99
+ssh pinky@192.168.0.99
+```
+
+`ssh-keygen` 실행 중 저장 위치와 암호를 물으면 별도 설정이 없는 경우 Enter를
+눌러 기본값을 사용합니다.
+
+### PINKY_01에서 직접 실행
+
+중앙 관제 PC에서 PINKY_01에 접속한 다음 bringup을 실행합니다.
+
+```bash
+ssh pinky@192.168.0.99
+source /opt/ros/jazzy/setup.bash
+source ~/pinky_pro/install/setup.bash
+export ROS_DOMAIN_ID=36
+ros2 launch pinky_bringup bringup_robot.launch.xml namespace:=pinky1
+```
+
+bringup을 종료할 때는 해당 터미널에서 `Ctrl+C`를 누릅니다.
+
+### 중앙 관제 PC에서 한 줄로 실행
+
+SSH 키 등록이 끝났다면 중앙 관제 PC에서 다음 명령으로 원격 bringup을 바로
+실행할 수 있습니다.
+
+```bash
+ssh -t pinky@192.168.0.99 \
+  'source /opt/ros/jazzy/setup.bash && source ~/pinky_pro/install/setup.bash && export ROS_DOMAIN_ID=36 && ros2 launch pinky_bringup bringup_robot.launch.xml namespace:=pinky1'
+```
+
+### 토픽 확인
+
+bringup을 유지한 상태에서 새 터미널로 PINKY_01에 접속합니다.
+
+```bash
+ssh pinky@192.168.0.99
+source /opt/ros/jazzy/setup.bash
+source ~/pinky_pro/install/setup.bash
+export ROS_DOMAIN_ID=36
+```
+
+먼저 노드와 전체 토픽을 확인합니다.
+
+```bash
+ros2 node list
+ros2 topic list -t
+```
+
+어제 수정한 네임스페이스가 제대로 적용됐는지는 아래 코드로 한 번에
+검사합니다. 모든 필수 토픽이 있고 예전 루트 토픽이 없으면 마지막에
+`토픽 네임스페이스 검사: 정상`이 출력됩니다.
+
+```bash
+expected_topics=(
+  /pinky1/cmd_vel
+  /pinky1/odom
+  /pinky1/scan
+  /pinky1/joint_states
+  /pinky1/robot_description
+  /pinky1/battery/percent
+  /pinky1/battery/voltage
+)
+
+legacy_topics_regex='^/(cmd_vel|odom|scan|joint_states|robot_description|battery/percent|battery/voltage)$'
+topic_list="$(ros2 topic list)"
+failed=0
+
+for topic in "${expected_topics[@]}"; do
+  if grep -Fqx "$topic" <<<"$topic_list"; then
+    echo "[OK] $topic"
+  else
+    echo "[누락] $topic"
+    failed=1
+  fi
+done
+
+legacy_topics="$(grep -E "$legacy_topics_regex" <<<"$topic_list" || true)"
+if [[ -n "$legacy_topics" ]]; then
+  echo "[오류] 네임스페이스 없는 예전 토픽이 남아 있습니다:"
+  echo "$legacy_topics"
+  failed=1
+else
+  echo "[OK] 예전 루트 토픽 없음"
+fi
+
+if (( failed )); then
+  echo "토픽 네임스페이스 검사: 실패"
+else
+  echo "토픽 네임스페이스 검사: 정상"
+fi
+```
+
+publisher와 subscriber 연결 상태를 확인합니다.
+
+```bash
+ros2 topic info -v /pinky1/battery/percent
+ros2 topic info -v /pinky1/battery/voltage
+ros2 topic info -v /pinky1/cmd_vel
+ros2 topic info -v /pinky1/odom
+ros2 topic info -v /pinky1/scan
+```
+
+마지막으로 실제 메시지가 들어오는지 확인합니다. 각 명령은 최대 10초 뒤
+자동으로 종료됩니다.
+
+```bash
+timeout 10 ros2 topic echo /pinky1/battery/percent --once
+timeout 10 ros2 topic echo /pinky1/battery/voltage --once
+timeout 10 ros2 topic echo /pinky1/odom --once
+timeout 10 ros2 topic echo /pinky1/scan --once
+```
+
+정상 상태에서는 차량 토픽이 `/pinky1` 네임스페이스 아래에 있어야 합니다.
+
+```text
+/pinky1/cmd_vel
+/pinky1/odom
+/pinky1/scan
+/pinky1/joint_states
+/pinky1/battery/percent
+/pinky1/battery/voltage
+```
+
 ### 차량 PID 경로 추종
 
 `pid_path_follower`는 기본적으로 `/odom`을 구독하고 `/cmd_vel`을 발행합니다. 웨이포인트와 제어 이득은 현재 노드 코드에 정의돼 있습니다.
@@ -83,6 +220,32 @@ cd ~/PINKK
 `bgr8`)로 함께 발행됩니다. Flask 없이 웹에서 보려면 ROS 2
 `web_video_server`를 실행한 뒤 정적 페이지를 여십시오.
 
+### 관제 시스템 한 번에 실행
+
+기존 관제 프로세스를 모두 종료한 뒤 프로젝트 루트에서 실행합니다. 영상
+서버, rosbridge, `index.html` 정적 서버와 localization을 한꺼번에 시작하며,
+localization은 YOLO 화면과 빨간 차량 좌표가 표시된 실제 LiDAR 맵을 같은
+프레임에서 함께 발행합니다.
+브라우저도 자동으로 엽니다.
+
+```bash
+cd /home/kukjiho/Pinkk
+./src/central_control/scripts/run_parking_management.sh
+```
+
+SSH로 핑키 bringup까지 함께 시작하려면 다음 옵션을 사용합니다. 백그라운드
+실행을 위해 `ssh-copy-id pinky@192.168.0.99`로 SSH 키 인증을 먼저 설정해야
+하며, `PINKY_HOST` 환경 변수로 접속 주소를 바꿀 수 있습니다.
+
+```bash
+./src/central_control/scripts/run_parking_management.sh --with-pinky
+```
+
+스크립트를 실행한 터미널에서 `Ctrl+C`를 누르면 스크립트가 시작한 프로세스가
+함께 종료됩니다. 로그는 `.runtime/parking_management/`에 저장됩니다.
+
+### 관제 시스템 개별 실행
+
 ```bash
 sudo apt install ros-$ROS_DISTRO-web-video-server
 ros2 run web_video_server web_video_server
@@ -90,10 +253,18 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 python3 -m http.server 8000 --directory src/central_control/parking_management_web
 ```
 
-브라우저에서 `http://ROS_PC_IP:8000`으로 접속합니다. 통합 관제 화면은
+웹 서버와 함께 PINKY_01을 실행하려면 위의 [PINKY_01 브링업](#pinky_01-브링업)
+명령을 별도 터미널에서 실행합니다. 중앙 관제 PC와 PINKY_01의
+`ROS_DOMAIN_ID`는 반드시 `36`으로 같아야 합니다.
+
+같은 ROS PC의 브라우저에서는 `http://localhost:8000`으로 접속합니다.
+다른 PC나 휴대폰에서는 ROS PC와 같은 네트워크에 연결한 뒤
+`hostname -I`로 ROS PC의 IP를 확인하고 `http://<ROS_PC_IP>:8000`으로
+접속합니다. 예를 들어 IP가 `192.168.0.73`이면
+`http://192.168.0.73:8000`입니다. 통합 관제 화면은
 영상에 `web_video_server`, 배터리와 제어 명령에 rosbridge를 사용해
 PINKY_01의 `/pinky1/battery/percent`, `/pinky1/battery/voltage`와
-`/pinkk/web/control` 토픽을 직접 사용합니다. LiDAR
+`/pinky1/web/control` 토픽을 직접 사용합니다. LiDAR
 영상 토픽 기본값은 `/pinkk/lidar_map/image`이며 URL의 `lidarTopic` 쿼리로
 바꿀 수 있습니다. `--no-display`로 로컬 OpenCV 창을 꺼도 ROS 영상 발행은
 유지됩니다.

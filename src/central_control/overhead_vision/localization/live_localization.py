@@ -666,6 +666,55 @@ def draw_scene(
     return canvas
 
 
+def draw_lidar_map_scene(
+    lidar_map: np.ndarray,
+    scene: SceneObservation,
+    display_scale: int = 4,
+) -> np.ndarray:
+    """실제 LiDAR 맵에 같은 YOLO 프레임의 차량 좌표를 빨간 점으로 그린다."""
+    canvas = cv2.cvtColor(lidar_map, cv2.COLOR_GRAY2BGR)
+    canvas = cv2.resize(
+        canvas,
+        (lidar_map.shape[1] * display_scale, lidar_map.shape[0] * display_scale),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    for vehicle in scene.tracked_vehicles:
+        if not vehicle.visible:
+            continue
+        center = (
+            round(vehicle.center_lidar_px[0] * display_scale),
+            round(vehicle.center_lidar_px[1] * display_scale),
+        )
+        if not (0 <= center[0] < canvas.shape[1] and 0 <= center[1] < canvas.shape[0]):
+            continue
+        cv2.circle(canvas, center, 10, (0, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, center, 14, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            (
+                f"id={vehicle.track_id} "
+                f"({vehicle.position_cm[0]:.1f}, {vehicle.position_cm[1]:.1f}) cm"
+            ),
+            (center[0] + 16, max(24, center[1] - 12)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+    cv2.putText(
+        canvas,
+        f"frame={scene.frame_index} | red=live YOLO LiDAR coordinate",
+        (14, 26),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    return canvas
+
+
 class ManualHeadingSelector:
     """h 키 이후 한 번의 BEV 클릭으로 검출 차량의 앞 방향을 지정한다."""
 
@@ -975,11 +1024,18 @@ def main() -> int:
             DirectRosPublisher(
                 image_topic=str(
                     config.get("ros_image_topic", "/pinkk/localization/image")
-                )
+                ),
+                lidar_image_topic=str(
+                    config.get("ros_lidar_image_topic", "/pinkk/lidar_map/image")
+                ),
             )
             if ros_publish_enabled
             else None
         )
+        lidar_map_path = resolve_path(str(config["lidar_map_path"]))
+        lidar_map = cv2.imread(str(lidar_map_path), cv2.IMREAD_GRAYSCALE)
+        if lidar_map is None:
+            raise FileNotFoundError(f"LiDAR map image not found: {lidar_map_path}")
         target_slot_value = config.get("target_slot_name")
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
@@ -1013,7 +1069,8 @@ def main() -> int:
         print(
             "Direct ROS topics: "
             f"{ros_publisher.pose_topic}, {ros_publisher.path_topic}, "
-            f"{ros_publisher.trajectory_topic}, {ros_publisher.image_topic}"
+            f"{ros_publisher.trajectory_topic}, {ros_publisher.image_topic}, "
+            f"{ros_publisher.lidar_image_topic}"
         )
     if target_slot_name is not None:
         print(f"Fixed target parking slot: {target_slot_name}")
@@ -1203,6 +1260,9 @@ def main() -> int:
                 )
                 if ros_publisher is not None:
                     ros_publisher.publish_image(canvas)
+                    ros_publisher.publish_lidar_image(
+                        draw_lidar_map_scene(lidar_map, scene)
+                    )
             if not args.no_display:
                 cv2.imshow(WINDOW_NAME, canvas)
                 key = cv2.waitKey(1) & 0xFF
