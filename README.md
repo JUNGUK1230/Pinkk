@@ -5,7 +5,8 @@
 ## 구성
 
 - `src/central_control`: 상단 카메라, 보정·BEV, YOLO 주차 감지, 지도 정합 및 경로 계획
-- `src/vehicle_control`: `/odom`을 받아 `/cmd_vel`을 발행하는 PID 경로 추종 노드
+- `src/vehicle_control`: 고정 경로와 rear-axle pose를 받아 차동구동 명령을
+  계산하는 MPC 경로 추종 노드
 - `src/robot_arm`: 로봇팔 카메라·동작 제어 관련 코드와 설정
 
 ## Python 의존성 설치
@@ -28,21 +29,31 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 차량 PID 경로 추종
+### 차량 MPC 경로 추종
 
-`pid_path_follower`는 기본적으로 `/odom`을 구독하고 `/cmd_vel`을 발행합니다. 웨이포인트와 제어 이득은 현재 노드 코드에 정의돼 있습니다.
-
-```bash
-ros2 run pinkk pid_path_follower
-```
-
-토픽을 바꾸려면 ROS 파라미터를 전달합니다.
+상단 카메라 x/y와 LiDAR map heading을 결합한
+`/pinkk/fused_vehicle_pose`를 MPC가 사용합니다. MPC는
+`/pinkk/planned_trajectory`, `/pinkk/fused_vehicle_pose`, `/scan`을 구독하고
+실차 `/cmd_vel`을 발행합니다. 다른 속도 제어기는 반드시 종료해야 합니다.
 
 ```bash
-ros2 run pinkk pid_path_follower --ros-args \
-  -p odom_topic:=/odom \
-  -p cmd_vel_topic:=/cmd_vel
+cd ~/PINKK
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=36
+
+ros2 run pinkk mpc_path_follower \
+  --ros-args \
+  --params-file src/vehicle_control/config/mpc/mpc.yaml
 ```
+
+먼저 오프라인 시뮬레이션을 실행합니다.
+
+```bash
+.venv/bin/python src/vehicle_control/tests/test_mpc_controller.py
+```
+
+실차 `/cmd_vel` 연결 방법과 안전 조건은
+[`src/vehicle_control/README.md`](src/vehicle_control/README.md)를 참고하세요.
 
 ### 중앙 제어 진입점
 

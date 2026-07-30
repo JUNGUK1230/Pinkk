@@ -1,0 +1,45 @@
+pinkk_fused_pose_estimator:
+  ros__parameters:
+    # 상단 카메라 pose에서는 x/y만 사용하고 orientation은 사용하지 않는다.
+    camera_pose_topic: /pinkk/vehicle_pose
+    imu_topic: /imu_raw
+    # 현재 실차 구성은 IMU를 사용하지 않고 LiDAR map heading만 추적한다.
+    require_imu: false
+    scan_topic: /scan
+    fused_pose_topic: /pinkk/fused_vehicle_pose
+    diagnostic_topic: /pinkk/heading_diagnostics
+
+    map_image_path: src/central_control/camera_tools/first_map/my_test_map0710.png
+    map_resolution_m_per_px: 0.01
+    occupied_pixel_threshold: 100
+
+    # 상단 카메라가 발행하는 차체 중심 기준으로 rear axle은 4cm 뒤,
+    # LiDAR는 5.7cm 뒤에 있으며 rplidar_link는 yaw 180도로 장착된다.
+    rear_axle_offset_m: 0.04
+    lidar_x_m: -0.057
+    lidar_y_m: 0.0
+    scan_frame_yaw_deg: 180.0
+
+    # lidar_map은 이미지 좌표(+y 아래, +yaw 시계방향)이고 IMU/ROS는
+    # +yaw 반시계방향이므로 부호를 반전한다.
+    imu_yaw_sign: -1.0
+
+    minimum_scan_range_m: 0.08
+    maximum_scan_range_m: 2.5
+    scan_subsample: 3
+    minimum_scan_points: 25
+    trimmed_fraction: 0.70
+    outside_penalty_m: 0.30
+    maximum_match_score_m: 0.08
+    minimum_match_margin_m: 0.0005
+    local_search_half_width_deg: 15.0
+    local_search_step_deg: 0.5
+    lidar_correction_alpha: 0.15
+    lidar_only_yaw_alpha: 0.35
+    # e 키로 ego 차량이 바뀌어 카메라 위치가 크게 뛰면 전역 yaw를 다시 찾는다.
+    heading_reset_position_jump_m: 0.10
+
+    camera_pose_timeout_sec: 0.6
+    imu_timeout_sec: 0.3
+    lidar_heading_timeout_sec: 1.5
+    publish_rate_hz: 15.0

@@ -144,6 +144,31 @@ def main() -> int:
         assert request.slot_name == "free_slot"
         assert request.start_pose_cm == scene.planning_request.start_pose_cm
 
+        # 사용자가 e 키를 누르는 동작은 화면에 보이는 ByteTrack ID를
+        # 순환한다. 차량별 position filter 이력을 섞지 않고 즉시 새 중심을 쓴다.
+        switch_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=0.5,
+            yaw_alpha=1.0,
+        )
+        first_car = detection((120.0, 120.0), 0.9, track_id=1)
+        second_car = detection((320.0, 220.0), 0.8, track_id=2)
+        selected_first = switch_tracker.update([first_car, second_car])
+        assert selected_first is not None and selected_first.track_id == 1
+        changed, message = switch_tracker.select_next_ego()
+        assert changed and "1 -> 2" in message
+        selected_second = switch_tracker.update([first_car, second_car])
+        assert selected_second is not None and selected_second.track_id == 2
+        assert selected_second.center_bev_px == (320.0, 220.0)
+        changed, message = switch_tracker.select_next_ego()
+        assert changed and "2 -> 1" in message
+        selected_first_again = switch_tracker.update([first_car, second_car])
+        assert selected_first_again is not None
+        assert selected_first_again.track_id == 1
+
         fixed_tracker = EgoVehicleTracker(
             transform,
             rear_axle_offset_cm=4.0,
@@ -164,6 +189,43 @@ def main() -> int:
         )
         assert fixed_scene.planning_request is not None
         assert fixed_scene.planning_request.slot_name == "C1"
+
+        # 운행 중인 ego mask가 목표 슬롯 가장자리를 10% 이상 스쳐도 그 차량
+        # 자신 때문에 목표 칸이 occupied로 바뀌거나 경로가 사라지면 안 된다.
+        grazing_ego = detection(
+            (1115.0, 600.0),
+            0.95,
+            100.0,
+            70.0,
+            track_id=31,
+        )
+        raw_grazing_slots = parking.observe([grazing_ego], (800, 1600))
+        raw_c2 = next(slot for slot in raw_grazing_slots if slot.name == "C2")
+        assert raw_c2.occupied
+        grazing_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(1115.0, 600.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        grazing_scene = SceneLocalizer(
+            grazing_tracker,
+            parking,
+            target_slot_name="C2",
+        ).observe(
+            [grazing_ego],
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        filtered_c2 = next(
+            slot for slot in grazing_scene.parking_slots if slot.name == "C2"
+        )
+        assert not filtered_c2.occupied
+        assert grazing_scene.planning_request is not None
+        assert grazing_scene.planning_request.slot_name == "C2"
 
         # 입구 기준 자동 배정은 허용 칸 중 빈 자리만 남긴 뒤, 가장 먼 칸부터
         # 후보 순서를 만든다. planner는 첫 후보만 받아 불필요한 주차칸 탐색을 줄인다.

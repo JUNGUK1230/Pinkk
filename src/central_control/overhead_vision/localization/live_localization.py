@@ -679,24 +679,16 @@ def draw_scene(
         color = (0, 165, 255) if not vehicle.planning_ready else (255, 255, 0)
         cv2.polylines(canvas, [polygon], True, color, 3, cv2.LINE_AA)
         center = tuple(round(value) for value in vehicle.center_bev_px)
-        rear = tuple(
-            round(value)
-            for value in transform.planner_cm_to_bev(vehicle.rear_axle_cm)
-        )
         cv2.circle(canvas, center, 6, (0, 0, 255), -1)
-        if not vehicle.heading_ambiguous:
-            cv2.circle(canvas, rear, 7, (0, 255, 0), 2)
-            front = (
-                round(rear[0] + 2.0 * (center[0] - rear[0])),
-                round(rear[1] + 2.0 * (center[1] - rear[1])),
-            )
-            cv2.arrowedLine(canvas, rear, front, (255, 255, 0), 3, tipLength=0.25)
+        center_cm = (
+            vehicle.center_lidar_px[0] * transform.resolution_cm,
+            vehicle.center_lidar_px[1] * transform.resolution_cm,
+        )
         cv2.putText(
             canvas,
             (
                 f"ego id={vehicle.track_id} "
-                f"({vehicle.rear_axle_cm[0]:.1f}, {vehicle.rear_axle_cm[1]:.1f}) cm "
-                f"yaw={vehicle.yaw_deg:.1f}"
+                f"camera-center=({center_cm[0]:.1f}, {center_cm[1]:.1f}) cm"
             ),
             (max(0, center[0] - 120), max(25, center[1] - 18)),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -912,7 +904,11 @@ def main() -> int:
         ros_publish_enabled = (
             not args.no_ros and bool(config.get("ros_publish_enabled", True))
         )
-        ros_publisher = DirectRosPublisher() if ros_publish_enabled else None
+        ros_publisher = (
+            DirectRosPublisher(lidar_resolution_cm=transform.resolution_cm)
+            if ros_publish_enabled
+            else None
+        )
         target_slot_value = config.get("target_slot_name")
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
@@ -956,7 +952,7 @@ def main() -> int:
         print(
             "Direct ROS topics: "
             f"{ros_publisher.pose_topic}, {ros_publisher.path_topic}, "
-            f"{ros_publisher.trajectory_topic}"
+            f"{ros_publisher.trajectory_topic}, {ros_publisher.path_valid_topic}"
         )
     if target_slot_name is not None:
         print(f"Fixed target parking slot: {target_slot_name}")
@@ -967,7 +963,7 @@ def main() -> int:
             f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
             f"slots={list(policy.allowed_slots)}"
         )
-    print("SPACE: charge complete | p: replan | q/ESC: quit")
+    print("e: switch ego vehicle | SPACE: charge complete | p: replan | q/ESC: quit")
     planning_controller = IntegratedPlanningController(route_selector)
     route_publish_scheduler = RoutePublishScheduler(
         float(config.get("route_republish_period_sec", 1.0))
@@ -1169,6 +1165,20 @@ def main() -> int:
                 elif key == ord("p"):
                     replan_revision += 1
                     print("Manual replan requested")
+                elif key == ord("e"):
+                    changed, message = localizer.select_next_ego()
+                    print(message)
+                    if changed:
+                        # 이전 ego의 경로와 비동기 결과를 즉시 폐기한다. 다음
+                        # 프레임에서 새 track_id의 전체 고정 경로를 선택한다.
+                        replan_revision += 1
+                        planning_controller.invalidate()
+                        route_publish_scheduler.due(
+                            time.monotonic(),
+                            has_route=False,
+                        )
+                        if ros_publisher is not None:
+                            ros_publisher.invalidate_trajectory()
             processed_frames += 1
             if static_bev is not None:
                 break

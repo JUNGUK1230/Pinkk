@@ -84,24 +84,16 @@ class FixedRouteSelector:
             points[0].x_cm - current_pose[0],
             points[0].y_cm - current_pose[1],
         )
-        selected = list(points)
-        direction = points[0].direction
-        selected.insert(
-            0,
-            FixedRoutePoint(
-                x_cm=current_pose[0],
-                y_cm=current_pose[1],
-                yaw_rad=current_pose[2],
-                direction=direction,
-            ),
-        )
         return FixedRouteSelection(
             source=detected_location,
             target=target,
             detected_location=detected_location,
             join_index=0,
             join_distance_cm=join_distance,
-            points=tuple(selected),
+            # 실시간 pose는 `/pinkk/vehicle_pose`로 별도 전달된다. 검출 pose를
+            # 고정 CSV 앞에 삽입하면 측정 오차 때문에 첫 두 점 사이에 가짜
+            # 급회전이 생기므로 원본 경로를 그대로 보낸다.
+            points=tuple(points),
         )
 
     def _load_route(self, source: str, target: str) -> list[FixedRoutePoint]:

@@ -38,6 +38,11 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 
 ## 생성과 검사
 
+공용 도로의 코너는 반경 16 cm의 원호로 연결하고, 주차 진입·후진 구간은
+최소 회전 반경 14 cm를 만족하도록 생성합니다. 전체 경로는 0.5 cm 간격으로
+샘플링합니다. `--check-all`은 장애물 충돌과 경로 곡률을 함께 검사하여 현재
+차량 설정의 최대 조향각 30도 이내인지 확인합니다.
+
 ```bash
 cd ~/PINKK/src/central_control/path_planning
 
@@ -70,6 +75,10 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 차량 앞쪽을 클릭하는 heading 입력은 사용하지 않습니다. `START`와 각 주차면의
 yaw는 `fixed_mission_routes.yaml`의 endpoint pose에서 가져옵니다. 차량이
 `TRANSIT` 상태이면 새 경로를 선택하지 않습니다.
+
+실시간 검출 pose는 `/pinkk/vehicle_pose`로 별도 발행하며 고정 CSV 앞에
+삽입하지 않습니다. 검출 오차가 있는 pose를 첫 경로점으로 붙이면 START anchor
+사이에 인공적인 급회전 구간이 생길 수 있기 때문입니다.
 
 새 경로는 선택 즉시 발행하고, 이후
 `config/yolo/realtime_localization.yaml`의

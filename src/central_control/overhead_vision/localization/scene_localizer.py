@@ -332,12 +332,43 @@ class EgoVehicleTracker:
         # 첫 ego 선택 후에는 거리 대신 ByteTrack ID를 우선한다. 다른 차량이
         # 옆을 지나가도 경로계획 start가 다른 차로 바뀌는 것을 막는다.
         self.ego_track_id: int | None = None
+        self.visible_track_ids: tuple[int, ...] = ()
         # Mask의 장축은 방향축만 제공한다. 초기 yaw가 없으면 앞뒤 절대 방향은
         # 이후 프레임에서도 결정할 수 없으므로 계속 ambiguous로 유지한다.
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
 
+    def select_next_ego(self) -> tuple[bool, str]:
+        """현재 화면의 ByteTrack ID를 순환해 다음 ego 차량을 선택한다."""
+        if not self.visible_track_ids:
+            return False, "Ego switch failed: visible car track_id가 없습니다"
+        if self.ego_track_id in self.visible_track_ids:
+            current_index = self.visible_track_ids.index(self.ego_track_id)
+            selected = self.visible_track_ids[
+                (current_index + 1) % len(self.visible_track_ids)
+            ]
+        else:
+            selected = self.visible_track_ids[0]
+        if selected == self.ego_track_id and len(self.visible_track_ids) == 1:
+            return False, f"Ego switch skipped: track_id={selected} 한 대만 보입니다"
+        previous = self.ego_track_id
+        self.ego_track_id = selected
+        # 다른 차량의 위치/yaw filter 이력을 섞지 않는다.
+        self.previous_center_bev = None
+        self.previous_yaw_rad = self.initial_yaw_rad
+        self.absolute_heading_resolved = self.initial_yaw_rad is not None
+        return True, f"Ego vehicle switched: track_id={previous} -> {selected}"
+
     def update(self, detections: Sequence[Detection]) -> VehicleObservation | None:
         car_detections = [item for item in detections if item.class_name == "car"]
+        self.visible_track_ids = tuple(
+            sorted(
+                {
+                    int(item.track_id)
+                    for item in car_detections
+                    if item.track_id is not None
+                }
+            )
+        )
         if not car_detections:
             return None
         centers = [_polygon_center(item.polygon_bev) for item in car_detections]
@@ -477,11 +508,21 @@ class ParkingSlotMap:
         self,
         detections: Sequence[Detection],
         image_shape: tuple[int, int],
+        excluded_track_ids: set[int] | None = None,
     ) -> tuple[ParkingSlotObservation, ...]:
+        excluded_track_ids = excluded_track_ids or set()
         height, width = image_shape
         vehicle_mask = np.zeros((height, width), dtype=np.uint8)
         for detection in detections:
             if detection.class_name != "car":
+                continue
+            # 현재 운행 중인 ego가 슬롯 가장자리를 스치더라도 목표 칸을 다른
+            # 차량이 점유한 것으로 오판하지 않는다. 다른 track_id 차량은 기존
+            # 그대로 점유 계산에 포함한다.
+            if (
+                detection.track_id is not None
+                and detection.track_id in excluded_track_ids
+            ):
                 continue
             polygon = np.rint(detection.polygon_bev).astype(np.int32)
             if len(polygon) >= 3:
@@ -624,6 +665,12 @@ class ChargeEpisodeCoordinator:
             raise ValueError("charge_slot_priority must not be empty")
         self.charge_slot_priority = tuple(charge_slot_priority)
         self._assignment: ChargeAssignment | None = None
+        self._operator_selected_track_id: int | None = None
+
+    def select_vehicle(self, track_id: int) -> None:
+        """운영자가 선택한 차량을 다음 충전 배정의 최우선 후보로 만든다."""
+        self._operator_selected_track_id = int(track_id)
+        self._assignment = None
 
     def observe(
         self,
@@ -643,6 +690,17 @@ class ChargeEpisodeCoordinator:
                 key=lambda vehicle: (vehicle.first_seen_unix_sec, vehicle.track_id),
             )
         )
+        if self._operator_selected_track_id is not None:
+            candidates = tuple(
+                sorted(
+                    candidates,
+                    key=lambda vehicle: (
+                        vehicle.track_id != self._operator_selected_track_id,
+                        vehicle.first_seen_unix_sec,
+                        vehicle.track_id,
+                    ),
+                )
+            )
         candidate_ids = tuple(vehicle.track_id for vehicle in candidates)
 
         # 배정된 차가 실제 충전칸에 도착하면 charging 상태로 유지한다.
@@ -734,6 +792,16 @@ class SceneLocalizer:
         self.post_charge_parking_assignment = post_charge_parking_assignment
         self._charge_completed_vehicle_ids: set[int] = set()
 
+    def select_next_ego(self) -> tuple[bool, str]:
+        changed, message = self.tracker.select_next_ego()
+        if (
+            changed
+            and self.charge_coordinator is not None
+            and self.tracker.ego_track_id is not None
+        ):
+            self.charge_coordinator.select_vehicle(self.tracker.ego_track_id)
+        return changed, message
+
     def complete_charging(
         self,
         vehicle_track_id: int | None,
@@ -778,7 +846,16 @@ class SceneLocalizer:
             else observed_at_unix_sec
         )
         vehicle = self.tracker.update(detections)
-        slots = self.parking_slots.observe(detections, image_shape)
+        excluded_track_ids = (
+            {vehicle.track_id}
+            if vehicle is not None and vehicle.track_id is not None
+            else set()
+        )
+        slots = self.parking_slots.observe(
+            detections,
+            image_shape,
+            excluded_track_ids=excluded_track_ids,
+        )
         tracked_vehicles = self.vehicle_state_manager.observe(
             detections,
             self.parking_slots,

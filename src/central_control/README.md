@@ -67,6 +67,7 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 
 창 조작:
 
+- `e`: 현재 ego 차량을 화면의 다음 ByteTrack ID 차량으로 전환
 - `SPACE`: C1/C2 충전 완료 처리 후 P1~P5 목표 배정
 - `p`: 현재 운행 단계의 고정 경로 다시 선택
 - `q` 또는 `ESC`: 종료
@@ -75,9 +76,11 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 
 ## ROS 2 토픽
 
-- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 rear-axle pose
+- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 상단 카메라에서 얻은
+  차체 중심 x/y 원본(orientation은 사용하지 않음)
 - `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
 - `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
+- `/pinkk/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
 
 `/pinkk/planned_trajectory`의 point 필드는 다음 네 개뿐입니다.
 
