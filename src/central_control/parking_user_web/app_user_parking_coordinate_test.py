@@ -9,9 +9,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, render_template, request
+from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, String
 
 # ============================================================
 # 경로 설정
@@ -44,6 +45,10 @@ CAMERA_FPS = 30
 ROBOT_NAMESPACE = "/pinky1"
 BATTERY_PERCENT_TOPIC = f"{ROBOT_NAMESPACE}/battery/percent"
 BATTERY_VOLTAGE_TOPIC = f"{ROBOT_NAMESPACE}/battery/voltage"
+CMD_VEL_TOPIC = f"{ROBOT_NAMESPACE}/cmd_vel"
+WEB_CONTROL_TOPIC = f"{ROBOT_NAMESPACE}/web/control"
+EMERGENCY_STOP_HZ = 20
+EMERGENCY_STOP_SECONDS = 3
 
 app = Flask(
     __name__,
@@ -76,6 +81,8 @@ system_state = {
 
 battery_lock = threading.Lock()
 battery_last_update = 0.0
+ros_node_lock = threading.Lock()
+ros_node: BatterySubscriber | None = None
 
 
 class BatterySubscriber(Node):
@@ -91,6 +98,12 @@ class BatterySubscriber(Node):
             Float32,
             BATTERY_VOLTAGE_TOPIC,
             self.voltage_callback,
+            10,
+        )
+        self.cmd_vel_publisher = self.create_publisher(Twist, CMD_VEL_TOPIC, 10)
+        self.web_control_publisher = self.create_publisher(
+            String,
+            WEB_CONTROL_TOPIC,
             10,
         )
 
@@ -111,18 +124,40 @@ class BatterySubscriber(Node):
             system_state["battery_connected"] = True
             battery_last_update = time.time()
 
+    def publish_emergency_stop(self) -> None:
+        self.cmd_vel_publisher.publish(Twist())
+
+    def publish_web_command(self, command: str) -> None:
+        message = String()
+        message.data = command
+        self.web_control_publisher.publish(message)
+
 
 def run_battery_subscriber() -> None:
+    global ros_node
+
     try:
         rclpy.init(args=None)
         node = BatterySubscriber()
+        with ros_node_lock:
+            ros_node = node
         rclpy.spin(node)
         node.destroy_node()
     except Exception as error:
         print(f"[배터리 구독 오류] {error}")
     finally:
+        with ros_node_lock:
+            ros_node = None
         if rclpy.ok():
             rclpy.shutdown()
+
+
+def publish_emergency_stop_burst(node: BatterySubscriber) -> None:
+    interval = 1.0 / EMERGENCY_STOP_HZ
+    publish_count = EMERGENCY_STOP_HZ * EMERGENCY_STOP_SECONDS
+    for _ in range(publish_count):
+        node.publish_emergency_stop()
+        time.sleep(interval)
 
 
 def refresh_battery_connection_state() -> None:
@@ -408,6 +443,42 @@ def route_request(command: str):
             "estimated_time": system_state["estimated_time"],
             "destination": destination,
             "progress": system_state["progress"],
+        }
+    )
+
+
+@app.route("/api/emergency", methods=["POST"])
+def emergency_stop():
+    with ros_node_lock:
+        node = ros_node
+
+    if node is None:
+        return jsonify(
+            {
+                "ok": False,
+                "message": "ROS 연결이 준비되지 않아 긴급 정지를 전송하지 못했습니다.",
+            }
+        ), 503
+
+    node.publish_web_command("emergency")
+    node.publish_emergency_stop()
+    threading.Thread(
+        target=publish_emergency_stop_burst,
+        args=(node,),
+        daemon=True,
+    ).start()
+    system_state.update(
+        {
+            "state": "긴급 정지",
+            "request_state": "긴급 정지 전송 완료",
+            "estimated_time": "정지",
+            "progress": 0,
+        }
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "message": "PINKY_01 긴급 정지 명령을 전송했습니다.",
         }
     )
 
