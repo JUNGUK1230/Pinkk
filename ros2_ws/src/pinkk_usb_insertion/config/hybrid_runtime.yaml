@@ -34,13 +34,15 @@ pinkk_pbvs_step_executor_node:
     cartesian_mode: 0
     cartesian_timeout_seconds: 100.0
     warning_delay_seconds: 3.0
+    post_coarse_yaw_delay_seconds: 0.5
     keypoint_desired_axis_deg: 0.0
-    keypoint_maximum_step_deg: 1.0
+    keypoint_maximum_step_deg: 5.0
     keypoint_tolerance_deg: 1.0
     keypoint_command_sign: -1.0
+    keypoint_joint_gain: 1.32
     joint6_direction: -1.0
     joint6_limit_deg: 175.0
-    joint6_move_seconds: 6.0
+    joint6_move_seconds: 15.0
 
 pinkk_return_to_observe:
   ros__parameters:
@@ -49,3 +51,4 @@ pinkk_return_to_observe:
     motion_seconds: 20.0
     warning_delay_seconds: 3.0
     accepted_error_deg: 3.5
+    bridge_wait_seconds: 60.0

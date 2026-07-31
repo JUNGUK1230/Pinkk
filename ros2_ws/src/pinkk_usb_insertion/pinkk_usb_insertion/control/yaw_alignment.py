@@ -6,7 +6,11 @@ import math
 
 import numpy as np
 
-from ..geometry.transforms import validate_transform
+from ..geometry.transforms import (
+    rotation_to_rpy_degrees,
+    rpy_degrees_to_rotation,
+    validate_transform,
+)
 
 
 def named_axis_vector(axis_name: str) -> np.ndarray:
@@ -90,6 +94,28 @@ def keypoint_image_yaw_step_rad(
     )
 
 
+def calibrated_keypoint_joint_step_rad(
+    measured_axis_deg: float,
+    desired_axis_deg: float,
+    joint_gain: float,
+    maximum_joint_step_deg: float,
+    tolerance_deg: float,
+    command_sign: float = -1.0,
+) -> tuple[float, bool]:
+    """영상 Yaw 오차를 실측 gain이 적용된 Joint6 회전량으로 변환한다."""
+    gain = float(joint_gain)
+    if not math.isfinite(gain) or gain <= 0.0:
+        raise ValueError('keypoint Joint6 gain은 양의 유한값이어야 합니다')
+    image_step, converged = keypoint_image_yaw_step_rad(
+        measured_axis_deg,
+        desired_axis_deg,
+        maximum_joint_step_deg / gain,
+        tolerance_deg,
+        command_sign,
+    )
+    return image_step * gain, converged
+
+
 def joint6_yaw_target_rad(
     current_joint_rad: float,
     yaw_step_rad: float,
@@ -141,6 +167,25 @@ def apply_base_yaw_step(
     )
     target = current.copy()
     target[:3, :3] = base_yaw @ current[:3, :3]
+    return validate_transform(target)
+
+
+def apply_rpy_locked_yaw_step(
+    current_base_to_flange: np.ndarray,
+    yaw_step_rad: float,
+) -> np.ndarray:
+    """현재 XYZ·Roll·Pitch를 유지하고 ZYX Yaw만 변경한다."""
+    current = validate_transform(current_base_to_flange)
+    step = float(yaw_step_rad)
+    if not math.isfinite(step):
+        raise ValueError('Cartesian Yaw step이 유한값이 아닙니다')
+    roll, pitch, yaw = rotation_to_rpy_degrees(current[:3, :3])
+    target = current.copy()
+    target[:3, :3] = rpy_degrees_to_rotation(
+        roll,
+        pitch,
+        yaw + math.degrees(step),
+    )
     return validate_transform(target)
 
 

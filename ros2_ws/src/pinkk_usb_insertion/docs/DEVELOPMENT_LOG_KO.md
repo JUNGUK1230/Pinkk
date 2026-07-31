@@ -73,6 +73,7 @@ keypoint image angle
 | 명령 | 역할 |
 |---|---|
 | `coarse_xy` | 포트의 절대 XY와 pre-approach Z로 큰 이동 |
+| `coarse_xy_then_yaw` | 초기 영상 Yaw 저장 후 coarse XY 완료 시 Joint6 단발 회전 |
 | `refine_xy` | 현재 Z/자세를 유지하고 새 관측의 XY만 적용 |
 | `refine_yaw` | keypoint 영상각으로 Joint6만 제한 회전 |
 

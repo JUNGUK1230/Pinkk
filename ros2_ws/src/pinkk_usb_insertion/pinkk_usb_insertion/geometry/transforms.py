@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import math
 
 import numpy as np
 
@@ -66,6 +67,50 @@ def rotation_to_quaternion(rotation: np.ndarray) -> np.ndarray:
                  (matrix[1, 0] - matrix[0, 1]) / scale]
             )
     return normalize_quaternion(quaternion)
+
+
+def rotation_to_rpy_degrees(rotation: np.ndarray) -> tuple[float, float, float]:
+    """회전행렬을 intrinsic ZYX Roll/Pitch/Yaw degree로 변환한다."""
+    matrix = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError('회전행렬에 NaN 또는 inf가 있습니다')
+    pitch = math.asin(float(np.clip(-matrix[2, 0], -1.0, 1.0)))
+    if abs(math.cos(pitch)) < 1e-8:
+        roll = math.atan2(-float(matrix[0, 1]), float(matrix[1, 1]))
+        yaw = 0.0
+    else:
+        roll = math.atan2(float(matrix[2, 1]), float(matrix[2, 2]))
+        yaw = math.atan2(float(matrix[1, 0]), float(matrix[0, 0]))
+    return tuple(
+        (math.degrees(value) + 180.0) % 360.0 - 180.0
+        for value in (roll, pitch, yaw)
+    )
+
+
+def rpy_degrees_to_rotation(
+    roll_deg: float,
+    pitch_deg: float,
+    yaw_deg: float,
+) -> np.ndarray:
+    """intrinsic ZYX Roll/Pitch/Yaw degree를 회전행렬로 변환한다."""
+    values = np.asarray(
+        (roll_deg, pitch_deg, yaw_deg),
+        dtype=np.float64,
+    )
+    if not np.all(np.isfinite(values)):
+        raise ValueError('RPY에 NaN 또는 inf가 있습니다')
+    roll, pitch, yaw = np.radians(values)
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return np.array(
+        (
+            (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
+            (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
+            (-sp, cp * sr, cp * cr),
+        ),
+        dtype=np.float64,
+    )
 
 
 def make_transform(translation: Sequence[float], quaternion_xyzw: Sequence[float]) -> np.ndarray:

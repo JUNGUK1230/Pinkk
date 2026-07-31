@@ -22,8 +22,8 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from .control.yaw_alignment import (
+    calibrated_keypoint_joint_step_rad,
     joint6_yaw_target_rad,
-    keypoint_image_yaw_step_rad,
 )
 from .geometry.transforms import make_transform
 from .ros_utils import pose_to_transform, transform_to_pose
@@ -57,10 +57,12 @@ class PbvsStepExecutorNode(Node):
         self.declare_parameter('cartesian_mode', 0)
         self.declare_parameter('cartesian_timeout_seconds', 100.0)
         self.declare_parameter('warning_delay_seconds', 3.0)
+        self.declare_parameter('post_coarse_yaw_delay_seconds', 0.5)
         self.declare_parameter('keypoint_desired_axis_deg', 0.0)
-        self.declare_parameter('keypoint_maximum_step_deg', 1.0)
+        self.declare_parameter('keypoint_maximum_step_deg', 5.0)
         self.declare_parameter('keypoint_tolerance_deg', 1.0)
         self.declare_parameter('keypoint_command_sign', -1.0)
+        self.declare_parameter('keypoint_joint_gain', 1.0)
         self.declare_parameter('joint6_direction', -1.0)
         self.declare_parameter('joint6_limit_deg', 175.0)
         self.declare_parameter('joint6_move_seconds', 6.0)
@@ -86,6 +88,9 @@ class PbvsStepExecutorNode(Node):
         self._warning_delay = float(
             self.get_parameter('warning_delay_seconds').value
         )
+        self._post_coarse_yaw_delay = float(
+            self.get_parameter('post_coarse_yaw_delay_seconds').value
+        )
         self._desired_axis = float(
             self.get_parameter('keypoint_desired_axis_deg').value
         )
@@ -97,6 +102,9 @@ class PbvsStepExecutorNode(Node):
         )
         self._keypoint_command_sign = float(
             self.get_parameter('keypoint_command_sign').value
+        )
+        self._keypoint_joint_gain = float(
+            self.get_parameter('keypoint_joint_gain').value
         )
         self._joint6_direction = float(
             self.get_parameter('joint6_direction').value
@@ -165,9 +173,10 @@ class PbvsStepExecutorNode(Node):
         mode = '허용' if self._enabled else '차단'
         self.get_logger().warning(
             f'하이브리드 단발 실행기: 실행={mode}, '
-            f'commands=coarse_xy/refine_xy/refine_yaw, '
+            'commands=coarse_xy/coarse_xy_then_yaw/refine_xy/refine_yaw, '
             f'max_xy={self._maximum_xy_step * 1000.0:.1f}mm, '
             f'yaw_step={self._maximum_yaw_step:.1f}deg, '
+            f'yaw_joint_gain={self._keypoint_joint_gain:.3f}, '
             f'joint6_direction={self._joint6_direction:+.0f}'
         )
 
@@ -184,23 +193,30 @@ class PbvsStepExecutorNode(Node):
             raise ValueError('cartesian_timeout_seconds는 1~120초여야 합니다')
         if not 0.0 <= self._warning_delay <= 10.0:
             raise ValueError('warning_delay_seconds는 0~10초여야 합니다')
+        if not 0.0 <= self._post_coarse_yaw_delay <= 5.0:
+            raise ValueError(
+                'post_coarse_yaw_delay_seconds는 0~5초여야 합니다'
+            )
         finite = (
             self._desired_axis,
             self._maximum_yaw_step,
             self._yaw_tolerance,
             self._keypoint_command_sign,
+            self._keypoint_joint_gain,
             self._joint6_direction,
             self._joint6_limit,
             self._joint6_move_seconds,
         )
         if not all(math.isfinite(value) for value in finite):
             raise ValueError('Yaw 파라미터는 유한값이어야 합니다')
-        if not 0.0 < self._maximum_yaw_step <= 10.0:
-            raise ValueError('keypoint_maximum_step_deg는 0~10도여야 합니다')
+        if not 0.0 < self._maximum_yaw_step <= 30.0:
+            raise ValueError('keypoint_maximum_step_deg는 0~30도여야 합니다')
         if not 0.0 <= self._yaw_tolerance <= 5.0:
             raise ValueError('keypoint_tolerance_deg는 0~5도여야 합니다')
         if self._keypoint_command_sign not in (-1.0, 1.0):
             raise ValueError('keypoint_command_sign은 -1 또는 +1이어야 합니다')
+        if not 0.1 <= self._keypoint_joint_gain <= 5.0:
+            raise ValueError('keypoint_joint_gain은 0.1~5.0이어야 합니다')
         if self._joint6_direction not in (-1.0, 1.0):
             raise ValueError('joint6_direction은 -1 또는 +1이어야 합니다')
         if not 0.0 < self._joint6_limit < 180.0:
@@ -235,9 +251,16 @@ class PbvsStepExecutorNode(Node):
 
     def _command_callback(self, message: String) -> None:
         command = message.data.strip().lower()
-        if command not in ('coarse_xy', 'refine_xy', 'refine_yaw'):
+        valid_commands = (
+            'coarse_xy',
+            'coarse_xy_then_yaw',
+            'refine_xy',
+            'refine_yaw',
+        )
+        if command not in valid_commands:
             self._publish(
-                'REJECTED: 명령은 coarse_xy, refine_xy, refine_yaw 중 하나입니다'
+                'REJECTED: 명령은 coarse_xy, coarse_xy_then_yaw, '
+                'refine_xy, refine_yaw 중 하나입니다'
             )
             return
         with self._lock:
@@ -248,7 +271,9 @@ class PbvsStepExecutorNode(Node):
         try:
             if not self._enabled:
                 raise ValueError('enable_execution=false')
-            if command == 'refine_yaw':
+            if command == 'coarse_xy_then_yaw':
+                self._execute_coarse_xy_then_yaw()
+            elif command == 'refine_yaw':
                 self._execute_yaw()
             else:
                 self._execute_xy(command)
@@ -324,13 +349,45 @@ class PbvsStepExecutorNode(Node):
             f'z={goal_transform[2, 3] * 1000.0:.1f}mm'
         )
         time.sleep(self._warning_delay)
-        self._send_cartesian(execution_target)
+        self._send_cartesian(
+            execution_target,
+            lock_z=False,
+            lock_roll_pitch=True,
+        )
         with self._lock:
             self._latest_target = None
             self._target_received_at = None
         self._publish(f'EXECUTED: {command} 완료, 새 관측을 기다립니다')
 
-    def _execute_yaw(self) -> None:
+    def _execute_coarse_xy_then_yaw(self) -> None:
+        with self._lock:
+            initial_axis = self._latest_keypoint_axis
+            initial_axis_received_at = self._keypoint_received_at
+        self._fresh(initial_axis_received_at, '초기 keypoint angle')
+        if initial_axis is None:
+            raise ValueError('초기 keypoint angle 입력이 없습니다')
+        self._publish(
+            '초기 관측 Yaw 저장: '
+            f'keypoint_axis={initial_axis:+.3f}deg'
+        )
+        self._execute_xy('coarse_xy')
+        time.sleep(self._post_coarse_yaw_delay)
+        self._execute_yaw(
+            axis_override=initial_axis,
+            axis_label='초기 관측 keypoint angle',
+            allow_already_converged=True,
+        )
+        self._publish(
+            'EXECUTED: coarse_xy_then_yaw 완료, 새 관측을 기다립니다'
+        )
+
+    def _execute_yaw(
+        self,
+        *,
+        axis_override: float | None = None,
+        axis_label: str = 'keypoint angle',
+        allow_already_converged: bool = False,
+    ) -> None:
         with self._lock:
             joints = (
                 None
@@ -338,20 +395,31 @@ class PbvsStepExecutorNode(Node):
                 else list(self._latest_joints)
             )
             joints_received_at = self._joints_received_at
-            axis = self._latest_keypoint_axis
+            latest_axis = self._latest_keypoint_axis
             axis_received_at = self._keypoint_received_at
         self._fresh(joints_received_at, '/joint_states')
-        self._fresh(axis_received_at, 'keypoint angle')
+        if axis_override is None:
+            self._fresh(axis_received_at, axis_label)
+            axis = latest_axis
+        else:
+            axis = float(axis_override)
         if joints is None or axis is None:
             raise ValueError('Joint6 Yaw 입력이 없습니다')
-        yaw_step, converged = keypoint_image_yaw_step_rad(
+        yaw_step, converged = calibrated_keypoint_joint_step_rad(
             axis,
             self._desired_axis,
+            self._keypoint_joint_gain,
             self._maximum_yaw_step,
             self._yaw_tolerance,
             self._keypoint_command_sign,
         )
         if converged:
+            if allow_already_converged:
+                self._publish(
+                    '초기 관측 Yaw가 허용오차 안이므로 회전을 생략합니다: '
+                    f'{axis:+.3f}deg'
+                )
+                return
             raise ValueError(
                 f'영상 Yaw가 이미 허용오차 안입니다: {axis:+.3f}deg'
             )
@@ -365,7 +433,9 @@ class PbvsStepExecutorNode(Node):
         delta_deg = math.degrees(target_joints[-1] - joints[-1])
         self._publish(
             f'{self._warning_delay:.1f}초 후 refine_yaw: '
-            f'image={axis:+.2f}deg, joint6_delta={delta_deg:+.2f}deg'
+            f'image={axis:+.2f}deg, joint6_delta={delta_deg:+.2f}deg, '
+            'roll_pitch_locked=False, '
+            f'gain={self._keypoint_joint_gain:.3f}, source={axis_label}'
         )
         time.sleep(self._warning_delay)
         self._send_joint_target(target_joints)
@@ -381,15 +451,21 @@ class PbvsStepExecutorNode(Node):
             raise RuntimeError(str(future.exception()))
         return future.result()
 
-    def _send_cartesian(self, target: PoseStamped) -> None:
+    def _send_cartesian(
+        self,
+        target: PoseStamped,
+        *,
+        lock_z: bool,
+        lock_roll_pitch: bool,
+    ) -> None:
         if not self._cartesian_action.wait_for_server(timeout_sec=3.0):
             raise RuntimeError(f'action server가 없습니다: {CARTESIAN_ACTION}')
         goal = CartesianMove.Goal()
         goal.target = target
         goal.speed = self._cartesian_speed
         goal.mode = self._cartesian_mode
-        goal.lock_z = False
-        goal.lock_roll_pitch = False
+        goal.lock_z = lock_z
+        goal.lock_roll_pitch = lock_roll_pitch
         handle = self._wait_future(
             self._cartesian_action.send_goal_async(goal),
             5.0,

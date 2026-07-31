@@ -1,6 +1,8 @@
 import numpy as np
 from pinkk_usb_insertion.control.yaw_alignment import (
     apply_base_yaw_step,
+    apply_rpy_locked_yaw_step,
+    calibrated_keypoint_joint_step_rad,
     invert_orientation_step,
     joint6_yaw_target_rad,
     keypoint_image_yaw_step_rad,
@@ -8,6 +10,10 @@ from pinkk_usb_insertion.control.yaw_alignment import (
     limited_yaw_step_rad,
     named_axis_vector,
     undirected_planar_axis_error_rad,
+)
+from pinkk_usb_insertion.geometry.transforms import (
+    rotation_to_rpy_degrees,
+    rpy_degrees_to_rotation,
 )
 
 
@@ -78,6 +84,32 @@ def test_keypoint_image_yaw_wraps_undirected_axis() -> None:
     assert converged
 
 
+def test_calibrated_keypoint_step_applies_gain_to_full_error() -> None:
+    step, converged = calibrated_keypoint_joint_step_rad(
+        14.0667,
+        0.0,
+        1.321,
+        30.0,
+        1.0,
+        -1.0,
+    )
+    assert np.isclose(np.rad2deg(step), -18.5821107)
+    assert not converged
+
+
+def test_calibrated_keypoint_step_limits_final_joint_motion() -> None:
+    step, converged = calibrated_keypoint_joint_step_rad(
+        30.0,
+        0.0,
+        1.321,
+        30.0,
+        1.0,
+        -1.0,
+    )
+    assert np.isclose(np.rad2deg(step), -30.0)
+    assert not converged
+
+
 def test_joint6_yaw_target_adds_limited_image_step() -> None:
     target = joint6_yaw_target_rad(
         np.deg2rad(45.0),
@@ -108,6 +140,18 @@ def test_base_yaw_step_preserves_position_and_tilt_axis() -> None:
         current[:3, :3] @ np.array((0.0, 0.0, 1.0)),
     )
     assert np.allclose(named_axis_vector('x'), (1.0, 0.0, 0.0))
+
+
+def test_rpy_locked_yaw_preserves_xyz_roll_and_pitch() -> None:
+    current = np.eye(4)
+    current[:3, 3] = (0.1, -0.2, 0.3)
+    current[:3, :3] = rpy_degrees_to_rotation(-179.0, 1.2, -136.0)
+    target = apply_rpy_locked_yaw_step(current, np.deg2rad(5.0))
+    roll, pitch, yaw = rotation_to_rpy_degrees(target[:3, :3])
+    assert np.allclose(target[:3, 3], current[:3, 3])
+    assert np.isclose(roll, -179.0)
+    assert np.isclose(pitch, 1.2)
+    assert np.isclose(yaw, -131.0)
 
 
 def test_inverts_relative_yaw_step_without_changing_position() -> None:

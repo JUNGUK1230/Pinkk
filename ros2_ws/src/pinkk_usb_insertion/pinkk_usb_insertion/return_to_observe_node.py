@@ -37,6 +37,7 @@ class ReturnToObserveNode(Node):
         self.declare_parameter('motion_seconds', 20.0)
         self.declare_parameter('warning_delay_seconds', 3.0)
         self.declare_parameter('accepted_error_deg', 3.5)
+        self.declare_parameter('bridge_wait_seconds', 60.0)
         target_deg = [
             float(value)
             for value in self.get_parameter(
@@ -52,6 +53,9 @@ class ReturnToObserveNode(Node):
         self._accepted_error = float(
             self.get_parameter('accepted_error_deg').value
         )
+        self._bridge_wait = float(
+            self.get_parameter('bridge_wait_seconds').value
+        )
         if len(target_deg) != 6 or not all(
             math.isfinite(value) for value in target_deg
         ):
@@ -62,6 +66,8 @@ class ReturnToObserveNode(Node):
             raise ValueError('warning_delay_seconds는 0~10초여야 합니다')
         if not 0.1 <= self._accepted_error <= 5.0:
             raise ValueError('accepted_error_deg는 0.1~5도여야 합니다')
+        if not 5.0 <= self._bridge_wait <= 120.0:
+            raise ValueError('bridge_wait_seconds는 5~120초여야 합니다')
         self._target_rad = [math.radians(value) for value in target_deg]
         self._latest_joints: list[float] | None = None
         self._joint_received_at: float | None = None
@@ -122,7 +128,7 @@ class ReturnToObserveNode(Node):
         return None
 
     def execute(self) -> None:
-        if not self._action.wait_for_server(timeout_sec=20.0):
+        if not self._action.wait_for_server(timeout_sec=self._bridge_wait):
             raise RuntimeError(
                 '통합 trajectory bridge action이 없습니다: '
                 f'{ACTION_NAME}'

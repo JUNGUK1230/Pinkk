@@ -66,6 +66,14 @@ ros2 topic pub --once /robot_arm/hybrid/command \
   std_msgs/msg/String "{data: coarse_xy}"
 ```
 
+초기 관측의 keypoint Yaw를 저장하고 coarse XY 이동 완료 후 Joint6 Yaw를
+한 번 이어서 실행:
+
+```bash
+ros2 topic pub --once /robot_arm/hybrid/command \
+  std_msgs/msg/String "{data: coarse_xy_then_yaw}"
+```
+
 ```bash
 ros2 topic pub --once /robot_arm/hybrid/command \
   std_msgs/msg/String "{data: refine_xy}"
