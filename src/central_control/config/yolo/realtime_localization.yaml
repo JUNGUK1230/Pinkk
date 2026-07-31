@@ -34,9 +34,9 @@ realtime_localization:
   # YOLO가 카메라 FPS보다 느려도 과거 프레임을 순서대로 처리하지 않는다.
   camera_buffer_size: 1
 
-  # 현재 학습·검증 해상도를 유지한다. 화면의 capture age가 계속 크면
-  # 정확도를 현장 검증한 뒤 960으로 낮추는 것을 다음 최적화로 검토한다.
-  inference_imgsz: 1600
+  # CPU 추론에서 1600은 capture age가 약 0.4~0.56초까지 증가해 웹 영상이
+  # 끊긴다. 카메라·BEV 좌표계는 유지하고 YOLO 입력만 960으로 축소한다.
+  inference_imgsz: 960
   inference_device: cpu
   # ByteTrack은 car mask의 프레임 간 ID를 유지한다. ego는 처음 선택된 ID만
   # 따르므로 다른 차량과 가까워져도 planner start가 바뀌지 않는다.

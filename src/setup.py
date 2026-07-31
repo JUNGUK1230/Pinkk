@@ -54,6 +54,7 @@ setup(
             'pid_path_follower = vehicle_control.pid_path_follower:main',
             'mpc_path_follower = vehicle_control.mpc_path_follower:main',
             'fused_pose_estimator = vehicle_control.fused_pose_estimator:main',
+            'pinky_emergency_lcd = vehicle_control.pinky_emergency_lcd:main',
             'trajectory_publisher = central_control.overhead_vision.path_planning.path_publisher:main',
             'vehicle_pose_publisher = central_control.overhead_vision.path_planning.vehicle_pose_publisher:main',
         ],

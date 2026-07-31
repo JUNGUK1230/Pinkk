@@ -7,11 +7,11 @@
 <style>
 :root{--bg:#070b14;--panel:#101827;--panel2:#0b1220;--line:#263247;--text:#f3f6fb;--muted:#8fa0b8;--green:#28d17c;--yellow:#f7b955;--red:#ff5c6c;--blue:#4f8cff;--cyan:#22d3ee}
 *{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;background:radial-gradient(circle at top left,rgba(79,140,255,.11),transparent 28%),var(--bg);color:var(--text);font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button{font:inherit}
-.topbar{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(7,11,20,.94);position:sticky;top:0;z-index:20}.brand{display:flex;align-items:center;gap:13px}.brand-mark{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#1d4ed8,#22d3ee);font-weight:900}.brand h1{font-size:20px}.brand p{margin-top:3px;color:var(--muted);font-size:12px}.top-status{display:flex;gap:10px}.chip{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}
+.topbar{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(7,11,20,.94);position:sticky;top:0;z-index:20}.brand{display:flex;align-items:center;gap:13px}.brand-mark{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#1d4ed8,#22d3ee);font-weight:900}.brand h1{font-size:20px}.brand p{margin-top:3px;color:var(--muted);font-size:12px}.top-status{display:flex;gap:10px}.chip{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}.shutdown-button{cursor:pointer;border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e;font-weight:800}.shutdown-button:hover{background:rgba(255,92,108,.25)}.shutdown-button:disabled{cursor:wait;opacity:.65}
 .layout{display:flex;flex-direction:column;gap:18px;width:100%;max-width:2560px;margin:auto;padding:18px clamp(12px,2vw,32px) 32px}.left{display:flex;flex-direction:column;gap:18px;min-width:0}.right{display:grid;grid-template-columns:1fr;gap:18px;align-items:start;min-width:0}.panel{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(16,24,39,.98),rgba(11,18,32,.98));box-shadow:0 12px 35px rgba(0,0,0,.26);overflow:hidden}.panel-head{min-height:54px;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-bottom:1px solid var(--line)}.title{font-size:15px;font-weight:800}.sub{margin-top:3px;color:var(--muted);font-size:12px}.tools{display:flex;gap:8px}.tool{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#131d2e;color:#d8e2ef;cursor:pointer;font-size:12px}
 .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sum{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.sum small{color:var(--muted)}.sum strong{display:block;margin-top:7px;font-size:25px}.sum p{margin-top:6px;color:#b8c5d5;font-size:11px}
 .fleet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.vehicle{padding:15px}.veh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.veh-id{font-size:17px;font-weight:900}.badge{padding:6px 9px;border-radius:999px;background:rgba(40,209,124,.13);color:#68e5a5;font-size:11px;font-weight:800}.badge.run{background:rgba(79,140,255,.14);color:#8fb5ff}.row{display:grid;grid-template-columns:80px 1fr auto;gap:10px;align-items:center;margin-top:11px}.label{color:var(--muted);font-size:12px}.value{font-size:12px;font-weight:800}.battery{height:10px;overflow:hidden;border-radius:999px;background:#263247}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,#28d17c,#72e6a8)}.fill.low{background:linear-gradient(90deg,#f7b955,#ff7a59)}
+.vehicle{padding:15px}.veh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.veh-id{font-size:17px;font-weight:900}.badge{padding:6px 9px;border-radius:999px;background:rgba(40,209,124,.13);color:#68e5a5;font-size:11px;font-weight:800}.badge.run{background:rgba(79,140,255,.14);color:#8fb5ff}.badge.emergency{background:rgba(255,92,108,.22);color:#ff929e}.row{display:grid;grid-template-columns:80px 1fr auto;gap:10px;align-items:center;margin-top:11px}.label{color:var(--muted);font-size:12px}.value{font-size:12px;font-weight:800}.battery{height:10px;overflow:hidden;border-radius:999px;background:#263247}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,#28d17c,#72e6a8)}.fill.low{background:linear-gradient(90deg,#f7b955,#ff7a59)}
 .route{padding:15px}.route-line{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #202c40;font-size:13px}.route-line span{color:var(--muted)}.progress{height:8px;margin-top:12px;border-radius:999px;background:#263247;overflow:hidden}.progress div{width:64%;height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan))}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:15px}.control{min-height:48px;border:1px solid var(--line);border-radius:10px;background:#162236;color:white;cursor:pointer;font-weight:800}.danger{border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e}.logs{max-height:210px;overflow-y:auto;padding:8px 15px 15px}.log{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #202c40;color:#cbd5e1;font-size:12px}.time{color:#6f849e}
 .event-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:16px}.event-category{border:1px solid #263247;border-radius:11px;background:#0b1321;overflow:hidden}.event-category:first-child{grid-column:1/-1}.event-category-head{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-bottom:1px solid #263247;background:#111b2b}.event-category-title{font-size:13px;font-weight:900}.event-category-state{padding:4px 7px;border-radius:999px;background:#202b3c;color:#91a2b9;font-size:10px}.event-list{padding:5px 12px}.event-item{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;min-height:38px;border-bottom:1px solid #1c293a}.event-item:last-child{border-bottom:0}.event-dot{width:9px;height:9px;border-radius:50%;background:#64748b}.event-name{font-size:12px;color:#d8e2ef}.event-level{font-size:10px;color:#8495ac}.event-item.critical .event-dot{background:#ff4055;box-shadow:0 0 10px rgba(255,64,85,.85)}.event-item.error .event-dot{background:#ff7a45}.event-item.warning .event-dot{background:#f7b955}.event-item.info .event-dot{background:#4f8cff}.event-item.success .event-dot{background:#28d17c}.event-item.pending .event-dot{background:#64748b}.event-item.live{background:rgba(79,140,255,.08)}.event-item.live.critical{background:rgba(255,64,85,.10)}.event-item.live .event-level{color:#dbe7f5;font-weight:800}
@@ -30,7 +30,7 @@
 </style>
 </head>
 <body>
-<header class="topbar"><div class="brand"><div class="brand-mark">P</div><div><h1>스마트 주차 통합 관제센터</h1><p>LiDAR Map · Robot Fleet · Route Monitoring</p></div></div><div class="top-status"><div class="chip"><span class="dot"></span>중앙 제어 정상</div><div class="chip" id="clock">--:--:--</div></div></header>
+<header class="topbar"><div class="brand"><div class="brand-mark">P</div><div><h1>스마트 주차 통합 관제센터</h1><p>LiDAR Map · Robot Fleet · Route Monitoring</p></div></div><div class="top-status"><div class="chip"><span class="dot"></span>중앙 제어 정상</div><div class="chip" id="clock">--:--:--</div><button class="chip shutdown-button" id="shutdownButton" onclick="shutdownServer()">서버 종료</button></div></header>
 <main class="layout">
 <section class="left">
 <section class="panel"><div class="panel-head"><div><div class="title">주차장 실시간 관제</div><div class="sub">YOLO BEV 객체 인식과 LiDAR 맵을 동시에 표시</div></div><div class="tools"><button class="tool" onclick="refreshFeeds()">새로고침</button><button class="tool" onclick="toggleFullscreen()">전체화면</button></div></div>
@@ -61,6 +61,10 @@ const batteryTopics={
   '/pinky2/battery/percent':{kind:'percent',robot:2},
   '/pinky2/battery/voltage':{kind:'voltage',robot:2}
 };
+const emergencyStateTopics={
+  '/pinky1/emergency_stop_state':1,
+  '/pinky2/emergency_stop_state':2
+};
 // web_video_server expects ROS topic slashes to remain literal. Jazzy rejects
 // encodeURIComponent output such as %2Fpinkk%2Flocalization%2Fimage.
 const streamUrl=topic=>`http://${rosHost}:${videoPort}/stream?topic=${encodeURI(topic)}`;
@@ -68,6 +72,29 @@ const streamUrl=topic=>`http://${rosHost}:${videoPort}/stream?topic=${encodeURI(
 function updateClock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false})}
 function refreshFeeds(){const now=Date.now();document.getElementById('yoloFeed').src=streamUrl(yoloTopic)+'&t='+now;document.getElementById('lidarFeed').src=streamUrl(lidarTopic)+'&t='+now}
 function toggleFullscreen(){const el=document.getElementById('monitorGrid');if(!document.fullscreenElement)el.requestFullscreen?.();else document.exitFullscreen?.()}
+async function shutdownServer(){
+  if(!confirm('주차 관제 서버와 연결된 서비스를 모두 종료할까요?'))return;
+  const button=document.getElementById('shutdownButton');
+  button.disabled=true;
+  button.textContent='종료 중...';
+  try{
+    const response=await fetch('/api/shutdown',{method:'POST'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    document.querySelector('.top-status .chip:first-child').innerHTML='<span class="dot" style="background:var(--yellow)"></span>서버 종료 중';
+    document.getElementById('yoloFeed').removeAttribute('src');
+    document.getElementById('lidarFeed').removeAttribute('src');
+    rosSocket?.close();
+    document.body.innerHTML='<main style="min-height:100vh;display:grid;place-items:center;background:#070b14;color:#f3f6fb;font-family:Pretendard,-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,sans-serif"><div style="text-align:center"><h1>주차 관제 서버가 종료되었습니다</h1><p style="margin-top:12px;color:#8fa0b8">이 창을 닫아도 됩니다.</p></div></main>';
+    setTimeout(()=>{
+      window.close();
+      setTimeout(()=>location.replace('about:blank'),300);
+    },700);
+  }catch(error){
+    button.disabled=false;
+    button.textContent='서버 종료';
+    alert(`서버 종료 요청에 실패했습니다: ${error.message}`);
+  }
+}
 const centralControlTopic='/pinkk/web/control';
 const commandPriorities={
   emergency_stop:1,
@@ -89,16 +116,7 @@ const eventCatalog=[
     ['ros_connected','ROS 연결 완료','success'],
     ['central_status_started','중앙제어 상태 수신 시작','success']
   ]},
-  {id:'route',title:'2. 경로 생성',items:[
-    ['route_generation_failed','경로 생성 실패','error'],
-    ['target_slot_occupied','지정 주차면 점유','warning'],
-    ['route_regeneration_requested','경로 재생성 요청','warning'],
-    ['route_generation_started','경로 생성 시작','info'],
-    ['destination_assigned','목적지 배정','info'],
-    ['route_generation_completed','경로 생성 완료','success'],
-    ['route_generation_waiting','경로 생성 대기','pending']
-  ]},
-  {id:'access',title:'3. 입·출차',items:[
+  {id:'access',title:'2. 입·출차',items:[
     ['entrance_vehicle_detected','입구 차량 감지','warning'],
     ['exit_vehicle_detected','출구 차량 감지','warning'],
     ['entry_requested','입차 요청','info'],
@@ -106,7 +124,7 @@ const eventCatalog=[
     ['manual_entry_requested','관리자 수동 입차 요청','info'],
     ['manual_exit_requested','관리자 수동 출차 요청','info']
   ]},
-  {id:'charging',title:'4. 충전',items:[
+  {id:'charging',title:'3. 충전',items:[
     ['battery_low','배터리 부족','warning'],
     ['charging_full','충전구역 만차','warning'],
     ['charging_waiting','충전 대기','warning'],
@@ -114,7 +132,7 @@ const eventCatalog=[
     ['charging_vehicle_detected','충전구역 차량 감지','info'],
     ['charging_available','충전구역 사용 가능','success']
   ]},
-  {id:'parking',title:'5. 주차 공간',items:[
+  {id:'parking',title:'4. 주차 공간',items:[
     ['target_slot_occupied','지정 주차면 점유','warning'],
     ['parking_vehicle_detected','주차면 차량 감지','info'],
     ['parking_available','주차면 사용 가능','success']
@@ -162,10 +180,100 @@ function showReceivedEvent(event){
     level.textContent=`발생 ${new Date().toLocaleTimeString('ko-KR',{hour12:false})}`;
   });
 }
-function sendRobotCommand(robot,command){
+const serviceCallbacks=new Map();
+const emergencyStoppedRobots=new Set();
+const robotStatusTimers=new Map();
+const robotBatteryPercents=new Map();
+const persistentRobotStatuses=new Set();
+function showRobotBattery(robot){
+  const badge=document.getElementById(`batteryState${robot}`);
+  const percent=robotBatteryPercents.get(robot);
+  badge.textContent=percent==null?'배터리 대기':`${percent.toFixed(1)}%`;
+  badge.classList.remove('emergency');
+}
+function showRobotStatus(robot,text,{persistent=false,emergency=false}={}){
+  const previousTimer=robotStatusTimers.get(robot);
+  if(previousTimer)clearTimeout(previousTimer);
+  robotStatusTimers.delete(robot);
+  if(persistent)persistentRobotStatuses.add(robot);
+  else persistentRobotStatuses.delete(robot);
+  const badge=document.getElementById(`batteryState${robot}`);
+  badge.textContent=text;
+  badge.classList.toggle('emergency',emergency);
+  if(!persistent){
+    const timer=setTimeout(()=>{
+      robotStatusTimers.delete(robot);
+      showRobotBattery(robot);
+    },5000);
+    robotStatusTimers.set(robot,timer);
+  }
+}
+function rosCallService(service,type,args){
+  return new Promise((resolve,reject)=>{
+    if(rosSocket?.readyState!==WebSocket.OPEN){
+      reject(new Error('ROS가 연결되지 않았습니다.'));
+      return;
+    }
+    const id=`service-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const timeout=setTimeout(()=>{
+      serviceCallbacks.delete(id);
+      reject(new Error('Pinky 응답 시간이 초과되었습니다.'));
+    },3000);
+    serviceCallbacks.set(id,{resolve,reject,timeout});
+    rosSocket.send(JSON.stringify({op:'call_service',id,service,type,args}));
+  });
+}
+async function sendEmergencyStop(robot){
+  try{
+    const values=await rosCallService(
+      `/pinky${robot}/set_emergency_stop`,
+      'std_srvs/srv/SetBool',
+      {data:true}
+    );
+    if(values?.success===false)throw new Error(values.message||'요청이 거부되었습니다.');
+    emergencyStoppedRobots.add(robot);
+    showRobotStatus(robot,'긴급 정지',{persistent:true,emergency:true});
+  }catch(error){
+    alert(`PINKY_0${robot} 긴급정지 실패: ${error.message}`);
+    showReceivedEvent({category:'system',event:'command_send_failed'});
+  }
+}
+async function releaseEmergencyStop(robot){
+  try{
+    const values=await rosCallService(
+      `/pinky${robot}/set_emergency_stop`,
+      'std_srvs/srv/SetBool',
+      {data:false}
+    );
+    if(values?.success===false)throw new Error(values.message||'요청이 거부되었습니다.');
+    emergencyStoppedRobots.delete(robot);
+    persistentRobotStatuses.delete(robot);
+    showRobotBattery(robot);
+    return true;
+  }catch(error){
+    alert(`PINKY_0${robot} 긴급정지 해제 실패: ${error.message}`);
+    showReceivedEvent({category:'system',event:'command_send_failed'});
+    return false;
+  }
+}
+async function sendRobotCommand(robot,command){
   if(robot!==1&&robot!==2)return;
   const priority=commandPriorities[command];
   if(priority==null)return;
+  if(
+    emergencyStoppedRobots.has(robot)&&
+    command!=='replan'&&
+    command!=='emergency_stop'
+  ){
+    alert(`PINKY_0${robot}는 긴급정지 중입니다. 경로 재생성으로 해제하세요.`);
+    return;
+  }
+  if(
+    command==='replan'&&
+    emergencyStoppedRobots.has(robot)&&
+    !confirm(`PINKY_0${robot} 긴급정지를 해제하고 경로를 재생성할까요?`)
+  )return;
+  if(command==='replan'&&!(await releaseEmergencyStop(robot)))return;
   const request={
     robot_id:`pinky${robot}`,
     command,
@@ -179,16 +287,36 @@ function sendRobotCommand(robot,command){
     type:'std_msgs/msg/String',
     msg:{data:JSON.stringify(request)}
   });
+  if(command==='emergency_stop')sendEmergencyStop(robot);
+  const statusByCommand={
+    replan:'경로 생성 중',
+    entry:'입차 중',
+    exit:'출차 중',
+    charge:'충전 중'
+  };
+  if(statusByCommand[command])showRobotStatus(robot,statusByCommand[command]);
+  if(command==='pause')showRobotStatus(robot,'일시 정지',{persistent:true});
+  const lcdStatus=statusByCommand[command]||(command==='pause'?'일시 정지':null);
+  if(lcdStatus){
+    rosSend({
+      op:'publish',
+      topic:`/pinky${robot}/lcd_status`,
+      type:'std_msgs/msg/String',
+      msg:{data:lcdStatus}
+    });
+  }
   const eventByCommand={
     emergency_stop:['system','emergency_stop_requested'],
     pause:['system','pause_requested'],
-    replan:['route','route_regeneration_requested'],
     entry:['access','manual_entry_requested'],
     exit:['access','manual_exit_requested'],
     charge:['charging','charging_requested']
   };
-  const [category,event]=eventByCommand[command];
-  showReceivedEvent({category,event,robot_id:`pinky${robot}`});
+  const eventInfo=eventByCommand[command];
+  if(eventInfo){
+    const [category,event]=eventInfo;
+    showReceivedEvent({category,event,robot_id:`pinky${robot}`});
+  }
 }
 renderEventCatalog();
 updateClock();setInterval(updateClock,1000)
@@ -221,15 +349,19 @@ function updateBattery(topic,value){
   const number=filteredBatteryValue(target.robot,target.kind,Number(value));
   if(target.kind==='percent'){
     const percent=Math.max(0,Math.min(100,number));
+    robotBatteryPercents.set(target.robot,percent);
     const bar=document.getElementById(`batteryBar${target.robot}`);
     bar.style.width=percent+'%';
     bar.classList.toggle('low',percent<=20);
     document.getElementById(`batteryText${target.robot}`).textContent=percent.toFixed(1)+'%';
+    if(
+      !persistentRobotStatuses.has(target.robot)&&
+      !robotStatusTimers.has(target.robot)
+    )showRobotBattery(target.robot);
     if(percent<=20)showReceivedEvent({event:'battery_low'});
   }else{
     document.getElementById(`batteryVoltage${target.robot}`).textContent=number.toFixed(2)+' V';
   }
-  document.getElementById(`batteryState${target.robot}`).textContent='배터리 연결';
 }
 function updateManagementStatus(value){
   let status;
@@ -282,19 +414,6 @@ function updateManagementStatus(value){
   if(chargingStates.some(occupied=>!occupied)){
     showReceivedEvent({category:'charging',event:'charging_available'});
   }
-  const routeStatus=String(status.route_status||'');
-  if(status.target_slot){
-    showReceivedEvent({category:'route',event:'destination_assigned'});
-  }
-  if(routeStatus.includes('planning...')){
-    showReceivedEvent({category:'route',event:'route_generation_started'});
-  }else if(routeStatus.includes('ready and published')){
-    showReceivedEvent({category:'route',event:'route_generation_completed'});
-  }else if(routeStatus.includes('blocked')){
-    showReceivedEvent({category:'route',event:'route_generation_failed'});
-  }else if(routeStatus.includes('waiting')){
-    showReceivedEvent({category:'route',event:'route_generation_waiting'});
-  }
 }
 function updateOperationalSpace(name,space){
   const state=document.getElementById(`${name}SpaceState`);
@@ -315,6 +434,7 @@ function connectRos(){
   rosSocket.onopen=()=>{
     document.querySelector('.top-status .chip').innerHTML='<span class="dot"></span>ROS 연결 정상';
     Object.keys(batteryTopics).forEach((topic,index)=>rosSocket.send(JSON.stringify({op:'subscribe',id:`battery-${index}`,topic,type:'std_msgs/msg/Float32',throttle_rate:500})));
+    Object.keys(emergencyStateTopics).forEach((topic,index)=>rosSocket.send(JSON.stringify({op:'subscribe',id:`emergency-state-${index}`,topic,type:'std_msgs/msg/Bool'})));
     rosSocket.send(JSON.stringify({op:'subscribe',id:'management-status',topic:managementStatusTopic,type:'std_msgs/msg/String',throttle_rate:500}));
     rosSocket.send(JSON.stringify({op:'subscribe',id:'management-events',topic:managementEventTopic,type:'std_msgs/msg/String'}));
     showReceivedEvent({category:'system',event:'ros_connected'});
@@ -322,8 +442,28 @@ function connectRos(){
   };
   rosSocket.onmessage=event=>{
     const data=JSON.parse(event.data);
+    if(data.op==='service_response'&&data.id){
+      const callback=serviceCallbacks.get(data.id);
+      if(callback){
+        clearTimeout(callback.timeout);
+        serviceCallbacks.delete(data.id);
+        if(data.result===false)callback.reject(new Error(data.values?.message||'서비스 호출 실패'));
+        else callback.resolve(data.values);
+      }
+      return;
+    }
     if(data.msg?.data==null)return;
-    if(data.topic===managementStatusTopic)updateManagementStatus(data.msg.data);
+    if(emergencyStateTopics[data.topic]){
+      const robot=emergencyStateTopics[data.topic];
+      if(data.msg.data){
+        emergencyStoppedRobots.add(robot);
+        showRobotStatus(robot,'긴급 정지',{persistent:true,emergency:true});
+      }else{
+        emergencyStoppedRobots.delete(robot);
+        persistentRobotStatuses.delete(robot);
+        showRobotBattery(robot);
+      }
+    }else if(data.topic===managementStatusTopic)updateManagementStatus(data.msg.data);
     else if(data.topic===managementEventTopic){
       try{showReceivedEvent(JSON.parse(data.msg.data))}catch{}
     }

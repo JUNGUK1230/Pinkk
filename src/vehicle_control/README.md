@@ -160,3 +160,49 @@ rear LiDAR 안전정지는 5cm로 설정합니다. 후진 최적화가 0속도 l
 Pinky URDF의 LiDAR 180° 장착 방향도 반영합니다. 기존 차량 안전 계층을
 유지하고, 첫 실차 연결에서는 `/pinkk/heading_diagnostics`와 실제 차체 방향을
 대조해야 합니다.
+
+## 웹 긴급정지와 Pinky LCD
+
+Pinky에서 `pinky_emergency_lcd.py`를 실행하면 관제 웹의 긴급정지 버튼이
+`/pinky1/set_emergency_stop` 서비스를 호출합니다. 노드는 정지 상태를
+래치하고 그때만 `/pinky1/cmd_vel` publisher를 만들어 0속도를 20Hz로 계속
+발행하며, 320×240 LCD에 검은 배경과 빨간 한글 `긴급정지`를 표시합니다.
+평상시에는 추가 `/cmd_vel` publisher가 없어 기존 주행 제어기와 충돌하지
+않습니다.
+
+웹의 일반 제어 명령은 `/pinky1/lcd_status`로 받아 `경로 생성 중`,
+`입차 중`, `출차 중`, `충전 중`, `일시 정지`를 LCD에 표시합니다.
+일시 정지를 제외한 상태는 5초 뒤 `/pinky1/battery/percent`의 최신 배터리
+퍼센트로 전환됩니다. 긴급정지 해제 시 `정상` 화면은 표시하지 않으며,
+경로 재생성 명령이 바로 `경로 생성 중` 화면으로 바꿉니다.
+
+Pinky에 `pinky_lcd`, Pillow와 한글 글꼴이 설치되어 있어야 합니다. 기본적으로
+`~/pinky_lcd/example/MaruBuri-Bold.ttf`, 나눔고딕과 Noto CJK 글꼴을
+순서대로 찾습니다. 다른 글꼴은 `PINKY_LCD_FONT`로 지정합니다.
+
+`run_parking_management.sh`는 이 파일과 `run_pinky_services.sh`를 Pinky 홈에
+복사하고 namespaced bringup과 LCD 노드를 자동 실행합니다. 수동 실행은
+Pinky에서 다음과 같이 합니다.
+노드는 현재 래치 상태를 transient-local
+`/pinky1/emergency_stop_state` 토픽으로 발행하며, 웹은 이 상태를 구독해
+새로고침 후에도 긴급정지 잠금을 복원합니다.
+
+```bash
+ROS_DOMAIN_ID=36 ~/run_pinky_services.sh
+```
+
+서비스를 직접 시험하려면 다음 명령을 사용합니다.
+
+```bash
+ros2 service call /pinky1/set_emergency_stop \
+  std_srvs/srv/SetBool "{data: true}"
+```
+
+해제는 반드시 주변 안전을 확인한 뒤 수행합니다.
+관제 웹에서는 해당 Pinky의 `경로 재생성` 버튼을 누르면 확인 후 같은 해제
+서비스를 호출하고, 해제 성공 뒤에만 경로 재생성 요청을 발행합니다.
+
+```bash
+ros2 service call /pinky1/set_emergency_stop \
+  std_srvs/srv/SetBool "{data: false}"
+```

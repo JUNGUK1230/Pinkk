@@ -238,23 +238,40 @@ cd ~/PINKK
 서버, rosbridge, `index.html` 정적 서버와 localization을 한꺼번에 시작하며,
 localization은 YOLO 화면과 빨간 차량 좌표가 표시된 실제 LiDAR 맵을 같은
 프레임에서 함께 발행합니다.
-브라우저도 자동으로 엽니다.
+브라우저도 자동으로 엽니다. localization의 OpenCV 경로 화면과 관제 웹이
+함께 열리며, 하나의 localization 프로세스가 카메라, YOLO, 경로 생성과
+ROS 영상 발행을 모두 처리합니다.
 
 ```bash
 cd /home/kukjiho/Pinkk
 ./src/central_control/scripts/run_parking_management.sh
 ```
 
-SSH로 핑키 bringup까지 함께 시작하려면 다음 옵션을 사용합니다. 백그라운드
-실행을 위해 `ssh-copy-id pinky@192.168.0.99`로 SSH 키 인증을 먼저 설정해야
-하며, `PINKY_HOST` 환경 변수로 접속 주소를 바꿀 수 있습니다.
+기본 실행은 SSH로 Pinky의 bringup과 긴급정지 LCD 노드까지 자동으로
+시작합니다. 처음 한 번 `ssh-copy-id pinky@192.168.0.99`로 키 인증을
+설정해야 하며, `PINKY_HOST` 환경 변수로 접속 주소를 바꿀 수 있습니다.
+실행할 때 최신 LCD 노드와 Pinky 서비스 실행 스크립트를 로봇 홈에
+자동으로 복사합니다.
+Pinky bringup이나 LCD 노드가 이미 실행 중이면 중복 실행하지 않고 기존
+프로세스를 재사용합니다.
+
+Pinky 없이 웹과 localization만 실행하려면 `--without-pinky`를 사용합니다.
 
 ```bash
-./src/central_control/scripts/run_parking_management.sh --with-pinky
+./src/central_control/scripts/run_parking_management.sh --without-pinky
+```
+
+카메라가 연결되지 않은 상태에서 웹 긴급정지와 Pinky LCD만 시험하려면
+`--without-camera`를 사용합니다. 웹, rosbridge, Pinky bringup과 LCD 노드만
+실행하며 YOLO·영상 화면은 나오지 않습니다.
+
+```bash
+./src/central_control/scripts/run_parking_management.sh --without-camera
 ```
 
 스크립트를 실행한 터미널에서 `Ctrl+C`를 누르면 스크립트가 시작한 프로세스가
-함께 종료됩니다. 로그는 `.runtime/parking_management/`에 저장됩니다.
+Pinky 원격 서비스까지 함께 종료됩니다. 로그는
+`.runtime/parking_management/`에 저장됩니다.
 
 ### 관제 시스템 개별 실행
 
@@ -262,7 +279,8 @@ SSH로 핑키 bringup까지 함께 시작하려면 다음 옵션을 사용합니
 sudo apt install ros-$ROS_DISTRO-web-video-server
 ros2 run web_video_server web_video_server
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-python3 -m http.server 8000 --directory src/central_control/parking_management_web
+python3 src/central_control/scripts/serve_parking_management.py \
+  --port 8000 --directory src/central_control/parking_management_web
 ```
 
 웹 서버와 함께 PINKY_01을 실행하려면 위의 [PINKY_01 브링업](#pinky_01-브링업)

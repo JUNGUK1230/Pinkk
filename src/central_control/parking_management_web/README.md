@@ -22,6 +22,20 @@
 일반 명령을 거부해야 합니다. 현재 저장소에는 이 중앙 명령 중재 노드와
 Pinky Pro 측 최종 명령 수신기가 아직 구현되어 있지 않습니다.
 
+긴급정지는 예외적으로 Pinky의 `/pinkyN/set_emergency_stop` 래치 서비스도
+직접 호출합니다. `경로 재생성` 버튼은 긴급정지 해제 서비스가 성공한 뒤에만
+재생성 요청을 발행하며, LCD는 별도의 `정상` 화면을 거치지 않고 바로
+`경로 생성 중`으로 바뀝니다.
+Pinky의 `/pinkyN/emergency_stop_state`를 구독하므로 웹을 새로고침해도
+긴급정지 상태가 복원됩니다. 긴급정지 중에는 경로 재생성을 제외한 입차,
+출차, 충전과 일시정지 요청을 차단합니다.
+
+각 Pinky 카드의 상태 배지는 버튼 요청을 즉시 표시합니다. 명령은
+`/pinkyN/lcd_status`로도 전달되어 Pinky LCD에도 `입차 중`, `출차 중`,
+`충전 중`, `경로 생성 중`, `일시 정지`가 표시됩니다. 일시 정지를 제외한
+네 상태는 5초 동안 보인 뒤 최신 배터리 퍼센트로 돌아갑니다.
+`일시 정지`와 `긴급정지`는 다음 허용된 상태 변경 전까지 유지됩니다.
+
 주차장 요약과 경로 생성 현황은 HTML에 고정하지 않습니다.
 `live_localization.py`가 YOLO 주차면 점유 결과와 통합 Hybrid A* 상태를
 `/pinkk/management/status`에 JSON 문자열로 발행하고, 웹이 이를 구독해
@@ -74,23 +88,38 @@ ByteTrack 검출 차량의 중심점이 그 안에 있는지 판정합니다. �
 기존 관제 프로세스를 모두 종료한 뒤 프로젝트 루트에서 실행합니다.
 
 ```bash
-cd /home/junguk/PINKK
+cd /home/kukjiho/Pinkk
 ./src/central_control/scripts/run_parking_management.sh
 ```
 
-핑키 SSH bringup까지 함께 시작하려면 `ssh-copy-id pinky@192.168.0.99`로
-SSH 키 인증을 먼저 설정하고 다음과 같이 실행합니다.
+기본 실행은 Pinky SSH bringup과 긴급정지 LCD 노드까지 자동으로 시작합니다.
+처음 한 번 아래 명령으로 SSH 키를 등록합니다.
+이미 실행 중인 Pinky bringup 또는 LCD 노드는 중복 실행하지 않고 재사용합니다.
 
 ```bash
-./src/central_control/scripts/run_parking_management.sh --with-pinky
+ssh-copy-id pinky@192.168.0.99
+```
+
+Pinky 없이 관제 PC의 웹과 localization만 실행하려면 다음 옵션을 사용합니다.
+
+```bash
+./src/central_control/scripts/run_parking_management.sh --without-pinky
+```
+
+카메라 없이 웹 긴급정지와 Pinky LCD만 확인할 때는 다음처럼 실행합니다.
+
+```bash
+./src/central_control/scripts/run_parking_management.sh --without-camera
 ```
 
 영상 서버, rosbridge, `index.html` 서버와 localization이 함께 실행됩니다.
 localization은 YOLO 화면과 빨간 차량 좌표가 표시된 실제 LiDAR 맵을 같은
 프레임에서 각각 `/pinkk/localization/image`, `/pinkk/lidar_map/image`로
-발행합니다.
-종료할 때는 같은 터미널에서 `Ctrl+C`를 누릅니다. 로그는
-`.runtime/parking_management/`에 저장됩니다.
+발행합니다. localization의 OpenCV 경로 화면과 관제 웹이 함께 열리며,
+카메라, YOLO와 경로 생성 로직은 같은 프로세스에서 실행됩니다.
+종료할 때는 같은 터미널에서 `Ctrl+C`를 누릅니다. 자동 실행된 Pinky
+bringup과 LCD 노드도 함께 종료됩니다. 로그는 `.runtime/parking_management/`에
+저장됩니다.
 
 ## 개별 실행
 
@@ -98,7 +127,8 @@ localization은 YOLO 화면과 빨간 차량 좌표가 표시된 실제 LiDAR �
 sudo apt install ros-$ROS_DISTRO-web-video-server ros-$ROS_DISTRO-rosbridge-server
 ros2 run web_video_server web_video_server
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-python3 -m http.server 8000 --directory src/central_control/parking_management_web
+python3 src/central_control/scripts/serve_parking_management.py \
+  --port 8000 --directory src/central_control/parking_management_web
 ```
 
 ## 핑키 bringup
