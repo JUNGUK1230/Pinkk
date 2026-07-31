@@ -74,7 +74,7 @@ ByteTrack 검출 차량의 중심점이 그 안에 있는지 판정합니다. �
 기존 관제 프로세스를 모두 종료한 뒤 프로젝트 루트에서 실행합니다.
 
 ```bash
-cd /home/kukjiho/Pinkk
+cd /home/junguk/PINKK
 ./src/central_control/scripts/run_parking_management.sh
 ```
 

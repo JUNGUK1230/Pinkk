@@ -9,6 +9,9 @@ PATH_TOPIC = "/pinkk/planned_path"
 TRAJECTORY_TOPIC = "/pinkk/planned_trajectory"
 POSE_TOPIC = "/pinkk/vehicle_pose"
 PATH_VALID_TOPIC = "/pinkk/path_valid"
+IMAGE_TOPIC = "/pinkk/localization/image"
+LIDAR_IMAGE_TOPIC = "/pinkk/lidar_map/image"
+MANAGEMENT_STATUS_TOPIC = "/pinkk/management/status"
 TRAJECTORY_FIELDS = (
     "x_m",
     "y_m",
@@ -26,7 +29,13 @@ class DirectRosPublisher:
         trajectory_topic: str = TRAJECTORY_TOPIC,
         pose_topic: str = POSE_TOPIC,
         path_valid_topic: str = PATH_VALID_TOPIC,
+        image_topic: str = IMAGE_TOPIC,
+        lidar_image_topic: str = LIDAR_IMAGE_TOPIC,
+        management_status_topic: str = MANAGEMENT_STATUS_TOPIC,
         lidar_resolution_cm: float = 1.0,
+        operational_space_polygons: Mapping[
+            str, Sequence[Sequence[float]]
+        ] | None = None,
     ) -> None:
         try:
             import rclpy
@@ -34,7 +43,13 @@ class DirectRosPublisher:
             from nav_msgs.msg import Path as RosPath
             from rclpy.node import Node
             from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-            from std_msgs.msg import Bool, Float64MultiArray, MultiArrayDimension
+            from sensor_msgs.msg import Image
+            from std_msgs.msg import (
+                Bool,
+                Float64MultiArray,
+                MultiArrayDimension,
+                String,
+            )
         except ImportError as error:
             raise RuntimeError(
                 "ROS 2 rclpy is required for direct topic publishing. "
@@ -47,6 +62,8 @@ class DirectRosPublisher:
         self._Float64MultiArray = Float64MultiArray
         self._MultiArrayDimension = MultiArrayDimension
         self._Bool = Bool
+        self._Image = Image
+        self._String = String
         self._owns_context = not rclpy.ok()
         if self._owns_context:
             rclpy.init(args=None)
@@ -99,9 +116,44 @@ class DirectRosPublisher:
         self.trajectory_topic = trajectory_topic
         self.pose_topic = pose_topic
         self.path_valid_topic = path_valid_topic
+        self.image_topic = image_topic
+        self.lidar_image_topic = lidar_image_topic
+        self.management_status_topic = management_status_topic
         self.lidar_resolution_cm = float(lidar_resolution_cm)
         if self.lidar_resolution_cm <= 0.0:
             raise ValueError("lidar_resolution_cm must be positive")
+        self.operational_space_polygons = {
+            str(name): tuple(
+                (float(point[0]), float(point[1])) for point in polygon
+            )
+            for name, polygon in (operational_space_polygons or {}).items()
+        }
+
+    def publish_image(self, image: object) -> None:
+        """OpenCV BGR 화면을 cv_bridge 없이 sensor_msgs/Image로 발행한다."""
+        self._publish_image(self._image_publisher, image, "overhead_camera_bev")
+
+    def publish_lidar_image(self, image: object) -> None:
+        """차량 좌표가 표시된 실제 LiDAR 맵을 웹 영상 토픽으로 발행한다."""
+        self._publish_image(self._lidar_image_publisher, image, "lidar_map")
+
+    def _publish_image(self, publisher: object, image: object, frame_id: str) -> None:
+        if not hasattr(image, "shape") or len(image.shape) != 3:
+            raise ValueError("image must be an HxWx3 BGR array")
+        height, width, channels = image.shape
+        if channels != 3:
+            raise ValueError("image must have exactly 3 BGR channels")
+        contiguous = image if image.flags.c_contiguous else image.copy(order="C")
+        message = self._Image()
+        message.header.stamp = self._node.get_clock().now().to_msg()
+        message.header.frame_id = frame_id
+        message.height = int(height)
+        message.width = int(width)
+        message.encoding = "bgr8"
+        message.is_bigendian = False
+        message.step = int(width * channels)
+        message.data = contiguous.tobytes()
+        publisher.publish(message)
 
     def publish_pose(self, vehicle: object) -> None:
         """카메라 차체 중심 x/y와 측정 장축 yaw를 `lidar_map`으로 발행한다."""
@@ -134,9 +186,9 @@ class DirectRosPublisher:
                 float(getattr(second, "y_cm")) - float(getattr(first, "y_cm")),
             ) / 100.0
             speeds = [
-                abs(float(getattr(point, "target_speed_mps")))
+                abs(float(getattr(point, "target_speed_mps", 0.0)))
                 for point in (first, second)
-                if abs(float(getattr(point, "target_speed_mps"))) > 1e-3
+                if abs(float(getattr(point, "target_speed_mps", 0.0))) > 1e-3
             ]
             if distance_m > 0.0 and speeds:
                 seconds += distance_m / (sum(speeds) / len(speeds))
