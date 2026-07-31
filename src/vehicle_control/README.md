@@ -131,27 +131,28 @@ IMU를 사용하지 않으므로 `imu_yaw_rad` 값은 `NaN`입니다.
  camera_map_yaw_rad, odom_yaw_rad]
 ```
 
-주요 파라미터는 `config/mpc/mpc.yaml`에 있습니다. 현재 실차 검증 기본값은
-5 Hz, 1 step, 0.2초 prediction horizon, 전진 0.025 m/s, 후진
-0.015 m/s입니다. 전진 코너가 horizon에 들어오면 직선용 곡률 제한을 미리
-해제해 코너 진입 전에 조향을 시작합니다. 0.5cm 간격 경로의 nearest progress
-검색은 현재 direction 구간 전체에서 가장 가까운 점을 찾습니다. 이는 차량의
-현재 위치를 찾는 과정일 뿐이며, 제어 참조는 그 바로 다음 한 점만 사용합니다.
+주요 파라미터는 `config/mpc/mpc.yaml`에 있습니다. MPC가 실행 중일 때 이
+파일을 저장하면 1초 안에 전체 값을 원자적으로 검증해 자동 반영합니다.
+정상 반영되면 `Reloaded MPC tuning file`이 출력됩니다. 범위를 벗어난 값은
+전체 변경이 거부되므로 기존 설정으로 계속 동작합니다. 토픽 이름과
+`tuning_file`, `tuning_reload_period_sec`는 재생성이 필요하므로 변경 후
+노드를 재시작해야 합니다.
 
-C2 후진 구간은 전진 staging pose 2.5cm 이내에서 0.7초 정지한 뒤 약
-29.3cm를 20cm 회전반경으로 연속 후진합니다. 최종 pose의 지도상 후방
-여유가 약 5.5~7.2cm이므로
-rear LiDAR 안전정지는 5cm로 설정합니다. 후진 최적화가 0속도 local minimum에
-빠지지 않도록 TRACKING 중에만 0.002m/s의 최소 후진 속도를 적용합니다.
-종점 10cm 전부터 기준 속도와 horizon 진행량을 함께 줄이고, 카메라 위치
-분해능을 고려해 종점 4cm 이내에서 정지합니다.
+조정 순서는 다음을 권장합니다.
 
-직선 횡오차 복귀 곡률은 최대 `2.3 1/m`, 전체 각속도는 최대
-`0.25 rad/s`로 제한합니다. 경로 기준 곡률은 feed-forward로 먼저 적용하고
-추가 횡오차 보정만 변화율을 제한합니다. obstacle, pose/scan timeout 또는 heading 오류에서는
-최소속도와 관계없이 즉시 0속도로 정지합니다.
-초반 직선에서 카메라 위치 노이즈를 과도하게 따라가지 않도록 곡률 변화량과
-곡률 변화 비용을 제한하면서, 주차 구간의 최대 곡률은 기존 값으로 유지합니다.
+- 선 복귀가 느리면 `weight_position`을 조금 올리거나
+  `weight_curvature_rate`를 조금 내립니다.
+- 좌우 진동이 크면 `weight_curvature_rate`와
+  `max_curvature_rate_1pmps` 제한을 강화합니다.
+- 코너 반응이 늦으면 `curvature_smoothing_points` 또는
+  `straight_history_points`를 줄입니다.
+- 코너를 너무 일찍 돌면 `straight_lookahead_points`를 줄입니다.
+- 속도는 `forward_speed_mps`, `reverse_speed_mps`부터 조정하고 각각의
+  `max_*_speed_mps`보다 크게 설정하지 않습니다.
+
+한 번에 한 종류의 값만 20~30% 이내로 바꾸고 저속으로 확인하십시오.
+obstacle, pose/scan timeout 또는 heading 오류에서는 설정과 관계없이 즉시
+0속도로 정지합니다.
 
 ## 현재 제한
 

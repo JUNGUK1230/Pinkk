@@ -31,7 +31,7 @@ realtime_localization:
 
   # 현재 학습·검증 해상도를 유지한다. 화면의 capture age가 계속 크면
   # 정확도를 현장 검증한 뒤 960으로 낮추는 것을 다음 최적화로 검토한다.
-  inference_imgsz: 1600
+  inference_imgsz: 1600   
   inference_device: 0
   # ByteTrack은 car mask의 프레임 간 ID를 유지한다. ego는 처음 선택된 ID만
   # 따르므로 다른 차량과 가까워져도 planner start가 바뀌지 않는다.

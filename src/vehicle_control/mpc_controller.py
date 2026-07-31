@@ -50,6 +50,10 @@ class MpcLimits:
     gear_position_tolerance_m: float = 0.01
     nearest_forward_window: int = 140
     nearest_backward_window: int = 4
+    curvature_smoothing_points: int = 5
+    straight_lookahead_points: int = 4
+    straight_history_points: int = 12
+    straight_end_guard_points: int = 30
     solver_max_iterations: int = 45
     solver_ftol: float = 1e-5
 
@@ -79,6 +83,19 @@ class MpcLimits:
             raise ValueError("MPC horizon_steps must be at least 2")
         if self.nearest_forward_window < 1 or self.nearest_backward_window < 0:
             raise ValueError("MPC nearest-point windows are invalid")
+        if (
+            self.curvature_smoothing_points < 1
+            or self.curvature_smoothing_points % 2 == 0
+        ):
+            raise ValueError(
+                "curvature_smoothing_points must be a positive odd integer"
+            )
+        if (
+            self.straight_lookahead_points < 1
+            or self.straight_history_points < 1
+            or self.straight_end_guard_points < 0
+        ):
+            raise ValueError("MPC straight-section point counts are invalid")
         if self.solver_max_iterations < 1:
             raise ValueError("MPC solver_max_iterations must be positive")
         if self.forward_speed_mps > self.max_forward_speed_mps:
@@ -194,7 +211,10 @@ class DifferentialDriveMpc:
             ):
                 block_end += 1
             block = curvature[block_start : block_end + 1]
-            kernel = np.ones(5, dtype=np.float64)
+            kernel = np.ones(
+                self.limits.curvature_smoothing_points,
+                dtype=np.float64,
+            )
             numerator = np.convolve(block, kernel, mode="same")
             denominator = np.convolve(np.ones_like(block), kernel, mode="same")
             curvature[block_start : block_end + 1] = numerator / denominator
@@ -473,10 +493,18 @@ class DifferentialDriveMpc:
         direction: int,
     ) -> float:
         # 마지막 후진 주차 곡선은 기존 최대 곡률을 그대로 사용한다.
-        if direction < 0 or segment_end - progress_index < 30:
+        if (
+            direction < 0
+            or segment_end - progress_index < self.limits.straight_end_guard_points
+        ):
             return self.limits.max_curvature_1pm
-        near_references = references[: min(4, len(references))]
-        recent_start = max(0, progress_index - 12)
+        near_references = references[
+            : min(self.limits.straight_lookahead_points, len(references))
+        ]
+        recent_start = max(
+            0,
+            progress_index - self.limits.straight_history_points,
+        )
         recent_curvature = self._reference_curvature[
             recent_start : progress_index + 1
         ]

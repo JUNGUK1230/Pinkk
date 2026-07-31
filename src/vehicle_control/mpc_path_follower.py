@@ -10,11 +10,15 @@ import sys
 import time
 from typing import Sequence
 
+import yaml
+
 try:
     import rclpy
     from geometry_msgs.msg import PoseStamped, Twist
+    from rcl_interfaces.msg import SetParametersResult
     from rclpy.executors import ExternalShutdownException
     from rclpy.node import Node
+    from rclpy.parameter import Parameter
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from sensor_msgs.msg import LaserScan
     from std_msgs.msg import Bool, Float64MultiArray
@@ -41,6 +45,17 @@ except ImportError:
 
 
 EXPECTED_FIELDS = ("x_m", "y_m", "yaw_rad", "direction")
+STATIC_PARAMETERS = frozenset(
+    {
+        "trajectory_topic",
+        "path_valid_topic",
+        "pose_topic",
+        "cmd_vel_topic",
+        "scan_topic",
+        "tuning_file",
+        "tuning_reload_period_sec",
+    }
+)
 
 
 def trajectory_signature(data: Sequence[float]) -> bytes:
@@ -191,6 +206,26 @@ class MpcPathFollower(Node):
         self._gear_resume_monotonic: float | None = None
         self._last_status: str | None = None
         self._last_solve_log_monotonic = 0.0
+        self.add_on_set_parameters_callback(self._on_set_parameters)
+        tuning_file = str(self.get_parameter("tuning_file").value)
+        self._tuning_path = Path(tuning_file).expanduser()
+        if not self._tuning_path.is_absolute():
+            self._tuning_path = Path.cwd() / self._tuning_path
+        self._auto_reload_tuning = bool(
+            self.get_parameter("auto_reload_tuning").value
+        )
+        self._tuning_modified_ns = (
+            self._tuning_path.stat().st_mtime_ns
+            if self._tuning_path.is_file()
+            else None
+        )
+        tuning_reload_period_sec = self._positive_parameter(
+            "tuning_reload_period_sec"
+        )
+        self._tuning_timer = self.create_timer(
+            tuning_reload_period_sec,
+            self._reload_tuning_if_changed,
+        )
         self.get_logger().warning(
             "MPC motion output enabled on %s; do not run another velocity controller"
             % self._cmd_vel_topic
@@ -201,6 +236,9 @@ class MpcPathFollower(Node):
             "trajectory_topic": "/pinkk/planned_trajectory",
             "path_valid_topic": "/pinkk/path_valid",
             "pose_topic": "/pinkk/fused_vehicle_pose",
+            "tuning_file": "src/vehicle_control/config/mpc/mpc.yaml",
+            "auto_reload_tuning": True,
+            "tuning_reload_period_sec": 1.0,
             "cmd_vel_topic": "/cmd_vel",
             # Pinky 실차 구동계에서 map curvature와 동일한 부호를 사용한다.
             "angular_command_sign": 1.0,
@@ -236,6 +274,10 @@ class MpcPathFollower(Node):
             "gear_position_tolerance_m": 0.01,
             "nearest_forward_window": 140,
             "nearest_backward_window": 4,
+            "curvature_smoothing_points": 5,
+            "straight_lookahead_points": 4,
+            "straight_history_points": 12,
+            "straight_end_guard_points": 30,
             "solver_max_iterations": 45,
             "solver_ftol": 1e-5,
             "weight_position": 200.0,
@@ -250,84 +292,284 @@ class MpcPathFollower(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
 
-    def _load_limits(self) -> MpcLimits:
+    def _parameter_value(
+        self,
+        name: str,
+        overrides: dict[str, object] | None = None,
+    ) -> object:
+        if overrides is not None and name in overrides:
+            return overrides[name]
+        return self.get_parameter(name).value
+
+    def _load_limits(
+        self,
+        overrides: dict[str, object] | None = None,
+    ) -> MpcLimits:
         return MpcLimits(
-            dt_sec=self._positive_parameter("dt_sec"),
-            horizon_steps=int(self.get_parameter("horizon_steps").value),
-            forward_speed_mps=self._positive_parameter("forward_speed_mps"),
-            reverse_speed_mps=self._positive_parameter("reverse_speed_mps"),
+            dt_sec=self._positive_parameter("dt_sec", overrides),
+            horizon_steps=int(self._parameter_value("horizon_steps", overrides)),
+            forward_speed_mps=self._positive_parameter(
+                "forward_speed_mps", overrides
+            ),
+            reverse_speed_mps=self._positive_parameter(
+                "reverse_speed_mps", overrides
+            ),
             max_forward_speed_mps=self._positive_parameter(
-                "max_forward_speed_mps"
+                "max_forward_speed_mps", overrides
             ),
             max_reverse_speed_mps=self._positive_parameter(
-                "max_reverse_speed_mps"
+                "max_reverse_speed_mps", overrides
             ),
             max_acceleration_mps2=self._positive_parameter(
-                "max_acceleration_mps2"
+                "max_acceleration_mps2", overrides
             ),
-            max_curvature_1pm=self._positive_parameter("max_curvature_1pm"),
+            max_curvature_1pm=self._positive_parameter(
+                "max_curvature_1pm", overrides
+            ),
             max_curvature_rate_1pmps=self._positive_parameter(
-                "max_curvature_rate_1pmps"
+                "max_curvature_rate_1pmps", overrides
             ),
             max_angular_speed_radps=self._positive_parameter(
-                "max_angular_speed_radps"
+                "max_angular_speed_radps", overrides
             ),
             straight_curvature_threshold_1pm=self._positive_parameter(
-                "straight_curvature_threshold_1pm"
+                "straight_curvature_threshold_1pm", overrides
             ),
             straight_max_curvature_1pm=self._positive_parameter(
-                "straight_max_curvature_1pm"
+                "straight_max_curvature_1pm", overrides
             ),
             max_tracking_yaw_error_rad=math.radians(
-                self._positive_parameter("max_tracking_yaw_error_deg")
+                self._positive_parameter("max_tracking_yaw_error_deg", overrides)
             ),
-            pose_timeout_sec=self._positive_parameter("pose_timeout_sec"),
+            pose_timeout_sec=self._positive_parameter(
+                "pose_timeout_sec", overrides
+            ),
             goal_position_tolerance_m=self._positive_parameter(
-                "goal_position_tolerance_m"
+                "goal_position_tolerance_m", overrides
             ),
             goal_yaw_tolerance_rad=math.radians(
-                self._positive_parameter("goal_yaw_tolerance_deg")
+                self._positive_parameter("goal_yaw_tolerance_deg", overrides)
             ),
             gear_position_tolerance_m=self._positive_parameter(
-                "gear_position_tolerance_m"
+                "gear_position_tolerance_m", overrides
             ),
             nearest_forward_window=int(
-                self.get_parameter("nearest_forward_window").value
+                self._parameter_value("nearest_forward_window", overrides)
             ),
             nearest_backward_window=int(
-                self.get_parameter("nearest_backward_window").value
+                self._parameter_value("nearest_backward_window", overrides)
+            ),
+            curvature_smoothing_points=int(
+                self._parameter_value("curvature_smoothing_points", overrides)
+            ),
+            straight_lookahead_points=int(
+                self._parameter_value("straight_lookahead_points", overrides)
+            ),
+            straight_history_points=int(
+                self._parameter_value("straight_history_points", overrides)
+            ),
+            straight_end_guard_points=int(
+                self._parameter_value("straight_end_guard_points", overrides)
             ),
             solver_max_iterations=int(
-                self.get_parameter("solver_max_iterations").value
+                self._parameter_value("solver_max_iterations", overrides)
             ),
-            solver_ftol=self._positive_parameter("solver_ftol"),
+            solver_ftol=self._positive_parameter("solver_ftol", overrides),
         )
 
-    def _load_weights(self) -> MpcWeights:
+    def _load_weights(
+        self,
+        overrides: dict[str, object] | None = None,
+    ) -> MpcWeights:
         return MpcWeights(
-            position=self._nonnegative_parameter("weight_position"),
-            yaw=self._nonnegative_parameter("weight_yaw"),
+            position=self._nonnegative_parameter("weight_position", overrides),
+            yaw=self._nonnegative_parameter("weight_yaw", overrides),
             terminal_position=self._nonnegative_parameter(
-                "weight_terminal_position"
+                "weight_terminal_position", overrides
             ),
-            terminal_yaw=self._nonnegative_parameter("weight_terminal_yaw"),
-            speed=self._nonnegative_parameter("weight_speed"),
-            curvature=self._nonnegative_parameter("weight_curvature"),
-            speed_rate=self._nonnegative_parameter("weight_speed_rate"),
-            curvature_rate=self._nonnegative_parameter("weight_curvature_rate"),
+            terminal_yaw=self._nonnegative_parameter(
+                "weight_terminal_yaw", overrides
+            ),
+            speed=self._nonnegative_parameter("weight_speed", overrides),
+            curvature=self._nonnegative_parameter(
+                "weight_curvature", overrides
+            ),
+            speed_rate=self._nonnegative_parameter(
+                "weight_speed_rate", overrides
+            ),
+            curvature_rate=self._nonnegative_parameter(
+                "weight_curvature_rate", overrides
+            ),
         )
 
-    def _positive_parameter(self, name: str) -> float:
-        value = float(self.get_parameter(name).value)
+    def _positive_parameter(
+        self,
+        name: str,
+        overrides: dict[str, object] | None = None,
+    ) -> float:
+        value = float(self._parameter_value(name, overrides))
         if not math.isfinite(value) or value <= 0.0:
             raise ValueError(f"{name} must be positive and finite")
         return value
 
-    def _nonnegative_parameter(self, name: str) -> float:
-        value = float(self.get_parameter(name).value)
+    def _nonnegative_parameter(
+        self,
+        name: str,
+        overrides: dict[str, object] | None = None,
+    ) -> float:
+        value = float(self._parameter_value(name, overrides))
         if not math.isfinite(value) or value < 0.0:
             raise ValueError(f"{name} must be finite and non-negative")
         return value
+
+    def _on_set_parameters(self, parameters: Sequence[object]) -> SetParametersResult:
+        """YAML/ros2 param 변경을 검증한 뒤 실행 중 제어기에 반영한다."""
+        updates = {
+            str(getattr(parameter, "name")): getattr(parameter, "value")
+            for parameter in parameters
+        }
+        for name in STATIC_PARAMETERS.intersection(updates):
+            if updates[name] != self.get_parameter(name).value:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f"{name} requires node restart",
+                )
+        try:
+            new_limits = self._load_limits(updates)
+            new_weights = self._load_weights(updates)
+            new_limits.validate()
+            new_weights.validate()
+            path_timeout_sec = self._positive_parameter(
+                "path_timeout_sec", updates
+            )
+            gear_pause_sec = self._positive_parameter("gear_pause_sec", updates)
+            scan_timeout_sec = self._positive_parameter(
+                "scan_timeout_sec", updates
+            )
+            front_stop_distance_m = self._positive_parameter(
+                "front_stop_distance_m", updates
+            )
+            rear_stop_distance_m = self._positive_parameter(
+                "rear_stop_distance_m", updates
+            )
+            front_half_angle_rad = math.radians(
+                self._positive_parameter("front_scan_half_angle_deg", updates)
+            )
+            rear_half_angle_rad = math.radians(
+                self._positive_parameter("rear_scan_half_angle_deg", updates)
+            )
+            front_center_angle_rad = math.radians(
+                float(self._parameter_value("front_scan_center_deg", updates))
+            )
+            rear_center_angle_rad = math.radians(
+                float(self._parameter_value("rear_scan_center_deg", updates))
+            )
+            angular_command_sign = float(
+                self._parameter_value("angular_command_sign", updates)
+            )
+            if angular_command_sign not in (-1.0, 1.0):
+                raise ValueError("angular_command_sign must be -1 or 1")
+            control_frequency_hz = self._positive_parameter(
+                "control_frequency_hz", updates
+            )
+            require_scan = bool(
+                self._parameter_value("require_scan", updates)
+            )
+            reject_cmd_vel_conflicts = bool(
+                self._parameter_value("reject_cmd_vel_conflicts", updates)
+            )
+            auto_reload_tuning = bool(
+                self._parameter_value("auto_reload_tuning", updates)
+            )
+        except (TypeError, ValueError) as error:
+            return SetParametersResult(successful=False, reason=str(error))
+
+        controller_changed = (
+            new_limits != self._controller.limits
+            or new_weights != self._controller.weights
+        )
+        if controller_changed:
+            path = self._controller.path
+            progress_index = self._controller.progress_index
+            self._controller.limits = new_limits
+            self._controller.weights = new_weights
+            if path:
+                self._controller.set_path(path)
+                self._controller.progress_index = min(
+                    progress_index,
+                    len(path) - 1,
+                )
+
+        self._path_timeout_sec = path_timeout_sec
+        self._gear_pause_sec = gear_pause_sec
+        self._scan_timeout_sec = scan_timeout_sec
+        self._front_stop_distance_m = front_stop_distance_m
+        self._rear_stop_distance_m = rear_stop_distance_m
+        self._front_half_angle_rad = front_half_angle_rad
+        self._rear_half_angle_rad = rear_half_angle_rad
+        self._front_center_angle_rad = front_center_angle_rad
+        self._rear_center_angle_rad = rear_center_angle_rad
+        self._angular_command_sign = angular_command_sign
+        self._require_scan = require_scan
+        self._reject_cmd_vel_conflicts = reject_cmd_vel_conflicts
+        self._auto_reload_tuning = auto_reload_tuning
+
+        current_frequency = 1.0 / self._timer.timer_period_ns * 1e9
+        if not math.isclose(
+            control_frequency_hz,
+            current_frequency,
+            rel_tol=1e-9,
+        ):
+            self.destroy_timer(self._timer)
+            self._timer = self.create_timer(
+                1.0 / control_frequency_hz,
+                self._control_tick,
+            )
+
+        self._publish_zero("PARAMETERS_UPDATED")
+        self.get_logger().info(
+            "Applied MPC tuning parameters; path progress preserved"
+        )
+        return SetParametersResult(successful=True)
+
+    def _reload_tuning_if_changed(self) -> None:
+        """저장된 YAML 전체를 한 번에 검증하고 안전하게 적용한다."""
+        if not self._auto_reload_tuning:
+            return
+        try:
+            modified_ns = self._tuning_path.stat().st_mtime_ns
+        except OSError as error:
+            self.get_logger().warning(
+                f"MPC tuning file unavailable: {self._tuning_path}: {error}"
+            )
+            return
+        if modified_ns == self._tuning_modified_ns:
+            return
+        self._tuning_modified_ns = modified_ns
+        try:
+            with self._tuning_path.open(encoding="utf-8") as file:
+                document = yaml.safe_load(file)
+            node_config = document.get(self.get_name())
+            if not isinstance(node_config, dict):
+                raise ValueError(
+                    f"missing YAML node section: {self.get_name()}"
+                )
+            raw_parameters = node_config.get("ros__parameters")
+            if not isinstance(raw_parameters, dict):
+                raise ValueError("missing ros__parameters mapping")
+            parameters = [
+                Parameter(str(name), value=value)
+                for name, value in raw_parameters.items()
+            ]
+            result = self.set_parameters_atomically(parameters)
+            if not result.successful:
+                raise ValueError(result.reason)
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+            self.get_logger().error(
+                f"Rejected MPC tuning file; keeping previous values: {error}"
+            )
+            return
+        self.get_logger().info(f"Reloaded MPC tuning file: {self._tuning_path}")
 
     def _trajectory_callback(self, message: Float64MultiArray) -> None:
         now = time.monotonic()
