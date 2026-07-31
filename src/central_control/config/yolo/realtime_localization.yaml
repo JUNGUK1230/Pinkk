@@ -16,6 +16,7 @@ realtime_localization:
   # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
   ros_image_topic: /pinkk/localization/image
   ros_lidar_image_topic: /pinkk/lidar_map/image
+  ros_management_status_topic: /pinkk/management/status
   lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
 
   camera_id: 2

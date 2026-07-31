@@ -544,6 +544,36 @@ def load_parking_assignment(
     )
 
 
+def load_operational_space_polygons(
+    config: dict[str, object],
+) -> dict[str, tuple[tuple[float, float], ...]]:
+    """입구·출구의 BEV polygon을 관제 상태 판정용으로 읽는다."""
+    points_path = resolve_path(str(config["parking_points_path"]))
+    with points_path.open(encoding="utf-8") as file:
+        points = json.load(file)
+    polygons: dict[str, tuple[tuple[float, float], ...]] = {}
+    corner_names = (
+        "top_left_bev",
+        "top_right_bev",
+        "bottom_right_bev",
+        "bottom_left_bev",
+    )
+    for name in ("entrance", "exit"):
+        raw_space = points.get(name)
+        if not isinstance(raw_space, dict):
+            raise ValueError(f"parking operational space is missing: {name}")
+        polygon = []
+        for corner_name in corner_names:
+            point = raw_space.get(corner_name)
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError(
+                    f"{name} has invalid operational-space corner: {corner_name}"
+                )
+            polygon.append((float(point[0]), float(point[1])))
+        polygons[name] = tuple(polygon)
+    return polygons
+
+
 def draw_scene(
     bev: np.ndarray,
     scene: SceneObservation,
@@ -1028,6 +1058,13 @@ def main() -> int:
                 lidar_image_topic=str(
                     config.get("ros_lidar_image_topic", "/pinkk/lidar_map/image")
                 ),
+                management_status_topic=str(
+                    config.get(
+                        "ros_management_status_topic",
+                        "/pinkk/management/status",
+                    )
+                ),
+                operational_space_polygons=load_operational_space_polygons(config),
             )
             if ros_publish_enabled
             else None
@@ -1193,6 +1230,12 @@ def main() -> int:
             if ros_publisher is not None and scene.vehicle is not None:
                 if scene.vehicle.planning_ready:
                     ros_publisher.publish_pose(scene.vehicle)
+            if ros_publisher is not None:
+                ros_publisher.publish_management_status(
+                    scene,
+                    planning_controller.status,
+                    planning_controller.outcome,
+                )
                 ros_publisher.spin_once()
             if write_runtime_files and frame_index % output_every == 0:
                 try:

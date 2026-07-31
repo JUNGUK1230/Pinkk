@@ -1,10 +1,36 @@
 {
   "entrance": {
     "type": "entrance",
-    "center_bev": [100.0, 120.0]
+    "slot_width_cm": 23.6,
+    "slot_height_cm": 29.8,
+    "pixels_per_cm": 8.0,
+    "center": [-0.1788, 0.398],
+    "center_bev": [100.0, 120.0],
+    "top_left": [-0.1751, 0.588],
+    "top_left_bev": [5.599999999999994, 0.7999999999999972],
+    "top_right": [0.007, 0.4379],
+    "top_right_bev": [194.4, 0.7999999999999972],
+    "bottom_right": [-0.1825, 0.208],
+    "bottom_right_bev": [194.4, 239.2],
+    "bottom_left": [-0.3646, 0.3581],
+    "bottom_left_bev": [5.599999999999994, 239.2]
   },
   "exit": {
     "type": "exit",
-    "center_bev": [93.33333333333333, 676.0]
-  }
+    "slot_width_cm": 23.2,
+    "slot_height_cm": 28.2,
+    "pixels_per_cm": 8.0,
+    "center": [-0.6273, -0.133],
+    "center_bev": [93.33333333333333, 676.0],
+    "top_left": [-0.6271, 0.0496],
+    "top_left_bev": [0.5333333333333314, 563.2],
+    "top_right": [-0.4481, -0.0979],
+    "top_right_bev": [186.13333333333333, 563.2],
+    "bottom_right": [-0.6275, -0.3155],
+    "bottom_right_bev": [186.13333333333333, 788.8],
+    "bottom_left": [-0.8065, -0.168],
+    "bottom_left_bev": [0.5333333333333314, 788.8]
+  },
+  "parking": {},
+  "charging": {}
 }
