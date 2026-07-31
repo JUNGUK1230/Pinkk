@@ -18,6 +18,9 @@ realtime_localization:
   # 새 경로는 즉시 발행하고, 제어기가 놓치지 않도록 같은 경로를 이 주기로
   # 재발행한다. 경로가 무효화되거나 목표가 바뀌면 이전 경로 발행은 중단한다.
   route_republish_period_sec: 1.0
+  # 차체가 주차칸에 일부 겹친 것만으로 경로를 지우지 않고, 고정 경로의 실제
+  # 마지막 rear-axle 점에 이 거리 이내로 도착했을 때만 완료 처리한다.
+  route_completion_radius_cm: 2.5
 
   # 2026-07-27 확인: 상단 USB Camera는 /dev/video3 (1920x1080 MJPG)다.
   # USB 재연결 후 번호가 달라지면 `v4l2-ctl --list-devices`로 다시 확인한다.

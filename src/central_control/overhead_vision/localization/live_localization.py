@@ -239,8 +239,15 @@ class RoutePublishScheduler:
 class IntegratedPlanningController:
     """Select one fixed route for each new vehicle/target episode."""
 
-    def __init__(self, route_selector: object) -> None:
+    def __init__(
+        self,
+        route_selector: object,
+        completion_radius_cm: float = 2.5,
+    ) -> None:
+        if not math.isfinite(completion_radius_cm) or completion_radius_cm <= 0.0:
+            raise ValueError("route completion radius must be positive and finite")
         self.route_selector = route_selector
+        self.completion_radius_cm = float(completion_radius_cm)
         self._executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="pinkk-fixed-route",
@@ -275,6 +282,27 @@ class IntegratedPlanningController:
         if scene.vehicle is None:
             return
         if scene.planning_request is None:
+            if (
+                self.outcome is not None
+                or self._future is not None
+                or self._active_key is not None
+            ):
+                # 주차칸 polygon에 차체가 일부 겹쳐 planning request가 먼저
+                # 사라져도 실제 고정 경로 종점까지는 기존 경로 발행을 유지한다.
+                if self.outcome is None:
+                    return
+                trajectory = tuple(getattr(self.outcome, "trajectory", ()))
+                if not trajectory:
+                    self.invalidate()
+                    return
+                goal = trajectory[-1]
+                goal_distance_cm = math.hypot(
+                    float(getattr(goal, "x_cm")) - scene.vehicle.rear_axle_cm[0],
+                    float(getattr(goal, "y_cm")) - scene.vehicle.rear_axle_cm[1],
+                )
+                if goal_distance_cm <= self.completion_radius_cm:
+                    self.invalidate()
+                return
             detector = getattr(self.route_selector, "detect_location", None)
             detected_section = (
                 str(
@@ -289,17 +317,6 @@ class IntegratedPlanningController:
                 if callable(detector)
                 else "TRANSIT"
             )
-            if (
-                detected_section != "TRANSIT"
-                and (
-                    self.outcome is not None
-                    or self._future is not None
-                    or self._active_key is not None
-                )
-            ):
-                # 알려진 주차 endpoint에 도착했는데 새 요청이 없으면 이전
-                # 단계 경로를 overlay와 주기 발행에서 즉시 제거한다.
-                self.invalidate()
             if (
                 detected_section != "TRANSIT"
                 and detected_section != self._idle_endpoint
@@ -1025,7 +1042,12 @@ def main() -> int:
             f"slots={list(policy.allowed_slots)}"
         )
     print("e: switch ego vehicle | SPACE: charge complete | p: replan | q/ESC: quit")
-    planning_controller = IntegratedPlanningController(route_selector)
+    planning_controller = IntegratedPlanningController(
+        route_selector,
+        completion_radius_cm=float(
+            config.get("route_completion_radius_cm", 2.5)
+        ),
+    )
     route_publish_scheduler = RoutePublishScheduler(
         float(config.get("route_republish_period_sec", 1.0))
     )

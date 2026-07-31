@@ -111,6 +111,30 @@ def main() -> int:
         <= controller.limits.goal_position_tolerance_m + 0.005
     )
 
+    # 기어 전환 직후 cusp의 전진 마지막점이 더 가까워도 현재 후진 segment
+    # 밖으로 nearest 검색이 돌아가면 안 된다.
+    cusp_index = next(
+        index
+        for index in range(1, len(path))
+        if path[index].direction != path[index - 1].direction
+    )
+    reverse_start_guard = DifferentialDriveMpc()
+    reverse_start_guard.set_path(path)
+    reverse_start_guard.progress_index = cusp_index
+    forward_cusp = path[cusp_index - 1]
+    cusp_state = VehicleState(
+        forward_cusp.x_m,
+        forward_cusp.y_m,
+        forward_cusp.yaw_rad,
+    )
+    guarded_index = reverse_start_guard._nearest_index(cusp_state)
+    assert guarded_index >= cusp_index
+    assert path[guarded_index].direction == -1
+    reverse_command = reverse_start_guard.command(cusp_state)
+    assert reverse_command.status == "TRACKING"
+    assert reverse_command.progress_index >= cusp_index
+    assert reverse_command.linear_mps < 0.0
+
     straight_guard = DifferentialDriveMpc()
     straight_guard.set_path(path)
     start = path[0]

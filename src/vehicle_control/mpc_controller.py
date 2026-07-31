@@ -364,7 +364,14 @@ class DifferentialDriveMpc:
         )
 
     def _nearest_index(self, state: VehicleState) -> int:
-        start = max(0, self.progress_index - self.limits.nearest_backward_window)
+        # 기어가 바뀐 직후에는 cusp 양쪽 점이 거의 같은 위치에 있다.
+        # 검색 범위가 이전 direction 구간까지 넘어가면 전진 마지막점을 다시
+        # 선택해 후진이 영원히 시작되지 않으므로 현재 segment 안으로 제한한다.
+        segment_start = self._segment_start(self.progress_index)
+        start = max(
+            segment_start,
+            self.progress_index - self.limits.nearest_backward_window,
+        )
         stop = min(
             self._segment_end(self.progress_index) + 1,
             self.progress_index + self.limits.nearest_forward_window + 1,
@@ -376,6 +383,13 @@ class DifferentialDriveMpc:
                 + (self.path[index].y_m - state.y_m) ** 2
             ),
         )
+
+    def _segment_start(self, start: int) -> int:
+        direction = self.path[start].direction
+        index = start
+        while index > 0 and self.path[index - 1].direction == direction:
+            index -= 1
+        return index
 
     def _segment_end(self, start: int) -> int:
         direction = self.path[start].direction

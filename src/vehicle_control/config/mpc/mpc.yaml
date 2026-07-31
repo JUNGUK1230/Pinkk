@@ -47,9 +47,9 @@ pinkk_mpc_path_follower:
     rear_scan_center_deg: 0.0
     # [m] 전진 중 전방 sector 최소 거리가 이 값 이하이면 즉시 정지한다.
     # 너무 크게 하면 벽 가까운 정상 경로에서도 일찍 멈춘다.
-    front_stop_distance_m: 0.15
+    front_stop_distance_m: 0.10
     # [m] 후진 중 후방 sector 최소 거리가 이 값 이하이면 즉시 정지한다.
-    rear_stop_distance_m: 0.12
+    rear_stop_distance_m: 0.10
 
     # [Hz] MPC 계산 및 cmd_vel 발행 주기다. 높이면 반응 주기가 빨라지지만
     # CPU가 제한 시간 안에 최적화를 끝내지 못할 수 있다.
@@ -67,32 +67,32 @@ pinkk_mpc_path_follower:
 
     # [m/s] 전진 경로에서 따라가려는 기준 속도다.
     # max_forward_speed_mps보다 클 수 없다.
-    forward_speed_mps: 0.06
+    forward_speed_mps: 0.05
     # [m/s] 후진 경로에서 따라가려는 속도의 절댓값이다.
     # 실제 cmd_vel에는 음수로 출력되며 max_reverse_speed_mps보다 클 수 없다.
     reverse_speed_mps: 0.02
     # [m/s] 최적화가 허용하는 최대 전진 속도다.
-    max_forward_speed_mps: 0.08
+    max_forward_speed_mps: 0.06
     # [m/s] 최적화가 허용하는 최대 후진 속도의 절댓값이다.
     max_reverse_speed_mps: 0.03
     # [m/s²] 연속 제어 step 사이 선속도 변화 한계다.
     # 작게 하면 출발·감속이 부드럽지만 반응이 느리고, 크게 하면 급격해진다.
-    max_acceleration_mps2: 0.12
+    max_acceleration_mps2: 0.15
     # [1/m] 전체 경로에서 허용하는 최대 곡률이다. 최소 회전반경은 1/곡률이며
     # 현재 7.0은 약 14.3cm 반경이다. 차량의 실제 회전 능력을 넘기지 않는다.
-    max_curvature_1pm: 7.0
+    max_curvature_1pm: 10.0
     # [1/(m·s)] 시간당 곡률 명령 변화 한계다. 낮추면 조향이 부드럽지만
     # 코너 반응이 늦고, 높이면 빠르지만 좌우 진동 가능성이 커진다.
     max_curvature_rate_1pmps: 10.0
     # [rad/s] 최종 ROS 각속도의 절댓값 한계다.
     # angular speed = linear speed × curvature 관계에도 이 제한이 적용된다.
-    max_angular_speed_radps: 0.35
+    max_angular_speed_radps: 0.3
     # [1/m] 경로 기준 곡률이 이 값 이하일 때 직선 후보로 판정한다.
     # 크게 하면 완만한 곡선도 직선 제한을 적용받을 수 있다.
-    straight_curvature_threshold_1pm: 0.35
+    straight_curvature_threshold_1pm: 0.15
     # [1/m] 직선으로 판정된 구간에서 허용할 최대 보정 곡률이다.
     # 현재 3.0은 약 33.3cm 반경이며, 낮추면 부드럽지만 횡오차 복귀가 느려진다.
-    straight_max_curvature_1pm: 3.0
+    straight_max_curvature_1pm: 1.0
     # [deg] 직선 제한 구간에서 차량 yaw와 가장 가까운 경로 yaw의 오차가
     # 이 값을 넘으면 HEADING_ERROR_TOO_LARGE로 정지한다.
     max_tracking_yaw_error_deg: 25.0
@@ -110,11 +110,12 @@ pinkk_mpc_path_follower:
     goal_yaw_tolerance_deg: 8.0
     # [m] direction 전환점까지 이 거리 이내일 때 GEAR_CHANGE_REQUIRED를 발생시킨다.
     # 너무 크면 전환점에 도달하기 전에 후진하고, 너무 작으면 전환이 어려울 수 있다.
-    gear_position_tolerance_m: 0.01
+    gear_position_tolerance_m: 0.03
     # 현재 progress에서 앞으로 가장 가까운 경로점을 검색할 최대 점 개수다.
     # 경로점 간격 기준의 개수이며 m 단위가 아니다.
     nearest_forward_window: 140
     # 현재 progress보다 뒤쪽으로 가장 가까운 점을 다시 찾도록 허용하는 점 개수다.
+    # 현재 전진/후진 direction 구간 내부에서만 적용되며 기어 경계를 넘지 않는다.
     # 크게 하면 위치 노이즈에서 progress가 뒤로 흔들릴 가능성이 커진다.
     nearest_backward_window: 4
 
@@ -133,10 +134,10 @@ pinkk_mpc_path_follower:
 
     # 예측 horizon의 각 step에서 x/y 위치 오차에 주는 비용이다.
     # 올리면 경로 위치 복귀를 우선하지만 조향이 공격적일 수 있다.
-    weight_position: 200.0
+    weight_position: 300.0
     # 예측 horizon의 각 step에서 yaw 오차에 주는 비용이다.
     # 올리면 경로 방향을 강하게 맞추지만 횡오차 보정과 충돌할 수 있다.
-    weight_yaw: 2.0
+    weight_yaw: 2.5
     # horizon 마지막 예측점의 x/y 위치 오차 비용이다.
     # 올리면 예측 끝 위치를 경로에 강하게 맞추려 한다.
     weight_terminal_position: 500.0
@@ -150,7 +151,7 @@ pinkk_mpc_path_follower:
     weight_curvature: 0.08
     # 연속 예측 step의 속도 변화에 주는 비용이다.
     # 올리면 가감속이 부드럽지만 속도 반응이 느려진다.
-    weight_speed_rate: 1.0
+    weight_speed_rate: 0.8
     # 연속 예측 step의 곡률 변화에 주는 비용이다.
     # 올리면 좌우 진동이 줄지만 코너·횡오차 반응이 느려진다.
-    weight_curvature_rate: 0.04
+    weight_curvature_rate: 0.03
