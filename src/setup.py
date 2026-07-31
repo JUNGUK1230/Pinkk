@@ -52,6 +52,8 @@ setup(
         'console_scripts': [
             'central_control = central_control.main:main',
             'pid_path_follower = vehicle_control.pid_path_follower:main',
+            'mpc_path_follower = vehicle_control.mpc_path_follower:main',
+            'fused_pose_estimator = vehicle_control.fused_pose_estimator:main',
             'trajectory_publisher = central_control.overhead_vision.path_planning.path_publisher:main',
             'vehicle_pose_publisher = central_control.overhead_vision.path_planning.vehicle_pose_publisher:main',
         ],

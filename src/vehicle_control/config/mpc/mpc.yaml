@@ -1,0 +1,68 @@
+pinkk_mpc_path_follower:
+  ros__parameters:
+    # 입력은 중앙제어의 lidar_map 고정 경로와 rear-axle pose다.
+    trajectory_topic: /pinkk/planned_trajectory
+    path_valid_topic: /pinkk/path_valid
+    # 상단 카메라 x/y와 IMU·LiDAR heading을 결합한 pose를 사용한다.
+    pose_topic: /pinkk/fused_vehicle_pose
+
+    # 실차 pinky_bringup 입력. 다른 제어기는 반드시 종료해야 한다.
+    cmd_vel_topic: /cmd_vel
+    reject_cmd_vel_conflicts: true
+    # 경로 좌표는 이미지 기준(+y 아래, +yaw 시계방향)이지만 ROS angular.z
+    # 양수는 반시계방향이므로 실제 구동 명령의 회전 부호를 반전한다.
+    angular_command_sign: -1.0
+
+    # LiDAR가 끊기거나 진행 방향 가까이에 장애물이 있으면 fail-closed 정지한다.
+    scan_topic: /scan
+    require_scan: true
+    scan_timeout_sec: 0.8
+    front_scan_half_angle_deg: 18.0
+    rear_scan_half_angle_deg: 30.0
+    # Pinky rplidar_link가 차체와 180도 장착되어 scan 180도가 차체 전방이다.
+    front_scan_center_deg: 180.0
+    rear_scan_center_deg: 0.0
+    front_stop_distance_m: 0.15
+    rear_stop_distance_m: 0.12
+
+    # 10 step × 0.25 sec = 2.5 sec horizon. 최소 회전반경 14cm의 마지막
+    # 후진 곡선을 제자리 회전 없이 미리 볼 수 있도록 설정했다.
+    control_frequency_hz: 4.0
+    dt_sec: 0.25
+    horizon_steps: 10
+    solver_max_iterations: 45
+    solver_ftol: 1.0e-5
+
+    forward_speed_mps: 0.06
+    reverse_speed_mps: 0.02
+    max_forward_speed_mps: 0.08
+    max_reverse_speed_mps: 0.03
+    max_acceleration_mps2: 0.12
+    max_curvature_1pm: 7.0
+    # 카메라 위치의 작은 흔들림에 좌우 명령이 급반전하지 않게 제한한다.
+    max_curvature_rate_1pmps: 10.0
+    max_angular_speed_radps: 0.35
+    # 직선에서는 횡오차를 급하게 꺾어 잡지 않고 최소 회전반경 약 33cm로
+    # 완만하게 복귀한다. 경로 heading과 25도 이상 다르면 즉시 정지한다.
+    straight_curvature_threshold_1pm: 0.35
+    straight_max_curvature_1pm: 3.0
+    max_tracking_yaw_error_deg: 25.0
+
+    pose_timeout_sec: 0.6
+    path_timeout_sec: 2.5
+    gear_pause_sec: 0.7
+    goal_position_tolerance_m: 0.025
+    goal_yaw_tolerance_deg: 8.0
+    # 전진→후진 전환점에 충분히 접근한 뒤 기어를 바꿔 후진 주차 시작 오차를 줄인다.
+    gear_position_tolerance_m: 0.01
+    nearest_forward_window: 140
+    nearest_backward_window: 4
+
+    weight_position: 200.0
+    weight_yaw: 2.0
+    weight_terminal_position: 500.0
+    weight_terminal_yaw: 5.0
+    weight_speed: 50.0
+    weight_curvature: 0.08
+    weight_speed_rate: 1.0
+    weight_curvature_rate: 0.04

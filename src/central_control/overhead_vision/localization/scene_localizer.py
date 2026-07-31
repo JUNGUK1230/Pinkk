@@ -5,7 +5,7 @@ import json
 import math
 from pathlib import Path
 import time
-from typing import Sequence
+from typing import Callable, Sequence
 
 import cv2
 import numpy as np
@@ -308,6 +308,7 @@ class EgoVehicleTracker:
         yaw_alpha: float = 0.35,
         max_center_jump_px: float = 250.0,
         minimum_elongation: float = 1.05,
+        fixed_heading_resolver: Callable[[Point], float | None] | None = None,
     ) -> None:
         if rear_axle_offset_cm < 0.0:
             raise ValueError("rear_axle_offset_cm must not be negative")
@@ -325,32 +326,49 @@ class EgoVehicleTracker:
         self.yaw_alpha = yaw_alpha
         self.max_center_jump_px = max_center_jump_px
         self.minimum_elongation = minimum_elongation
+        self.fixed_heading_resolver = fixed_heading_resolver
         self.previous_center_bev: Point | None = None
         self.previous_yaw_rad: float | None = self.initial_yaw_rad
-        self.manual_yaw_rad: float | None = None
         # 첫 ego 선택 후에는 거리 대신 ByteTrack ID를 우선한다. 다른 차량이
         # 옆을 지나가도 경로계획 start가 다른 차로 바뀌는 것을 막는다.
         self.ego_track_id: int | None = None
+        self.visible_track_ids: tuple[int, ...] = ()
         # Mask의 장축은 방향축만 제공한다. 초기 yaw가 없으면 앞뒤 절대 방향은
         # 이후 프레임에서도 결정할 수 없으므로 계속 ambiguous로 유지한다.
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
 
-    def set_manual_heading(self, yaw_rad: float) -> None:
-        """사용자가 Camera BEV에서 지정한 차량 앞 방향을 고정 heading으로 사용한다."""
-        if not math.isfinite(yaw_rad):
-            raise ValueError("manual yaw must be finite")
-        self.manual_yaw_rad = _normalize_yaw(yaw_rad)
-        self.previous_yaw_rad = self.manual_yaw_rad
-        self.absolute_heading_resolved = True
-
-    def clear_manual_heading(self) -> None:
-        """수동 heading을 지우고 다시 사용자 입력이 필요한 상태로 되돌린다."""
-        self.manual_yaw_rad = None
+    def select_next_ego(self) -> tuple[bool, str]:
+        """현재 화면의 ByteTrack ID를 순환해 다음 ego 차량을 선택한다."""
+        if not self.visible_track_ids:
+            return False, "Ego switch failed: visible car track_id가 없습니다"
+        if self.ego_track_id in self.visible_track_ids:
+            current_index = self.visible_track_ids.index(self.ego_track_id)
+            selected = self.visible_track_ids[
+                (current_index + 1) % len(self.visible_track_ids)
+            ]
+        else:
+            selected = self.visible_track_ids[0]
+        if selected == self.ego_track_id and len(self.visible_track_ids) == 1:
+            return False, f"Ego switch skipped: track_id={selected} 한 대만 보입니다"
+        previous = self.ego_track_id
+        self.ego_track_id = selected
+        # 다른 차량의 위치/yaw filter 이력을 섞지 않는다.
+        self.previous_center_bev = None
         self.previous_yaw_rad = self.initial_yaw_rad
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
+        return True, f"Ego vehicle switched: track_id={previous} -> {selected}"
 
     def update(self, detections: Sequence[Detection]) -> VehicleObservation | None:
         car_detections = [item for item in detections if item.class_name == "car"]
+        self.visible_track_ids = tuple(
+            sorted(
+                {
+                    int(item.track_id)
+                    for item in car_detections
+                    if item.track_id is not None
+                }
+            )
+        )
         if not car_detections:
             return None
         centers = [_polygon_center(item.polygon_bev) for item in car_detections]
@@ -402,17 +420,23 @@ class EgoVehicleTracker:
                 + self.position_alpha * (raw_center[1] - self.previous_center_bev[1]),
             )
         axis, elongation = _principal_axis(detection.polygon_bev)
-        if self.manual_yaw_rad is not None:
-            # 테스트 단계에서는 mask 장축으로 heading을 갱신하지 않는다.
-            # 사용자가 다시 지정할 때까지 클릭한 절대 방향을 그대로 유지한다.
-            yaw = self.manual_yaw_rad
-            heading_ambiguous = False
-        else:
-            axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
+        fixed_yaw = (
+            self.fixed_heading_resolver(center)
+            if self.fixed_heading_resolver is not None
+            else None
+        )
+        axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
+        if elongation >= self.minimum_elongation:
             yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))
-            reference_yaw = self.previous_yaw_rad
+            # 고정 endpoint yaw는 실제 측정값을 대체하지 않고, 차량 장축의
+            # 앞/뒤 180도 모호성만 해소하는 기준으로 사용한다.
+            reference_yaw = (
+                _normalize_yaw(fixed_yaw)
+                if fixed_yaw is not None
+                else self.previous_yaw_rad
+            )
             if reference_yaw is None:
-                yaw = yaw_candidates[0]
+                measured_yaw = yaw_candidates[0]
             else:
                 measured_yaw = min(
                     yaw_candidates,
@@ -420,15 +444,32 @@ class EgoVehicleTracker:
                         _angle_difference(value, reference_yaw)
                     ),
                 )
+            if self.previous_yaw_rad is None:
+                yaw = measured_yaw
+            else:
                 yaw = _normalize_yaw(
-                    reference_yaw
+                    self.previous_yaw_rad
                     + self.yaw_alpha
-                    * _angle_difference(measured_yaw, reference_yaw)
+                    * _angle_difference(measured_yaw, self.previous_yaw_rad)
                 )
             heading_ambiguous = (
-                not self.absolute_heading_resolved
-                or elongation < self.minimum_elongation
+                fixed_yaw is None and not self.absolute_heading_resolved
             )
+            if fixed_yaw is not None:
+                self.absolute_heading_resolved = True
+        elif fixed_yaw is not None:
+            # 마스크가 거의 정사각형이라 장축이 불안정할 때만 고정 yaw로
+            # 안전하게 대체한다.
+            yaw = _normalize_yaw(fixed_yaw)
+            heading_ambiguous = False
+            self.absolute_heading_resolved = True
+        else:
+            yaw = (
+                self.previous_yaw_rad
+                if self.previous_yaw_rad is not None
+                else axis_yaw
+            )
+            heading_ambiguous = True
         center_lidar = self.transform.point_to_lidar(center)
         center_cm = (
             center_lidar[0] * self.transform.resolution_cm,
@@ -486,11 +527,21 @@ class ParkingSlotMap:
         self,
         detections: Sequence[Detection],
         image_shape: tuple[int, int],
+        excluded_track_ids: set[int] | None = None,
     ) -> tuple[ParkingSlotObservation, ...]:
+        excluded_track_ids = excluded_track_ids or set()
         height, width = image_shape
         vehicle_mask = np.zeros((height, width), dtype=np.uint8)
         for detection in detections:
             if detection.class_name != "car":
+                continue
+            # 현재 운행 중인 ego가 슬롯 가장자리를 스치더라도 목표 칸을 다른
+            # 차량이 점유한 것으로 오판하지 않는다. 다른 track_id 차량은 기존
+            # 그대로 점유 계산에 포함한다.
+            if (
+                detection.track_id is not None
+                and detection.track_id in excluded_track_ids
+            ):
                 continue
             polygon = np.rint(detection.polygon_bev).astype(np.int32)
             if len(polygon) >= 3:
@@ -626,13 +677,19 @@ class VehicleStateManager:
 
 
 class ChargeEpisodeCoordinator:
-    """차량 상태 목록에서 FIFO 충전 대상과 C2→C1 목표를 선택한다."""
+    """차량 상태 목록에서 FIFO 충전 대상과 C2 우선·C1 대체 목표를 선택한다."""
 
     def __init__(self, charge_slot_priority: Sequence[str] = ("C2", "C1")) -> None:
         if not charge_slot_priority:
             raise ValueError("charge_slot_priority must not be empty")
         self.charge_slot_priority = tuple(charge_slot_priority)
         self._assignment: ChargeAssignment | None = None
+        self._operator_selected_track_id: int | None = None
+
+    def select_vehicle(self, track_id: int) -> None:
+        """운영자가 선택한 차량을 다음 충전 배정의 최우선 후보로 만든다."""
+        self._operator_selected_track_id = int(track_id)
+        self._assignment = None
 
     def observe(
         self,
@@ -652,6 +709,17 @@ class ChargeEpisodeCoordinator:
                 key=lambda vehicle: (vehicle.first_seen_unix_sec, vehicle.track_id),
             )
         )
+        if self._operator_selected_track_id is not None:
+            candidates = tuple(
+                sorted(
+                    candidates,
+                    key=lambda vehicle: (
+                        vehicle.track_id != self._operator_selected_track_id,
+                        vehicle.first_seen_unix_sec,
+                        vehicle.track_id,
+                    ),
+                )
+            )
         candidate_ids = tuple(vehicle.track_id for vehicle in candidates)
 
         # 배정된 차가 실제 충전칸에 도착하면 charging 상태로 유지한다.
@@ -727,6 +795,7 @@ class SceneLocalizer:
         goal_heading_weight_cm: float = 14.0,
         target_slot_name: str | None = None,
         parking_assignment: ParkingAssignmentPolicy | None = None,
+        post_charge_parking_assignment: ParkingAssignmentPolicy | None = None,
     ) -> None:
         self.tracker = tracker
         self.parking_slots = parking_slots
@@ -737,6 +806,51 @@ class SceneLocalizer:
         self.goal_heading_weight_cm = goal_heading_weight_cm
         self.target_slot_name = target_slot_name
         self.parking_assignment = parking_assignment
+        # 충전 완료는 YOLO만으로 알 수 없는 외부 이벤트다. 현재는 운영자가
+        # space를 눌러 전달하며, 해당 track_id만 P1~P5 대기 주차 단계로 넘긴다.
+        self.post_charge_parking_assignment = post_charge_parking_assignment
+        self._charge_completed_vehicle_ids: set[int] = set()
+
+    def select_next_ego(self) -> tuple[bool, str]:
+        changed, message = self.tracker.select_next_ego()
+        if (
+            changed
+            and self.charge_coordinator is not None
+            and self.tracker.ego_track_id is not None
+        ):
+            self.charge_coordinator.select_vehicle(self.tracker.ego_track_id)
+        return changed, message
+
+    def complete_charging(
+        self,
+        vehicle_track_id: int | None,
+        tracked_vehicles: Sequence[TrackedVehicleObservation],
+    ) -> tuple[bool, str]:
+        """운영자 충전 완료 이벤트를 검증하고 P1~P5 단계로 전환한다."""
+        if vehicle_track_id is None:
+            return False, "충전 완료 처리 실패: ego track_id가 없습니다"
+        vehicle = next(
+            (
+                item
+                for item in tracked_vehicles
+                if item.track_id == vehicle_track_id
+            ),
+            None,
+        )
+        if vehicle is None:
+            return False, "충전 완료 처리 실패: ego 차량 상태를 찾지 못했습니다"
+        if vehicle.state != "charging":
+            return (
+                False,
+                "충전 완료 처리 실패: 현재 ego가 C1/C2 충전칸에 있지 않습니다 "
+                f"(state={vehicle.state})",
+            )
+        self._charge_completed_vehicle_ids.add(vehicle_track_id)
+        return (
+            True,
+            "충전이 완료되었습니다. "
+            f"track_id={vehicle_track_id}의 P1~P5 대기 주차 경로를 생성합니다.",
+        )
 
     def observe(
         self,
@@ -751,7 +865,16 @@ class SceneLocalizer:
             else observed_at_unix_sec
         )
         vehicle = self.tracker.update(detections)
-        slots = self.parking_slots.observe(detections, image_shape)
+        excluded_track_ids = (
+            {vehicle.track_id}
+            if vehicle is not None and vehicle.track_id is not None
+            else set()
+        )
+        slots = self.parking_slots.observe(
+            detections,
+            image_shape,
+            excluded_track_ids=excluded_track_ids,
+        )
         tracked_vehicles = self.vehicle_state_manager.observe(
             detections,
             self.parking_slots,
@@ -780,11 +903,73 @@ class SceneLocalizer:
                 vehicle,
                 slots,
                 None,
-                "ego heading is required; press h and click the vehicle front",
+                "ego vehicle selection is ambiguous",
                 tracked_vehicles,
                 charge_assignment,
             )
-        if (
+        current_vehicle_state = next(
+            (
+                item.state
+                for item in tracked_vehicles
+                if item.track_id == vehicle.track_id
+            ),
+            None,
+        )
+        post_charge_requested = vehicle.track_id in self._charge_completed_vehicle_ids
+        # 충전칸에 실제로 정차한 차량은 충전 완료 이벤트 전까지 다음 목적지를
+        # 받으면 안 된다. coordinator에 새 배정 후보가 없는 경우에도 기존
+        # 일반 주차 정책으로 빠지는 것을 여기서 막는다.
+        if current_vehicle_state == "charging" and not post_charge_requested:
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "vehicle is charging; press SPACE after charging is complete",
+                tracked_vehicles,
+                charge_assignment,
+            )
+        if post_charge_requested and current_vehicle_state == "charged_waiting_exit":
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "charge completed; vehicle is waiting in P1~P5 for exit request",
+                tracked_vehicles,
+                charge_assignment,
+            )
+        if post_charge_requested:
+            if self.post_charge_parking_assignment is None:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    "charge completed but P1~P5 assignment policy is not configured",
+                    tracked_vehicles,
+                    charge_assignment,
+                )
+            empty_slots = list(
+                self.post_charge_parking_assignment.rank_free_slots(slots)
+            )
+            if not empty_slots:
+                return SceneObservation(
+                    frame_index,
+                    observed_at,
+                    vehicle,
+                    slots,
+                    None,
+                    "charge completed but no free slot in P1~P5",
+                    tracked_vehicles,
+                    charge_assignment,
+                )
+            candidate_slot_names = tuple(slot.name for slot in empty_slots)
+            assignment_policy = self.post_charge_parking_assignment.name
+        elif (
             charge_assignment is not None
             and charge_assignment.status == "assigned_to_charge"
             and vehicle.track_id != charge_assignment.vehicle_track_id
@@ -802,13 +987,13 @@ class SceneLocalizer:
                 tracked_vehicles,
                 charge_assignment,
             )
-        if (
+        elif (
             charge_assignment is not None
             and charge_assignment.status == "assigned_to_charge"
             and charge_assignment.target_slot_name is not None
         ):
-            # 입차 단계라도 충전칸이 비어 있으면 Episode 규칙이 기존 P구역
-            # 배정보다 우선한다. 따라서 배정된 ego는 즉시 C2→C1로 이동한다.
+            # P6~P10 대기 차량에는 Episode 규칙이 기존 P구역 배정보다
+            # 우선하며 C2를 먼저, 점유 시 C1을 목표로 사용한다.
             target_slot = next(
                 (
                     slot
@@ -914,7 +1099,7 @@ class SceneLocalizer:
                 * abs(_angle_difference(candidates[0][2], start[2]))
             )
             ranked.append((score, slot, candidates[0], candidates[1]))
-        if self.parking_assignment is not None and self.target_slot_name is None:
+        if assignment_policy is not None and self.target_slot_name is None:
             # 정책에서 이미 입구·출구 거리 기준 우선순위를 정했으므로, 첫 빈 칸만
             # 선택한다. yaw 정렬 점수는 같은 칸의 두 rear-axle pose 순서에만 쓴다.
             _, selected_slot, goal, alternative = ranked[0]

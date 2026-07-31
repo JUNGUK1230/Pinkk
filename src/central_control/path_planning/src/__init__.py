@@ -1,4 +1,4 @@
-"""Active Hybrid A* parking-path components."""
+"""Fixed-route runtime API and legacy offline planning components."""
 
 from .hybrid_astar_planner import HybridAStarPlanner, HybridAStarResult, HybridState
 from .path_smoothing import (
@@ -28,6 +28,11 @@ from .reeds_shepp import (
     ReedsSheppSegment,
 )
 from .occupancy_grid import OccupancyGridMap
+from .fixed_route_selector import (
+    FixedRoutePoint,
+    FixedRouteSelection,
+    FixedRouteSelector,
+)
 
 __all__ = [
     "HybridAStarPlanner",
@@ -53,4 +58,7 @@ __all__ = [
     "ReedsSheppPose",
     "ReedsSheppSegment",
     "OccupancyGridMap",
+    "FixedRoutePoint",
+    "FixedRouteSelection",
+    "FixedRouteSelector",
 ]

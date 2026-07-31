@@ -8,17 +8,12 @@ from typing import Mapping, Sequence
 PATH_TOPIC = "/pinkk/planned_path"
 TRAJECTORY_TOPIC = "/pinkk/planned_trajectory"
 POSE_TOPIC = "/pinkk/vehicle_pose"
-IMAGE_TOPIC = "/pinkk/localization/image"
-LIDAR_IMAGE_TOPIC = "/pinkk/lidar_map/image"
-MANAGEMENT_STATUS_TOPIC = "/pinkk/management/status"
+PATH_VALID_TOPIC = "/pinkk/path_valid"
 TRAJECTORY_FIELDS = (
     "x_m",
     "y_m",
     "yaw_rad",
     "direction",
-    "target_speed_mps",
-    "steer_rad",
-    "stop_required",
 )
 
 
@@ -30,12 +25,8 @@ class DirectRosPublisher:
         path_topic: str = PATH_TOPIC,
         trajectory_topic: str = TRAJECTORY_TOPIC,
         pose_topic: str = POSE_TOPIC,
-        image_topic: str = IMAGE_TOPIC,
-        lidar_image_topic: str = LIDAR_IMAGE_TOPIC,
-        management_status_topic: str = MANAGEMENT_STATUS_TOPIC,
-        operational_space_polygons: Mapping[
-            str, Sequence[Sequence[float]]
-        ] | None = None,
+        path_valid_topic: str = PATH_VALID_TOPIC,
+        lidar_resolution_cm: float = 1.0,
     ) -> None:
         try:
             import rclpy
@@ -43,8 +34,7 @@ class DirectRosPublisher:
             from nav_msgs.msg import Path as RosPath
             from rclpy.node import Node
             from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-            from sensor_msgs.msg import Image
-            from std_msgs.msg import Float64MultiArray, MultiArrayDimension, String
+            from std_msgs.msg import Bool, Float64MultiArray, MultiArrayDimension
         except ImportError as error:
             raise RuntimeError(
                 "ROS 2 rclpy is required for direct topic publishing. "
@@ -56,8 +46,7 @@ class DirectRosPublisher:
         self._RosPath = RosPath
         self._Float64MultiArray = Float64MultiArray
         self._MultiArrayDimension = MultiArrayDimension
-        self._Image = Image
-        self._String = String
+        self._Bool = Bool
         self._owns_context = not rclpy.ok()
         if self._owns_context:
             rclpy.init(args=None)
@@ -76,6 +65,11 @@ class DirectRosPublisher:
         self._trajectory_publisher = self._node.create_publisher(
             Float64MultiArray,
             trajectory_topic,
+            trajectory_qos,
+        )
+        self._path_valid_publisher = self._node.create_publisher(
+            Bool,
+            path_valid_topic,
             trajectory_qos,
         )
         self._pose_publisher = self._node.create_publisher(
@@ -104,53 +98,26 @@ class DirectRosPublisher:
         self.path_topic = path_topic
         self.trajectory_topic = trajectory_topic
         self.pose_topic = pose_topic
-        self.image_topic = image_topic
-        self.lidar_image_topic = lidar_image_topic
-        self.management_status_topic = management_status_topic
-        self.operational_space_polygons = {
-            str(name): tuple(
-                (float(point[0]), float(point[1])) for point in polygon
-            )
-            for name, polygon in (operational_space_polygons or {}).items()
-        }
-
-    def publish_image(self, image: object) -> None:
-        """OpenCV BGR 화면을 cv_bridge 없이 sensor_msgs/Image로 발행한다."""
-        self._publish_image(self._image_publisher, image, "overhead_camera_bev")
-
-    def publish_lidar_image(self, image: object) -> None:
-        """차량 좌표가 표시된 실제 LiDAR 맵을 웹 영상 토픽으로 발행한다."""
-        self._publish_image(self._lidar_image_publisher, image, "lidar_map")
-
-    def _publish_image(self, publisher: object, image: object, frame_id: str) -> None:
-        if not hasattr(image, "shape") or len(image.shape) != 3:
-            raise ValueError("image must be an HxWx3 BGR array")
-        height, width, channels = image.shape
-        if channels != 3:
-            raise ValueError("image must have exactly 3 BGR channels")
-        contiguous = image if image.flags.c_contiguous else image.copy(order="C")
-        message = self._Image()
-        message.header.stamp = self._node.get_clock().now().to_msg()
-        message.header.frame_id = frame_id
-        message.height = int(height)
-        message.width = int(width)
-        message.encoding = "bgr8"
-        message.is_bigendian = False
-        message.step = int(width * channels)
-        message.data = contiguous.tobytes()
-        publisher.publish(message)
+        self.path_valid_topic = path_valid_topic
+        self.lidar_resolution_cm = float(lidar_resolution_cm)
+        if self.lidar_resolution_cm <= 0.0:
+            raise ValueError("lidar_resolution_cm must be positive")
 
     def publish_pose(self, vehicle: object) -> None:
-        """VehicleObservation rear axle pose를 `lidar_map` m 단위로 발행한다."""
-        rear_axle_cm = getattr(vehicle, "rear_axle_cm")
-        yaw_rad = float(getattr(vehicle, "yaw_rad"))
+        """카메라 차체 중심 x/y와 측정 장축 yaw를 `lidar_map`으로 발행한다."""
+        center_lidar_px = getattr(vehicle, "center_lidar_px")
         stamp = self._node.get_clock().now().to_msg()
         message = self._PoseStamped()
         message.header.stamp = stamp
         message.header.frame_id = "lidar_map"
-        message.pose.position.x = float(rear_axle_cm[0]) / 100.0
-        message.pose.position.y = float(rear_axle_cm[1]) / 100.0
+        message.pose.position.x = (
+            float(center_lidar_px[0]) * self.lidar_resolution_cm / 100.0
+        )
+        message.pose.position.y = (
+            float(center_lidar_px[1]) * self.lidar_resolution_cm / 100.0
+        )
         message.pose.position.z = 0.0
+        yaw_rad = float(getattr(vehicle, "yaw_rad"))
         message.pose.orientation.z = math.sin(yaw_rad / 2.0)
         message.pose.orientation.w = math.cos(yaw_rad / 2.0)
         self._pose_publisher.publish(message)
@@ -283,7 +250,7 @@ class DirectRosPublisher:
         return inside
 
     def publish_trajectory(self, trajectory: Sequence[object]) -> None:
-        """검증된 Hybrid trajectory를 표준 path와 제어용 행렬 토픽으로 발행한다."""
+        """고정 경로를 표준 path와 x/y/yaw/direction 행렬로 발행한다."""
         if not trajectory:
             raise ValueError("trajectory must not be empty")
         stamp = self._node.get_clock().now().to_msg()
@@ -307,9 +274,6 @@ class DirectRosPublisher:
                     pose.pose.position.y,
                     yaw_rad,
                     float(getattr(point, "direction")),
-                    float(getattr(point, "target_speed_mps")),
-                    float(getattr(point, "steer_rad")),
-                    float(getattr(point, "stop_required")),
                 )
             )
         trajectory_message = self._Float64MultiArray()
@@ -323,12 +287,22 @@ class DirectRosPublisher:
         field_dim.stride = len(TRAJECTORY_FIELDS)
         trajectory_message.layout.dim = [point_dim, field_dim]
         trajectory_message.data = matrix
+        validity = self._Bool()
+        validity.data = True
+        self._path_valid_publisher.publish(validity)
         self._path_publisher.publish(path_message)
         self._trajectory_publisher.publish(trajectory_message)
         self._node.get_logger().info(
             f"Published {len(trajectory)} points: "
             f"{self.path_topic}, {self.trajectory_topic}"
         )
+
+    def invalidate_trajectory(self) -> None:
+        """Ego 전환 중 이전 차량 경로를 제어기가 즉시 폐기하게 알린다."""
+        validity = self._Bool()
+        validity.data = False
+        self._path_valid_publisher.publish(validity)
+        self._node.get_logger().warning("Invalidated active trajectory")
 
     def spin_once(self) -> None:
         self._rclpy.spin_once(self._node, timeout_sec=0.0)

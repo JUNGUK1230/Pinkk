@@ -1,4 +1,4 @@
-"""YOLO 검출부터 Hybrid A* start/goal 입력까지의 mock 회귀 테스트."""
+"""YOLO 검출부터 고정 경로 section/target 입력까지의 mock 회귀 테스트."""
 
 import json
 import math
@@ -6,7 +6,6 @@ from pathlib import Path
 import sys
 import tempfile
 
-import cv2
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -26,10 +25,7 @@ from overhead_vision.localization.scene_localizer import (  # noqa: E402
     VehicleStateManager,
     save_scene_observation,
 )
-from overhead_vision.localization.live_localization import (  # noqa: E402
-    ManualHeadingSelector,
-    _draw_continuous_path,
-)
+from overhead_vision.localization.live_localization import _draw_continuous_path  # noqa: E402
 from vision_scene_input import (  # noqa: E402
     VisionSceneUnavailable,
     load_vision_planning_request,
@@ -88,6 +84,8 @@ def main() -> int:
                     "free_slot": rectangle(900.0, 400.0, 150.0, 160.0).tolist(),
                     "C1": rectangle(1200.0, 300.0, 150.0, 160.0).tolist(),
                     "C2": rectangle(1200.0, 600.0, 150.0, 160.0).tolist(),
+                    "P1": rectangle(1500.0, 600.0, 80.0, 120.0).tolist(),
+                    "P2": rectangle(1400.0, 600.0, 80.0, 120.0).tolist(),
                 }
             ),
             encoding="utf-8",
@@ -146,6 +144,31 @@ def main() -> int:
         assert request.slot_name == "free_slot"
         assert request.start_pose_cm == scene.planning_request.start_pose_cm
 
+        # 사용자가 e 키를 누르는 동작은 화면에 보이는 ByteTrack ID를
+        # 순환한다. 차량별 position filter 이력을 섞지 않고 즉시 새 중심을 쓴다.
+        switch_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=0.5,
+            yaw_alpha=1.0,
+        )
+        first_car = detection((120.0, 120.0), 0.9, track_id=1)
+        second_car = detection((320.0, 220.0), 0.8, track_id=2)
+        selected_first = switch_tracker.update([first_car, second_car])
+        assert selected_first is not None and selected_first.track_id == 1
+        changed, message = switch_tracker.select_next_ego()
+        assert changed and "1 -> 2" in message
+        selected_second = switch_tracker.update([first_car, second_car])
+        assert selected_second is not None and selected_second.track_id == 2
+        assert selected_second.center_bev_px == (320.0, 220.0)
+        changed, message = switch_tracker.select_next_ego()
+        assert changed and "2 -> 1" in message
+        selected_first_again = switch_tracker.update([first_car, second_car])
+        assert selected_first_again is not None
+        assert selected_first_again.track_id == 1
+
         fixed_tracker = EgoVehicleTracker(
             transform,
             rear_axle_offset_cm=4.0,
@@ -166,6 +189,43 @@ def main() -> int:
         )
         assert fixed_scene.planning_request is not None
         assert fixed_scene.planning_request.slot_name == "C1"
+
+        # 운행 중인 ego mask가 목표 슬롯 가장자리를 10% 이상 스쳐도 그 차량
+        # 자신 때문에 목표 칸이 occupied로 바뀌거나 경로가 사라지면 안 된다.
+        grazing_ego = detection(
+            (1115.0, 600.0),
+            0.95,
+            100.0,
+            70.0,
+            track_id=31,
+        )
+        raw_grazing_slots = parking.observe([grazing_ego], (800, 1600))
+        raw_c2 = next(slot for slot in raw_grazing_slots if slot.name == "C2")
+        assert raw_c2.occupied
+        grazing_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(1115.0, 600.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        grazing_scene = SceneLocalizer(
+            grazing_tracker,
+            parking,
+            target_slot_name="C2",
+        ).observe(
+            [grazing_ego],
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        filtered_c2 = next(
+            slot for slot in grazing_scene.parking_slots if slot.name == "C2"
+        )
+        assert not filtered_c2.occupied
+        assert grazing_scene.planning_request is not None
+        assert grazing_scene.planning_request.slot_name == "C2"
 
         # 입구 기준 자동 배정은 허용 칸 중 빈 자리만 남긴 뒤, 가장 먼 칸부터
         # 후보 순서를 만든다. planner는 첫 후보만 받아 불필요한 주차칸 탐색을 줄인다.
@@ -324,41 +384,6 @@ def main() -> int:
         assert ambiguous_scene.vehicle.heading_ambiguous
         assert not ambiguous_scene.planning_ready
 
-        heading_selector = ManualHeadingSelector(ambiguous_tracker, transform)
-        heading_selector.update_scene(ambiguous_scene)
-        heading_selector.arm()
-        center_x, center_y = ambiguous_scene.vehicle.center_bev_px
-        heading_selector.mouse_callback(
-            cv2.EVENT_LBUTTONDOWN,
-            round(center_x + 100.0),
-            round(center_y),
-            0,
-            None,
-        )
-        assert ambiguous_tracker.manual_yaw_rad is not None
-
-        ambiguous_tracker.set_manual_heading(math.radians(-25.0))
-        manual_scene = SceneLocalizer(
-            ambiguous_tracker,
-            parking,
-            target_slot_name="C1",
-        ).observe(
-            detections,
-            (800, 1600),
-            frame_index=9,
-            observed_at_unix_sec=101.1,
-        )
-        assert manual_scene.vehicle is not None
-        assert not manual_scene.vehicle.heading_ambiguous
-        assert not manual_scene.vehicle.ego_selection_ambiguous
-        assert math.isclose(
-            manual_scene.vehicle.yaw_rad,
-            math.radians(-25.0),
-            abs_tol=1e-9,
-        )
-        assert manual_scene.planning_request is not None
-        assert manual_scene.planning_request.slot_name == "C1"
-
         # ByteTrack ID가 생긴 뒤에는 이전 중심에 더 가까운 다른 차량이 있어도
         # 첫 ego ID를 계속 선택한다. ID가 사라지면 다른 차량으로 바꾸지 않는다.
         id_tracker = EgoVehicleTracker(
@@ -495,6 +520,50 @@ def main() -> int:
         assert episode_scene.charge_assignment.target_slot_name == "C2"
         assert episode_scene.planning_request is not None
         assert episode_scene.planning_request.slot_name == "C2"
+
+        # C2에 실제로 도착한 ego가 space 충전 완료 이벤트를 받으면, 아직
+        # 화면상 C2에 있어도 C2 재계획 대신 P1~P5 대기 주차 단계로 전환한다.
+        post_charge_policy = ParkingAssignmentPolicy(
+            name="charge_to_exit",
+            reference_bev_px=(1600.0, 600.0),
+            allowed_slots=("P1", "P2"),
+            preference="nearest",
+            candidate_limit=2,
+        )
+        post_charge_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(1200.0, 600.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        post_charge_localizer = SceneLocalizer(
+            post_charge_tracker,
+            parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=entry_policy,
+            post_charge_parking_assignment=post_charge_policy,
+        )
+        c2_ego = detection((1200.0, 600.0), 0.95, 100.0, 70.0, track_id=42)
+        charging_scene = post_charge_localizer.observe(
+            [c2_ego], (800, 1600), frame_index=14, observed_at_unix_sec=104.0
+        )
+        assert charging_scene.planning_request is None
+        completed, message = post_charge_localizer.complete_charging(
+            42, charging_scene.tracked_vehicles
+        )
+        assert completed and "충전이 완료되었습니다" in message
+        post_charge_scene = post_charge_localizer.observe(
+            [c2_ego], (800, 1600), frame_index=15, observed_at_unix_sec=104.1
+        )
+        assert post_charge_scene.planning_request is not None
+        assert post_charge_scene.planning_request.slot_name == "P1", (
+            post_charge_scene.planning_request.slot_name,
+            post_charge_scene.planning_request.candidate_slot_names,
+        )
+        assert post_charge_scene.planning_request.assignment_policy == "charge_to_exit"
 
         line_image = np.zeros((100, 120, 3), dtype=np.uint8)
         skipped = _draw_continuous_path(
