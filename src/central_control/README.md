@@ -2,7 +2,8 @@
 
 상단 카메라로 차량의 현재 section을 찾고, 미리 생성한 주차장 고정 경로를
 ROS 2 토픽으로 전달하는 중앙제어 모듈입니다. 실시간 운행에서는 차량 heading을
-클릭하지 않으며, `START`와 각 주차면에 설정된 고정 yaw를 사용합니다.
+클릭하지 않으며, 차량 마스크 장축을 Camera–LiDAR 정합으로 변환해 yaw를
+측정합니다. `START`와 각 주차면의 고정 yaw는 앞·뒤 판별 기준으로 사용합니다.
 
 ## 설치
 
@@ -52,6 +53,9 @@ python3 scripts/test_fixed_live_route_bridge.py
 - `C1`, `C2` → `P1`~`P5`
 - `P1`~`P5` → `EXIT`
 
+동일 라인 내부 전이(`P10`→`P9`, `C1`→`C2`, `P1`→`P2` 등)는 허용하지
+않으며, 다른 차량의 충전 배정은 현재 ego의 `TARGET`으로 표시하지 않습니다.
+
 ## 실시간 실행
 
 ```bash
@@ -72,12 +76,12 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 - `p`: 현재 운행 단계의 고정 경로 다시 선택
 - `q` 또는 `ESC`: 종료
 
-고정 yaw를 사용하므로 heading 지정용 마우스 클릭과 `h`/`x` 키는 없습니다.
+heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`/`x` 키는 없습니다.
 
 ## ROS 2 토픽
 
 - `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 상단 카메라에서 얻은
-  차체 중심 x/y 원본(orientation은 사용하지 않음)
+  차체 중심 x/y와 LiDAR map 좌표계의 측정 yaw
 - `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
 - `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
 - `/pinkk/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
@@ -102,8 +106,8 @@ velocity, stop flag는 보내지 않으며 차량 주행 코드가 경로를 바
 2. YOLO segmentation과 ByteTrack으로 ego 차량을 추적합니다.
 3. Camera–LiDAR affine 정합으로 차량 rear-axle 위치를 `lidar_map_cm`으로
    변환합니다.
-4. 차량 중심이 포함된 주차면 또는 출발지를 현재 section으로 판별하고 해당
-   endpoint의 고정 yaw를 적용합니다.
+4. 차량 마스크 장축을 LiDAR map yaw로 변환하고 endpoint 고정 yaw로 앞·뒤를
+   판별합니다.
 5. 입차·충전·출차 상태와 빈 주차면을 기준으로 목표 section을 배정합니다.
 6. 현재 section과 목표 section에 대응하는 CSV 전체를 읽어 경로 토픽으로
    즉시 발행합니다.

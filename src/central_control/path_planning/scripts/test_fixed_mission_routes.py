@@ -119,7 +119,8 @@ def _rounded_centerline(
         incoming = incoming_delta / incoming_length
         outgoing = outgoing_delta / outgoing_length
         turn = math.atan2(
-            float(np.cross(incoming, outgoing)),
+            # NumPy 2.x에서 제거된 2D np.cross 대신 z 성분을 직접 계산한다.
+            float(incoming[0] * outgoing[1] - incoming[1] * outgoing[0]),
             float(np.dot(incoming, outgoing)),
         )
         tangent_length = turning_radius_cm * math.tan(abs(turn) / 2.0)
@@ -366,11 +367,18 @@ def build_route(
             float(planner.path_output_step_cm),
         )
         if "goal" in endpoints[target]:
+            entry_turning_radius_cm = float(
+                endpoints[target].get(
+                    "entry_turning_radius_cm",
+                    planner.minimum_turning_radius_cm,
+                )
+            )
             reverse_entry = _direction_only_path(
                 planner,
                 _pose(endpoints[target]["staging"]),
                 _pose(endpoints[target]["goal"]),
                 -1,
+                entry_turning_radius_cm,
             )
             rows.extend(
                 {
@@ -384,7 +392,15 @@ def build_route(
         _validate_route(
             rows,
             planner,
-            float(planner.minimum_turning_radius_cm),
+            min(
+                float(network["turning_radius_cm"]),
+                float(
+                    endpoints[target].get(
+                        "entry_turning_radius_cm",
+                        planner.minimum_turning_radius_cm,
+                    )
+                ),
+            ),
             source,
             target,
         )

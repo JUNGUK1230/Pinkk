@@ -85,7 +85,7 @@ class DirectRosPublisher:
             raise ValueError("lidar_resolution_cm must be positive")
 
     def publish_pose(self, vehicle: object) -> None:
-        """Heading과 무관한 카메라 차체 중심 x/y를 `lidar_map`으로 발행한다."""
+        """카메라 차체 중심 x/y와 측정 장축 yaw를 `lidar_map`으로 발행한다."""
         center_lidar_px = getattr(vehicle, "center_lidar_px")
         stamp = self._node.get_clock().now().to_msg()
         message = self._PoseStamped()
@@ -98,9 +98,9 @@ class DirectRosPublisher:
             float(center_lidar_px[1]) * self.lidar_resolution_cm / 100.0
         )
         message.pose.position.z = 0.0
-        # 이 토픽의 orientation은 사용하지 않는다. 실제 heading은 IMU·LiDAR
-        # 융합 노드가 계산한다.
-        message.pose.orientation.w = 1.0
+        yaw_rad = float(getattr(vehicle, "yaw_rad"))
+        message.pose.orientation.z = math.sin(yaw_rad / 2.0)
+        message.pose.orientation.w = math.cos(yaw_rad / 2.0)
         self._pose_publisher.publish(message)
 
     def publish_trajectory(self, trajectory: Sequence[object]) -> None:

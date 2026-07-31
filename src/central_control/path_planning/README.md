@@ -32,6 +32,9 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 - `C1`, `C2` → `P1`~`P5`
 - `P1`~`P5` → `EXIT`
 
+같은 단계의 주차면 사이 이동(`P10`→`P9`, `C1`→`C2`, `P1`→`P2` 등)은
+생성·표시·토픽 발행 대상이 아닙니다.
+
 슬롯에서 출차할 때는 해당 주차 진입 경로를 반대로 따라 전진합니다. 목표
 슬롯에서는 도로 중앙 staging pose에서 한 번의 연속 후진 maneuver로
 진입합니다.
@@ -69,12 +72,12 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 1. YOLO/ByteTrack으로 ego 차량의 중심을 검출합니다.
 2. Camera–LiDAR 정합으로 rear-axle 위치를 `lidar_map_cm`으로 변환합니다.
 3. 차량 중심이 포함된 주차면 또는 `START`를 현재 section으로 사용합니다.
-4. 현재 section의 고정 yaw와 배정된 목표 section으로 CSV를 선택합니다.
+4. 현재 section과 배정된 목표 section으로 고정 CSV를 선택합니다.
 5. 선택한 경로를 파일 중계 없이 ROS 2 토픽으로 발행합니다.
 
-차량 앞쪽을 클릭하는 heading 입력은 사용하지 않습니다. `START`와 각 주차면의
-yaw는 `fixed_mission_routes.yaml`의 endpoint pose에서 가져옵니다. 차량이
-`TRANSIT` 상태이면 새 경로를 선택하지 않습니다.
+차량 앞쪽을 클릭하는 heading 입력은 사용하지 않습니다. 카메라 마스크 장축의
+앞·뒤 판별에는 `fixed_mission_routes.yaml`의 endpoint yaw를 사용합니다.
+차량이 `TRANSIT` 상태이면 새 경로를 선택하지 않습니다.
 
 실시간 검출 pose는 `/pinkk/vehicle_pose`로 별도 발행하며 고정 CSV 앞에
 삽입하지 않습니다. 검출 오차가 있는 pose를 첫 경로점으로 붙이면 START anchor

@@ -425,16 +425,18 @@ class EgoVehicleTracker:
             if self.fixed_heading_resolver is not None
             else None
         )
-        if fixed_yaw is not None:
-            yaw = _normalize_yaw(fixed_yaw)
-            heading_ambiguous = False
-            self.absolute_heading_resolved = True
-        else:
-            axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
+        axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
+        if elongation >= self.minimum_elongation:
             yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))
-            reference_yaw = self.previous_yaw_rad
+            # 고정 endpoint yaw는 실제 측정값을 대체하지 않고, 차량 장축의
+            # 앞/뒤 180도 모호성만 해소하는 기준으로 사용한다.
+            reference_yaw = (
+                _normalize_yaw(fixed_yaw)
+                if fixed_yaw is not None
+                else self.previous_yaw_rad
+            )
             if reference_yaw is None:
-                yaw = yaw_candidates[0]
+                measured_yaw = yaw_candidates[0]
             else:
                 measured_yaw = min(
                     yaw_candidates,
@@ -442,15 +444,32 @@ class EgoVehicleTracker:
                         _angle_difference(value, reference_yaw)
                     ),
                 )
+            if self.previous_yaw_rad is None:
+                yaw = measured_yaw
+            else:
                 yaw = _normalize_yaw(
-                    reference_yaw
+                    self.previous_yaw_rad
                     + self.yaw_alpha
-                    * _angle_difference(measured_yaw, reference_yaw)
+                    * _angle_difference(measured_yaw, self.previous_yaw_rad)
                 )
             heading_ambiguous = (
-                not self.absolute_heading_resolved
-                or elongation < self.minimum_elongation
+                fixed_yaw is None and not self.absolute_heading_resolved
             )
+            if fixed_yaw is not None:
+                self.absolute_heading_resolved = True
+        elif fixed_yaw is not None:
+            # 마스크가 거의 정사각형이라 장축이 불안정할 때만 고정 yaw로
+            # 안전하게 대체한다.
+            yaw = _normalize_yaw(fixed_yaw)
+            heading_ambiguous = False
+            self.absolute_heading_resolved = True
+        else:
+            yaw = (
+                self.previous_yaw_rad
+                if self.previous_yaw_rad is not None
+                else axis_yaw
+            )
+            heading_ambiguous = True
         center_lidar = self.transform.point_to_lidar(center)
         center_cm = (
             center_lidar[0] * self.transform.resolution_cm,
@@ -658,7 +677,7 @@ class VehicleStateManager:
 
 
 class ChargeEpisodeCoordinator:
-    """차량 상태 목록에서 FIFO 충전 대상과 C2→C1 목표를 선택한다."""
+    """차량 상태 목록에서 FIFO 충전 대상과 C2 우선·C1 대체 목표를 선택한다."""
 
     def __init__(self, charge_slot_priority: Sequence[str] = ("C2", "C1")) -> None:
         if not charge_slot_priority:
@@ -973,8 +992,8 @@ class SceneLocalizer:
             and charge_assignment.status == "assigned_to_charge"
             and charge_assignment.target_slot_name is not None
         ):
-            # 입차 단계라도 충전칸이 비어 있으면 Episode 규칙이 기존 P구역
-            # 배정보다 우선한다. 따라서 배정된 ego는 즉시 C2→C1로 이동한다.
+            # P6~P10 대기 차량에는 Episode 규칙이 기존 P구역 배정보다
+            # 우선하며 C2를 먼저, 점유 시 C1을 목표로 사용한다.
             target_slot = next(
                 (
                     slot

@@ -251,7 +251,9 @@ class IntegratedPlanningController:
         self.outcome: object | None = None
         self.last_error: str | None = None
         self._new_outcome = False
+        self._new_invalidation = False
         self._discard_pending_result = False
+        self._idle_endpoint: str | None = None
 
     @property
     def status(self) -> str:
@@ -270,8 +272,48 @@ class IntegratedPlanningController:
     ) -> None:
         """새 차량/목표 조합일 때만 고정 경로 선택을 시작한다."""
         self._collect_finished()
-        if scene.vehicle is None or scene.planning_request is None:
+        if scene.vehicle is None:
             return
+        if scene.planning_request is None:
+            detector = getattr(self.route_selector, "detect_location", None)
+            detected_section = (
+                str(
+                    detector(
+                        (
+                            scene.vehicle.rear_axle_cm[0],
+                            scene.vehicle.rear_axle_cm[1],
+                            scene.vehicle.yaw_rad,
+                        )
+                    )
+                )
+                if callable(detector)
+                else "TRANSIT"
+            )
+            if (
+                detected_section != "TRANSIT"
+                and (
+                    self.outcome is not None
+                    or self._future is not None
+                    or self._active_key is not None
+                )
+            ):
+                # 알려진 주차 endpoint에 도착했는데 새 요청이 없으면 이전
+                # 단계 경로를 overlay와 주기 발행에서 즉시 제거한다.
+                self.invalidate()
+            if (
+                detected_section != "TRANSIT"
+                and detected_section != self._idle_endpoint
+            ):
+                # endpoint에 세워둔 상태로 프로세스를 새로 시작해도 이전
+                # subscriber 경로를 지울 수 있도록 false를 한 번 발행한다.
+                self._new_invalidation = True
+            self._idle_endpoint = (
+                detected_section
+                if detected_section != "TRANSIT"
+                else None
+            )
+            return
+        self._idle_endpoint = None
         key = (
             scene.vehicle.track_id,
             scene.planning_request.slot_name,
@@ -305,8 +347,20 @@ class IntegratedPlanningController:
         self._new_outcome = False
         return self.outcome
 
+    def consume_invalidation(self) -> bool:
+        """경로 폐기 이벤트를 한 번만 반환한다."""
+        if not self._new_invalidation:
+            return False
+        self._new_invalidation = False
+        return True
+
     def invalidate(self) -> None:
         """단계 전환 시 이전 목적지의 실행 중/완료 경로를 폐기한다."""
+        had_route_state = (
+            self.outcome is not None
+            or self._future is not None
+            or self._active_key is not None
+        )
         self.outcome = None
         self.last_error = None
         self._active_key = None
@@ -315,6 +369,7 @@ class IntegratedPlanningController:
         # 작업 스레드에서 이미 CSV를 읽는 중이면 완료 결과만 버리고, 다음
         # 프레임에서 새 운행 단계의 경로를 선택한다.
         self._discard_pending_result = self._future is not None
+        self._new_invalidation = self._new_invalidation or had_route_state
 
     def draw_overlay(
         self,
@@ -796,15 +851,17 @@ def route_context(
         else:
             current_section = "TRANSIT"
 
+    target = "WAIT"
     if scene.planning_request is not None:
-        target = scene.planning_request.slot_name
-    elif (
-        scene.charge_assignment is not None
-        and scene.charge_assignment.target_slot_name is not None
-    ):
-        target = scene.charge_assignment.target_slot_name
-    else:
-        target = "WAIT"
+        requested_target = scene.planning_request.slot_name
+        allowed_transitions = getattr(
+            route_selector,
+            "allowed_transitions",
+            {},
+        )
+        allowed_targets = allowed_transitions.get(current_section, ())
+        if requested_target in allowed_targets:
+            target = requested_target
     return current_section, target
 
 
@@ -837,7 +894,11 @@ def print_scene(
                 for item in scene.tracked_vehicles
             )
         )
-    if scene.charge_assignment is not None:
+    if (
+        scene.charge_assignment is not None
+        and scene.vehicle is not None
+        and scene.charge_assignment.vehicle_track_id == scene.vehicle.track_id
+    ):
         assignment = scene.charge_assignment
         print(
             "  Charge assignment: "
@@ -1069,6 +1130,11 @@ def main() -> int:
                 scene,
                 replan_revision,
             )
+            if (
+                planning_controller.consume_invalidation()
+                and ros_publisher is not None
+            ):
+                ros_publisher.invalidate_trajectory()
             completed_outcome = planning_controller.consume_new_outcome()
             active_outcome = planning_controller.outcome
             publish_now = route_publish_scheduler.due(

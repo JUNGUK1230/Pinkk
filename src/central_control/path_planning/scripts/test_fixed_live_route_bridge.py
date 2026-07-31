@@ -1,6 +1,7 @@
-"""Check fixed yaw, fixed-route selection, and the four-field ROS route contract."""
+"""Check measured camera yaw, fixed-route selection, and ROS route contract."""
 
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import time
 
@@ -18,6 +19,7 @@ from fixed_route_selector import FixedRouteSelector  # noqa: E402
 from src.central_control.overhead_vision.localization.live_localization import (  # noqa: E402
     IntegratedPlanningController,
     RoutePublishScheduler,
+    route_context,
 )
 from src.central_control.overhead_vision.localization.scene_localizer import (  # noqa: E402
     AffineBevToLidar,
@@ -47,7 +49,9 @@ def main() -> int:
     )
     assert vehicle is not None
     assert vehicle.planning_ready
-    assert abs(vehicle.yaw_rad - fixed_yaw) < 1e-9
+    measured_yaw = transform.axis_yaw_in_lidar((100.0, 120.0), (1.0, 0.0))
+    assert abs(vehicle.yaw_rad - measured_yaw) < 1e-9
+    assert abs(vehicle.yaw_rad - fixed_yaw) > 1e-3
 
     selector = FixedRouteSelector(
         PROJECT_ROOT / "config/fixed_mission_routes.yaml",
@@ -79,7 +83,64 @@ def main() -> int:
     assert not scheduler.due(11.3, has_route=False)
     assert scheduler.due(11.4, has_route=True)
 
-    print("Fixed yaw planning-ready check passed")
+    # 다른 차량의 충전 배정 C2를 C1에 있는 ego의 다음 목표로 표시하면
+    # 안 된다. C1/C2의 유효한 다음 목표는 P1~P5뿐이다.
+    c1_vehicle = SimpleNamespace(
+        track_id=7,
+        rear_axle_cm=(168.0, 129.0),
+        yaw_rad=-2.4521787849,
+    )
+    c1_tracked = SimpleNamespace(track_id=7, assigned_slot_name="C1")
+    unrelated_charge_assignment = SimpleNamespace(
+        vehicle_track_id=9,
+        target_slot_name="C2",
+    )
+    c1_scene = SimpleNamespace(
+        vehicle=c1_vehicle,
+        tracked_vehicles=(c1_tracked,),
+        planning_request=None,
+        charge_assignment=unrelated_charge_assignment,
+    )
+    assert route_context(c1_scene, selector) == ("C1", "WAIT")
+    c1_scene.planning_request = SimpleNamespace(slot_name="C2")
+    assert route_context(c1_scene, selector) == ("C1", "WAIT")
+    c1_scene.planning_request = SimpleNamespace(slot_name="P3")
+    assert route_context(c1_scene, selector) == ("C1", "P3")
+
+    arrival_controller = IntegratedPlanningController(selector)
+    arrival_controller.outcome = SimpleNamespace(trajectory=(object(),))
+    arrival_controller._active_key = (7, "C1", 0)
+    c1_scene.planning_request = None
+    arrival_controller.update(c1_scene, route_revision=0)
+    assert arrival_controller.outcome is None
+    assert arrival_controller._active_key is None
+    assert arrival_controller.consume_invalidation()
+    assert not arrival_controller.consume_invalidation()
+    arrival_controller.close()
+
+    startup_at_c1_controller = IntegratedPlanningController(selector)
+    startup_at_c1_controller.update(c1_scene, route_revision=0)
+    assert startup_at_c1_controller.consume_invalidation()
+    assert not startup_at_c1_controller.consume_invalidation()
+    startup_at_c1_controller.close()
+
+    p8_scene = SimpleNamespace(
+        vehicle=SimpleNamespace(
+            track_id=8,
+            rear_axle_cm=(91.5897, 83.1051),
+            yaw_rad=-0.8598,
+        ),
+        tracked_vehicles=(
+            SimpleNamespace(track_id=8, assigned_slot_name="P8"),
+        ),
+        planning_request=SimpleNamespace(slot_name="C2"),
+        charge_assignment=None,
+    )
+    assert route_context(p8_scene, selector) == ("P8", "C2")
+    p8_scene.planning_request = SimpleNamespace(slot_name="P7")
+    assert route_context(p8_scene, selector) == ("P8", "WAIT")
+
+    print("Measured camera yaw + fixed front/back reference check passed")
     print(f"Fixed route bridge points: {len(outcome.trajectory)}")
     print(f"ROS trajectory fields: {', '.join(TRAJECTORY_FIELDS)}")
     print("Route republish scheduler: immediate + 1.0 sec periodic")
