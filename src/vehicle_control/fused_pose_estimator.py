@@ -68,7 +68,6 @@ class FusedPoseEstimator(Node):
         self._lidar_only_yaw_alpha = self._positive("lidar_only_yaw_alpha")
         if self._lidar_only_yaw_alpha > 1.0:
             raise ValueError("lidar_only_yaw_alpha must not exceed 1")
-        self._rear_axle_offset_m = self._positive("rear_axle_offset_m")
         self._camera_position_alpha = self._positive(
             "camera_position_filter_alpha"
         )
@@ -207,10 +206,9 @@ class FusedPoseEstimator(Node):
             ),
             "map_resolution_m_per_px": 0.01,
             "occupied_pixel_threshold": 100,
-            # 카메라 차체 중심 기준: rear axle=-4cm, LiDAR=-5.7cm.
+            # 카메라 차체 중심 기준으로 LiDAR는 5.7cm 뒤에 있다.
             "lidar_x_m": -0.057,
             "lidar_y_m": 0.0,
-            "rear_axle_offset_m": 0.04,
             # 상단 카메라 mask 중심의 프레임별 흔들림을 줄인다.
             "camera_position_filter_alpha": 0.35,
             "camera_yaw_correction_alpha": 0.10,
@@ -565,11 +563,10 @@ class FusedPoseEstimator(Node):
         message = PoseStamped()
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = "lidar_map"
-        # 카메라 중심에서 fused heading의 뒤쪽으로 rear axle을 계산한다.
-        rear_x = self._position_m[0] - self._rear_axle_offset_m * math.cos(heading)
-        rear_y = self._position_m[1] - self._rear_axle_offset_m * math.sin(heading)
-        message.pose.position.x = rear_x
-        message.pose.position.y = rear_y
+        # 위치·경로·MPC를 모두 동일한 차량 중심 기준으로 유지한다.
+        center_x, center_y = self._position_m
+        message.pose.position.x = center_x
+        message.pose.position.y = center_y
         message.pose.orientation.z = math.sin(heading / 2.0)
         message.pose.orientation.w = math.cos(heading / 2.0)
         self._pose_publisher.publish(message)
@@ -577,8 +574,8 @@ class FusedPoseEstimator(Node):
         diagnostic = Float64MultiArray()
         match = self._last_match
         diagnostic.data = [
-            rear_x,
-            rear_y,
+            center_x,
+            center_y,
             self._imu_yaw_rad if self._imu_yaw_rad is not None else math.nan,
             heading,
             match.yaw_rad if match is not None else math.nan,

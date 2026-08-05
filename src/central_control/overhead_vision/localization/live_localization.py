@@ -242,7 +242,7 @@ class IntegratedPlanningController:
     def __init__(
         self,
         route_selector: object,
-        completion_radius_cm: float = 2.5,
+        completion_radius_cm: float = 3.0,
     ) -> None:
         if not math.isfinite(completion_radius_cm) or completion_radius_cm <= 0.0:
             raise ValueError("route completion radius must be positive and finite")
@@ -297,8 +297,8 @@ class IntegratedPlanningController:
                     return
                 goal = trajectory[-1]
                 goal_distance_cm = math.hypot(
-                    float(getattr(goal, "x_cm")) - scene.vehicle.rear_axle_cm[0],
-                    float(getattr(goal, "y_cm")) - scene.vehicle.rear_axle_cm[1],
+                    float(getattr(goal, "x_cm")) - scene.vehicle.center_cm[0],
+                    float(getattr(goal, "y_cm")) - scene.vehicle.center_cm[1],
                 )
                 if goal_distance_cm <= self.completion_radius_cm:
                     self.invalidate()
@@ -308,8 +308,8 @@ class IntegratedPlanningController:
                 str(
                     detector(
                         (
-                            scene.vehicle.rear_axle_cm[0],
-                            scene.vehicle.rear_axle_cm[1],
+                            scene.vehicle.center_cm[0],
+                            scene.vehicle.center_cm[1],
                             scene.vehicle.yaw_rad,
                         )
                     )
@@ -579,8 +579,8 @@ def build_localizer(
     vehicle_config_path = resolve_path(str(config["vehicle_config_path"]))
     with vehicle_config_path.open(encoding="utf-8") as file:
         vehicle_config = (yaml.safe_load(file) or {}).get("vehicle", {})
-    # 고정 경로 pose 기준은 rear axle이다. YOLO mask의 기하 중심을 차체
-    # 중심으로 보고, 동일한 vehicle config에서 rear axle까지의 거리를 구한다.
+    # 제어 pose와 고정 경로는 차량 중심 기준이다. 아래 offset은 화면에 rear
+    # axle 진단점을 함께 표시하고 차동구동 물리 모델을 검증할 때만 사용한다.
     rear_axle_offset_cm = (
         float(vehicle_config["length_cm"]) / 2.0
         - float(vehicle_config["rear_overhang_cm"])
@@ -718,7 +718,7 @@ def draw_scene(
             cv2.LINE_AA,
         )
     # 모든 검출 차량에 ByteTrack ID를 표시한다. ego 차량은 아래에서 더 굵은
-    # 외곽선과 rear-axle pose로 다시 강조한다.
+    # 외곽선과 차량 중심 pose로 다시 강조한다.
     for detection in detections:
         if detection.class_name != "car":
             continue
@@ -859,8 +859,8 @@ def route_context(
                 current_section = str(
                     detector(
                         (
-                            scene.vehicle.rear_axle_cm[0],
-                            scene.vehicle.rear_axle_cm[1],
+                            scene.vehicle.center_cm[0],
+                            scene.vehicle.center_cm[1],
                             scene.vehicle.yaw_rad,
                         )
                     )
@@ -890,8 +890,8 @@ def print_scene(
     if scene.vehicle:
         vehicle = scene.vehicle
         print(
-            "  Ego rear axle: "
-            f"({vehicle.rear_axle_cm[0]:.2f}, {vehicle.rear_axle_cm[1]:.2f}) cm, "
+            "  Ego vehicle center: "
+            f"({vehicle.center_cm[0]:.2f}, {vehicle.center_cm[1]:.2f}) cm, "
             f"id={vehicle.track_id}, yaw={vehicle.yaw_deg:.1f} deg, "
             f"conf={vehicle.confidence:.2f}, "
             f"ambiguous={vehicle.heading_ambiguous or vehicle.ego_selection_ambiguous}"
@@ -1045,7 +1045,7 @@ def main() -> int:
     planning_controller = IntegratedPlanningController(
         route_selector,
         completion_radius_cm=float(
-            config.get("route_completion_radius_cm", 2.5)
+            config.get("route_completion_radius_cm", 3.0)
         ),
     )
     route_publish_scheduler = RoutePublishScheduler(
@@ -1246,7 +1246,7 @@ def main() -> int:
                     )
                     print(message)
                     if completed:
-                        # 이전 C1/C2 경로를 토픽으로 발행하지 않고 P1~P5 경로만
+                        # 이전 C1/C2 경로를 토픽으로 발행하지 않고 P1~P4 경로만
                         # 새로 계획하도록 planner 결과를 무효화한다.
                         replan_revision += 1
                         planning_controller.invalidate()

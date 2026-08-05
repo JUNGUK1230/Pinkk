@@ -1,78 +1,120 @@
 # Fixed one-way mission chain in lidar_map_cm.
 # START -> upper parking row -> chargers -> lower parking row -> EXIT
 frame: lidar_map_cm
-route_order: [START, P10, P9, P8, P7, P6, C1, C2, P1, P2, P3, P4, P5, EXIT]
+# 아래 waypoint와 내부 충돌 검사는 rear axle 기하를 사용하지만, 생성 CSV와
+# ROS 제어 경로는 차량 중심 기준으로 내보낸다.
+trajectory_reference: vehicle_center
+rear_axle_to_center_cm: 4.0
+# 기존 도로의 공통 회전반경이다. 삭제된 두 칸의 추가 여유는 전체 도로가
+# 아니라 UPPER_TURN/LOWER_TURN 주변의 전용 waypoint에서만 사용한다.
+road_turning_radius_cm: 16.0
+# 삭제된 기존 상단 P6 자리 옆 코너만 빈 공간을 활용해 더 큰 반경으로
+# 돈다. 하단 삭제 공간은 C1/C2의 exit 반경에서 사용한다.
+road_corner_radii_cm:
+  UPPER_TURN: 18.0
+route_order: [START, P8, P7, P6, P5, UPPER_TURN, C1, C2, LOWER_TURN, P1, P2, P3, P4, EXIT]
 
 # Slots are attached to these road-centre anchors. Passing traffic stays on the
 # backbone and enters a slot's staging pose only when that slot is the target.
 road_backbone:
   START: [68.1221283259, 23.7980371962, 0.8063]
-  P10: [95.9733765659, 48.3772173386, 0.7141]
-  P9: [109.5731610335, 59.5882158417, 0.7141]
-  P8: [122.4977788963, 70.2426399510, 0.7110]
-  P7: [143.4774214165, 90.7771742706, 0.7048]
-  P6: [157.4420312450, 110.3887696248, 0.6987]
-  C1: [146.9087025191, 131.0270740841, 2.2602]
-  C2: [124.9012003958, 157.9203441584, 2.2602]
-  P1: [85.5603762247, 124.6797036932, -2.4522]
-  P2: [71.4444464077, 112.7192260522, -2.4522]
-  P3: [57.5096776850, 101.7180740378, -2.4522]
-  P4: [42.5021892191, 90.6426094901, -2.4522]
-  P5: [30.5095590496, 77.6785265447, -2.4522]
+  P8: [95.9733765659, 48.3772173386, 0.7141]
+  P7: [109.5731610335, 59.5882158417, 0.7141]
+  P6: [122.4977788963, 70.2426399510, 0.7110]
+  P5: [143.4774214165, 90.7771742706, 0.7048]
+  # 삭제된 기존 상단 우측 주차면을 endpoint로 사용하지 않되, 우측 벽 바깥으로
+  # 안전하게 돌아가는 공통 도로 형상은 transit waypoint로 유지한다.
+  # C1에 주차된 차량과 통과 차량 사이의 중심선 여유를 확보하도록
+  # 충전칸 앞 세로 통로를 camera BEV x=1000 px 선까지 안쪽으로 옮긴다.
+  UPPER_TURN: [146.9782004572, 105.0028393203, 0.6987]
+  C1: [134.1769894005, 120.5316712301, 2.2602]
+  C2: [112.0730349051, 147.3454306768, 2.2602]
+  # 삭제된 기존 하단 우측 주차면은 공통 도로 형상만 유지한다.
+  LOWER_TURN: [85.5603762247, 124.6797036932, -2.4522]
+  P1: [71.4444464077, 112.7192260522, -2.4522]
+  P2: [57.5096776850, 101.7180740378, -2.4522]
+  P3: [42.5021892191, 90.6426094901, -2.4522]
+  P4: [30.5095590496, 77.6785265447, -2.4522]
   EXIT: [23.2712034889, 76.8954852119, -3.0299]
 
 endpoints:
   START:
     staging: [68.1221, 23.7980, 0.8063]
     type: start
-  P10:
+  P8:
     staging: [96.9833745923, 47.1535803092, 0.7141002107]
     goal: [66.0, 60.0, -0.8566961161]
-    type: parking
-  P9:
-    staging: [107.7086859594, 61.9319945741, 0.7141002107]
-    goal: [80.0, 71.0, -0.8566961161]
-    type: parking
-  P8:
-    staging: [122.5332959685, 70.1631612445, 0.7110154463]
-    goal: [91.5896969065, 83.1050960723, -0.8597808805]
+    entry_turning_radius_cm: 14.0
     type: parking
   P7:
-    staging: [140.0011153837, 94.9636463034, 0.7048447426]
-    goal: [108.0, 94.0, -0.8659515842]
+    staging: [107.7086859594, 61.9319945741, 0.7141002107]
+    goal: [80.0, 71.0, -0.8566961161]
+    entry_turning_radius_cm: 14.0
     type: parking
   P6:
-    staging: [154.6189254033, 113.8106149268, 0.6986728633]
-    goal: [122.0, 106.0, -0.8721234635]
+    staging: [122.5332959685, 70.1631612445, 0.7110154463]
+    goal: [91.5896969065, 83.1050960723, -0.8597808805]
+    entry_turning_radius_cm: 14.0
+    type: parking
+  P5:
+    staging: [140.0011153837, 94.9636463034, 0.7048447426]
+    goal: [108.0, 94.0, -0.8659515842]
+    entry_turning_radius_cm: 14.0
     type: parking
   C1:
-    staging: [146.8844400250, 131.0330093315, 2.2602101955]
+    # 충전 후 공통 도로로 복귀할 때 사용하는 출차 attachment 기준 자세다.
+    staging: [132.0, 125.0, 2.5213431676]
+    # 삭제된 기존 P6 공간 안쪽까지 전진한 뒤 넓은 반경으로 주차한다.
+    entry_staging: [123.0210502635, 114.4132035321, 2.7925268032]
     goal: [170.3148569306, 130.9082550644, -2.4521787849]
+    # 차량 후미가 C1 경계를 통과하기 전에 goal yaw 정렬을 완료한다.
+    # 마지막 32cm는 조향하지 않고 goal yaw를 유지한 직선 후진이다.
+    entry_turning_radius_cm: 40.0
+    entry_approach_turning_radius_cm: 16.0
+    entry_attachment_search_cm: 60.0
+    # 충전 후 삭제된 하단 우측 칸 옆의 넓은 통로로 부드럽게 합류한다.
+    exit_turning_radius_cm: 20.0
+    entry_final_straight_cm: 32.0
+    # camera BEV의 C1 사각형을 등록 affine으로 변환한 lidar_map_cm polygon.
+    # 정렬 maneuver 중 차량 후미가 이 영역에 들어가는 후보는 폐기한다.
+    entry_slot_polygon_cm:
+    - [163.3, 113.1]
+    - [178.7, 125.8]
+    - [167.3, 139.7]
+    - [151.8, 127.0]
     type: charging
   C2:
-    # START에서 C2로 진입할 때 14cm 한계 원호에 조향 여유가 없었다.
-    # 도로에서 조금 일찍 후진을 시작해 20cm 반경으로 진입한다.
+    # 차량 후미가 C2 경계를 통과하기 전에 goal yaw 정렬을 완료한다.
+    # 마지막 32cm는 조향하지 않고 goal yaw를 유지한 직선 후진이다.
     staging: [118.8844400250, 156.0330093315, 2.4347431207]
+    # 삭제된 기존 P1 공간을 충분히 사용해 slot 앞에서 자세를 완성한다.
+    entry_staging: [99.1678619591, 143.3489151652, 3.1415926536]
     goal: [148.3148569306, 157.9082550644, -2.4521787849]
-    entry_turning_radius_cm: 20.0
+    entry_turning_radius_cm: 40.0
+    entry_approach_turning_radius_cm: 16.0
+    entry_attachment_search_cm: 60.0
+    exit_turning_radius_cm: 40.0
+    entry_final_straight_cm: 32.0
+    # camera BEV의 C2 사각형을 등록 affine으로 변환한 lidar_map_cm polygon.
+    entry_slot_polygon_cm:
+    - [140.6, 140.4]
+    - [156.1, 153.1]
+    - [144.6, 167.0]
+    - [129.2, 154.3]
     type: charging
   P1:
-    staging: [85.5235898105, 124.7491991003, -2.4521787849]
-    goal: [113.0, 115.0, 2.2602101955]
-    type: parking
-  P2:
     staging: [71.5235898105, 112.7491991003, -2.4521787849]
     goal: [99.0, 103.0, 2.2602101955]
     type: parking
-  P3:
+  P2:
     staging: [57.5235898105, 101.7491991003, -2.4521787849]
     goal: [85.0, 92.0, 2.2602101955]
     type: parking
-  P4:
+  P3:
     staging: [42.5235898105, 90.7491991003, -2.4521787849]
     goal: [70.0, 81.0, 2.2602101955]
     type: parking
-  P5:
+  P4:
     staging: [30.5235898105, 77.7491991003, -2.4521787849]
     goal: [58.0, 68.0, 2.2602101955]
     type: parking
@@ -81,16 +123,14 @@ endpoints:
     type: exit
 
 allowed_transitions:
-  START: [P10, P9, P8, P7, P6, C1, C2]
-  P10: [C1, C2]
-  P9: [C1, C2]
+  START: [P8, P7, P6, P5, C1, C2]
   P8: [C1, C2]
   P7: [C1, C2]
   P6: [C1, C2]
-  C1: [P1, P2, P3, P4, P5]
-  C2: [P1, P2, P3, P4, P5]
+  P5: [C1, C2]
+  C1: [P1, P2, P3, P4]
+  C2: [P1, P2, P3, P4]
   P1: [EXIT]
   P2: [EXIT]
   P3: [EXIT]
   P4: [EXIT]
-  P5: [EXIT]

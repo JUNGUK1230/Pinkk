@@ -522,7 +522,7 @@ def main() -> int:
         assert episode_scene.planning_request.slot_name == "C2"
 
         # C2에 실제로 도착한 ego가 space 충전 완료 이벤트를 받으면, 아직
-        # 화면상 C2에 있어도 C2 재계획 대신 P1~P5 대기 주차 단계로 전환한다.
+        # 화면상 C2에 있어도 C2 재계획 대신 P1~P4 대기 주차 단계로 전환한다.
         post_charge_policy = ParkingAssignmentPolicy(
             name="charge_to_exit",
             reference_bev_px=(1600.0, 600.0),
@@ -586,7 +586,7 @@ def main() -> int:
             raise AssertionError("ambiguous ego pose must be rejected")
 
     print("Live vision scene regression passed")
-    print(f"Ego rear axle: {scene.vehicle.rear_axle_cm}")
+    print(f"Ego vehicle center: {scene.vehicle.center_cm}")
     print(f"Ego yaw: {math.degrees(scene.vehicle.yaw_rad):.3f} deg")
     print(f"Selected free slot: {scene.planning_request.slot_name}")
     print(f"Planning start: {scene.planning_request.start_pose_cm}")

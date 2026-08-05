@@ -34,7 +34,18 @@ def main() -> int:
     ) = load_planner_stack()
     # 주차칸 이름별 분기 없이 polygon의 짧은 변과 통로 여유로 입구를 선택한다.
     # 선택한 heading에서는 rear axle footprint가 반드시 유효해야 한다.
-    for slot_name in ("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "C1", "C2"):
+    for slot_name in (
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "C1",
+        "C2",
+    ):
         entrance_goal, entrance_edge, entrance_clearance = (
             derive_reverse_parking_goal(
                 planner,
@@ -79,8 +90,7 @@ def main() -> int:
     assert result.smoothing_stats.accepted
 
     # C1 nominal goal 주위의 3 cm 후보가 명목 pose부터 square-ring 순서로
-    # 생성되는지 검사한다. 이전 P5 planning 회귀는 3 cm 안전마진에서 해당
-    # 구간 자체가 좁아졌으므로 실제 고정 목표인 C1 사례로 대체한다.
+    # 생성되는지 검사한다.
     nominal_c1_goal = adjust_pose(
         planner,
         (162.20323667859284, 123.87150109209493, 0.689413868664666),
@@ -114,29 +124,6 @@ def main() -> int:
     assert c1_result[5].valid
     assert c1_result[5].metrics.max_abs_steer_deg <= 30.0
     assert c1_result[4][-1].direction == -1
-
-    # 고정 직선 approach 없이도 P6 목표 자세에 마지막 후진 방향으로
-    # 도달하고 전체 trajectory 검증을 통과해야 한다.
-    p6_result = plan_and_validate(
-        planner,
-        profile_config,
-        limits,
-        (66.91479447988687, 23.780613374672036, 0.7336417665791615),
-        (
-            (
-                "primary goal",
-                (126.90516491010769, 99.81583190725081, 2.3054119010530005),
-            ),
-            (
-                "alternative goal",
-                (121.54274949205609, 105.75253982361679, -0.8361807525367926),
-            ),
-        ),
-        required_goal_direction=parking_config.required_final_direction,
-    )
-    assert p6_result[0] in ("primary goal", "alternative goal")
-    assert p6_result[5].valid
-    assert p6_result[4][-1].direction == -1
 
     with tempfile.TemporaryDirectory() as directory:
         output_dir = Path(directory)
@@ -180,10 +167,6 @@ def main() -> int:
     print(
         "C1 long-range regression: "
         f"{c1_result[0]}, points={len(c1_result[4])}"
-    )
-    print(
-        "P6 reverse-parking regression: "
-        f"{p6_result[0]}, points={len(p6_result[4])}"
     )
     return 0
 

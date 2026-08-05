@@ -14,7 +14,7 @@ pinkk_mpc_path_follower:
     # false 수신 시 현재 경로와 MPC 진행 상태를 즉시 폐기하고 정지하는 토픽이다.
     # 토픽을 바꾸면 노드를 재시작해야 한다.
     path_valid_topic: /pinkk/path_valid
-    # MPC가 사용할 rear-axle pose 토픽이다. 현재는 카메라 x/y와 LiDAR/odom
+    # MPC가 사용할 차량 중심 pose 토픽이다. 현재는 카메라 x/y와 LiDAR/odom
     # heading을 결합한 lidar_map 좌표 pose를 사용한다. 변경 시 재시작해야 한다.
     pose_topic: /pinkk/fused_vehicle_pose
 
@@ -34,7 +34,7 @@ pinkk_mpc_path_follower:
     # 실차에서는 안전을 위해 true를 유지한다.
     require_scan: true
     # [s] 마지막 scan 수신 이후 이 시간을 넘으면 SCAN_TIMEOUT으로 정지한다.
-    scan_timeout_sec: 0.8
+    scan_timeout_sec: 1.4
     # [deg] 전방 중심각 좌우로 검사할 반각이다. 18이면 전체 전방 sector는 36도다.
     # 크게 하면 측면 벽도 장애물로 감지할 가능성이 커진다.
     front_scan_half_angle_deg: 18.0
@@ -51,80 +51,154 @@ pinkk_mpc_path_follower:
     # [m] 후진 중 후방 sector 최소 거리가 이 값 이하이면 즉시 정지한다.
     rear_stop_distance_m: 0.10
 
-    # [Hz] MPC 계산 및 cmd_vel 발행 주기다. 높이면 반응 주기가 빨라지지만
-    # CPU가 제한 시간 안에 최적화를 끝내지 못할 수 있다.
-    control_frequency_hz: 4.0
+    # [Hz] MPC 계산 및 cmd_vel 발행 주기다. 10Hz로 올려 새 pose와 횡오차를
+    # 더 자주 제어 명령에 반영한다.
+    control_frequency_hz: 10.0
+    # [m] 차동구동 회전 중심(rear axle)에서 제어점인 차량 중심까지의 거리다.
+    # pose와 고정 경로는 차량 중심 기준이며 운동모델이 이 offset을 반영한다.
+    control_point_offset_m: 0.04
+    # [m] PinkyPro 구동 휠 반경. pinky_params.yaml의 wheel_radius와 동일하다.
+    wheel_radius_m: 0.027
+    # [m] 좌·우 구동 휠 중심 간격. pinky_params.yaml 실측값 0.0961m이다.
+    wheel_separation_m: 0.0961
+    # [rad/s] 직선 최고속도 0.105m/s를 휠 반경으로 환산한 휠 회전 한계다.
+    # MPC는 v±ω(track/2)를 이용해 양쪽 휠이 이 한계를 넘지 않게 한다.
+    max_wheel_angular_speed_radps: 3.8888888889
     # [s] MPC 내부 차량 모델의 한 예측 step 시간이다.
-    # 총 예측 시간은 dt_sec × horizon_steps이며 현재는 2.5초다.
-    dt_sec: 0.25
-    # 예측할 step 수다. 늘리면 먼 코너를 보지만 계산량과 지연이 증가한다.
-    horizon_steps: 10
+    # 10Hz 실차 제어 주기와 동일하게 맞춘다.
+    dt_sec: 0.10
+    # 9 step을 최적화해 기존 8 step보다 촘촘하게 계산하되, 한 계산이
+    # 100ms 제어 주기를 넘겨 조향 반응을 늦추지 않게 한다.
+    horizon_steps: 9
     # SLSQP 최적화가 한 제어 주기에서 수행할 최대 반복 횟수다.
     # 늘리면 수렴 가능성은 높아지지만 계산 시간이 길어진다.
-    solver_max_iterations: 45
+    solver_max_iterations: 70
     # 최적화 종료 허용오차다. 작게 하면 더 정밀하지만 계산 시간이 늘 수 있다.
-    solver_ftol: 0.00001
+    solver_ftol: 0.0000005
 
     # [m/s] 전진 경로에서 따라가려는 기준 속도다.
     # max_forward_speed_mps보다 클 수 없다.
     forward_speed_mps: 0.05
     # [m/s] 후진 경로에서 따라가려는 속도의 절댓값이다.
-    # 실제 cmd_vel에는 음수로 출력되며 max_reverse_speed_mps보다 클 수 없다.
-    reverse_speed_mps: 0.02
+    # 좁은 주차 구간에서는 카메라 pose 갱신 사이 이동량을 줄여 정밀도를
+    # 확보한다. 실제 cmd_vel에는 음수로 출력된다.
+    reverse_speed_mps: 0.018
     # [m/s] 최적화가 허용하는 최대 전진 속도다.
-    max_forward_speed_mps: 0.06
+    max_forward_speed_mps: 0.05
     # [m/s] 최적화가 허용하는 최대 후진 속도의 절댓값이다.
-    max_reverse_speed_mps: 0.03
+    # 기준 속도보다 약간만 높여 오차 복귀 중 과속하지 않게 한다.
+    max_reverse_speed_mps: 0.024
     # [m/s²] 연속 제어 step 사이 선속도 변화 한계다.
     # 작게 하면 출발·감속이 부드럽지만 반응이 느리고, 크게 하면 급격해진다.
-    max_acceleration_mps2: 0.15
-    # [1/m] 전체 경로에서 허용하는 최대 곡률이다. 최소 회전반경은 1/곡률이며
-    # 현재 7.0은 약 14.3cm 반경이다. 차량의 실제 회전 능력을 넘기지 않는다.
-    max_curvature_1pm: 10.0
+    max_acceleration_mps2: 0.2
+    # [1/m] DD 실차 최소 회전반경 0.12m의 역수다.
+    # 8.333을 넘기면 등가 조향각 약 30도를 초과하므로 허용하지 않는다.
+    max_curvature_1pm: 8.3333333333
     # [1/(m·s)] 시간당 곡률 명령 변화 한계다. 낮추면 조향이 부드럽지만
     # 코너 반응이 늦고, 높이면 빠르지만 좌우 진동 가능성이 커진다.
-    max_curvature_rate_1pmps: 10.0
+    # 14이면 10Hz에서 주기당 곡률을 최대 1.4 1/m 바꿀 수 있다.
+    # 빠른 복귀 성능은 유지하면서 반대 조향으로 튀는 현상을 줄인다.
+    max_curvature_rate_1pmps: 14.0
     # [rad/s] 최종 ROS 각속도의 절댓값 한계다.
     # angular speed = linear speed × curvature 관계에도 이 제한이 적용된다.
-    max_angular_speed_radps: 0.3
+    # 실차 소프트웨어 한계 0.40rad/s. 곡률 한계와 함께 적용되므로
+    # 약 0.048m/s 이하에서만 0.12m 최소 반경을 모두 사용할 수 있다.
+    max_angular_speed_radps: 0.40
     # [1/m] 경로 기준 곡률이 이 값 이하일 때 직선 후보로 판정한다.
     # 크게 하면 완만한 곡선도 직선 제한을 적용받을 수 있다.
     straight_curvature_threshold_1pm: 0.15
     # [1/m] 직선으로 판정된 구간에서 허용할 최대 보정 곡률이다.
-    # 현재 3.0은 약 33.3cm 반경이며, 낮추면 부드럽지만 횡오차 복귀가 느려진다.
-    straight_max_curvature_1pm: 1.0
-    # [deg] 직선 제한 구간에서 차량 yaw와 가장 가까운 경로 yaw의 오차가
-    # 이 값을 넘으면 HEADING_ERROR_TOO_LARGE로 정지한다.
+    # 3.5는 약 28.6cm 반경이다. 직선에서는 급격한 좌우 조향을 막고,
+    # 아래 lookahead가 곡선을 감지하면 전체 곡률 한계를 사용한다.
+    straight_max_curvature_1pm: 3.5
+    # [1/m²] 현재 및 예측 횡오차에 추가하는 안정화 곡률 gain이다.
+    # 50이면 합성 횡오차가 1cm일 때 보정 곡률 0.50 1/m를 추가한다.
+    # 직선부터 누적되는 실차 좌우 휠 편차를 초기에 제거하기 위한 값이다.
+    cross_track_feedback_gain_1pm2: 50.0
+    # [1/(m·rad)] 경로 접선 yaw와 차량 yaw 차이를 곡률에 반영한다.
+    # 위치만 맞추고 선을 넘어가지 않도록 합류하면서 차체를 경로와 나란히 한다.
+    heading_feedback_gain_1pmprad: 4.0
+    # [m] 카메라 중심 검출의 작은 흔들림으로 조향 부호가 반복해서 바뀌지
+    # 않도록 3mm 이내 횡오차는 추가 feedback에 사용하지 않는다.
+    cross_track_deadband_m: 0.003
+    # [m] 횡오차가 0.5cm를 넘으면 즉시 속도를 낮춰 위치 복귀를 우선한다.
+    cross_track_slowdown_start_m: 0.005
+    # [m] 횡오차가 2.5cm에 도달하면 아래 최소 속도 비율까지 감속한다.
+    cross_track_slowdown_full_m: 0.025
+    # 횡오차 감속 시 기준 속도에 곱할 최소 비율이다.
+    minimum_tracking_speed_scale: 0.25
+    # [deg] 직선·곡선·후진 구간에서 경로 yaw 오차가 이 값을 넘으면
+    # 정지하지 않고 주행 방향에 맞는 비례 곡률로 경로 방향에 복귀한다.
     max_tracking_yaw_error_deg: 25.0
+    # [deg] 이 yaw 오차에서 최대 곡률에 도달한다. 기존 60도보다 일찍
+    # 최대 곡률을 사용해 벽 근처 heading 복귀의 조향 지연을 줄인다.
+    heading_recovery_full_curvature_error_deg: 40.0
+    # 큰 heading 오차 복귀 중 기준속도에 곱하는 비율이다. 전진은 3.75cm/s로
+    # 주행해 DD 각속도를 확보하면서도 정상속도보다 느리게 자세를 복구한다.
+    heading_recovery_speed_scale: 0.75
 
     # [s] fused pose가 이 시간보다 오래 갱신되지 않으면 POSE_TIMEOUT으로 정지한다.
-    pose_timeout_sec: 0.6
+    pose_timeout_sec: 1.0
     # [s] 고정 경로가 이 시간보다 오래 재발행되지 않으면 PATH_TIMEOUT으로 정지한다.
     path_timeout_sec: 2.5
     # [s] 전진↔후진 direction 전환점에서 완전히 정지해 기다리는 시간이다.
-    gear_pause_sec: 0.7
+    gear_pause_sec: 0.4
     # [m] 최종 경로점까지 이 거리 이내이고 yaw 오차도 허용 범위 이내이면
     # GOAL_REACHED로 판단한다.
-    goal_position_tolerance_m: 0.025
+    # 상단 카메라 중심 검출 흔들림보다 작은 2cm는 종점 직전 정지를 유발하므로
+    # 3cm 안에서 yaw까지 맞으면 완료로 판정한다.
+    goal_position_tolerance_m: 0.03
     # [deg] 최종 위치에서 허용하는 경로 종점 yaw 오차다.
-    goal_yaw_tolerance_deg: 8.0
+    # 충전 접점 정렬을 위해 기존 9도보다 엄격한 6도로 완료를 판정한다.
+    # 5도에서는 C1 목표 위치 0.6cm 안에서 5.54도 상태로 정지 해에 고정됐다.
+    goal_yaw_tolerance_deg: 6.0
     # [m] direction 전환점까지 이 거리 이내일 때 GEAR_CHANGE_REQUIRED를 발생시킨다.
-    # 너무 크면 전환점에 도달하기 전에 후진하고, 너무 작으면 전환이 어려울 수 있다.
-    gear_position_tolerance_m: 0.03
+    # progress가 아래 마지막 N점 안에 들어온 뒤에는 카메라 위치 오차를
+    # 고려해 전환점 4cm 이내에서 후진으로 전환한다.
+    gear_position_tolerance_m: 0.025
+    # [m] 3-point 주차의 짧은 전진 정렬에서 비홀로노믹 종점 바로 앞에
+    # 속도가 0으로 굳을 때만 쓰는 보조 전환 반경이다. 아래 end guard 안이고
+    # 정지 상태일 때만 적용되므로 정상 주행 중 조기 전환에는 사용되지 않는다.
+    gear_fallback_position_tolerance_m: 0.07
+    # [m/s] 보조 기어 전환에서 정지 상태로 판단할 선속도 절댓값이다.
+    gear_stall_speed_threshold_mps: 0.003
+    # [m] 보조 전환은 3-point 정렬의 짧은 구간에서만 허용한다.
+    # 긴 도로 접근 구간에는 2.5cm 기본 전환 오차를 강제해 다음 급곡선을
+    # 잘못된 시작 자세로 진입하지 않게 한다.
+    gear_fallback_max_segment_length_m: 0.30
+    # direction 구간의 마지막 N점 안에 progress가 들어온 경우에만
+    # 전진→후진 전환을 허용해 가까이 지나가는 후진 경로로의 오인 전환을 막는다.
+    gear_transition_end_guard_points: 12
     # 현재 progress에서 앞으로 가장 가까운 경로점을 검색할 최대 점 개수다.
     # 경로점 간격 기준의 개수이며 m 단위가 아니다.
-    nearest_forward_window: 140
+    nearest_forward_window: 12
     # 현재 progress보다 뒤쪽으로 가장 가까운 점을 다시 찾도록 허용하는 점 개수다.
     # 현재 전진/후진 direction 구간 내부에서만 적용되며 기어 경계를 넘지 않는다.
     # 크게 하면 위치 노이즈에서 progress가 뒤로 흔들릴 가능성이 커진다.
     nearest_backward_window: 4
+    # 현재점뿐 아니라 앞쪽 N번째 점까지 차량 운동을 예측한다.
+    # 0.5cm 경로 간격에서 4점은 약 2cm 앞 경로만 보는 설정이다.
+    steering_preview_points: 4
+    # 현재 횡오차와 위 예측 횡오차를 섞는 비율이다.
+    # 0이면 현재점만, 1이면 예측점만 사용한다. 0.20으로 현재 위치 오차를
+    # 우선하면서 바로 앞 곡선만 약하게 반영한다.
+    steering_preview_weight: 0.20
+    # 경로 이탈 시 자연스럽게 합류하기 위해 최대 몇 점 앞의 경로 접선을
+    # 볼지 정한다. 0.5cm 간격 12점은 약 6cm이며 정상 추종에는 적용되지 않는다.
+    steering_rejoin_preview_points: 12
+    # [m] 이 횡오차에서 위 최대 rejoin preview를 모두 사용한다.
+    steering_rejoin_full_error_m: 0.03
+    # 최대 이탈 시 현재 횡오차보다 앞쪽 경로와의 예측 오차를 더 많이 사용한다.
+    # 가장 가까운 한 점으로 급히 꺾지 않고 경로 접선으로 합류하게 한다.
+    steering_rejoin_preview_weight: 0.65
 
     # 경로 yaw로 계산한 feed-forward 곡률의 이동평균 점 개수다.
     # 양의 홀수만 허용한다. 크게 하면 부드럽지만 코너 진입 반응이 늦어진다.
-    curvature_smoothing_points: 5
+    curvature_smoothing_points: 3
     # 직선 판정 시 MPC 예측 참조 중 앞에서 검사할 점 개수다.
     # 늘리면 앞쪽 곡선을 더 일찍 발견해 직선 곡률 제한을 미리 해제한다.
-    straight_lookahead_points: 4
+    # 0.5cm 경로 간격 기준 8점(약 4cm) 앞에서 곡률 제한을 해제한다.
+    straight_lookahead_points: 8
     # 직선 판정 시 현재 progress 뒤쪽에서 곡률 이력을 검사할 점 개수다.
     # 늘리면 코너 통과 후에도 전체 곡률 허용 상태를 더 오래 유지한다.
     straight_history_points: 12
@@ -134,24 +208,24 @@ pinkk_mpc_path_follower:
 
     # 예측 horizon의 각 step에서 x/y 위치 오차에 주는 비용이다.
     # 올리면 경로 위치 복귀를 우선하지만 조향이 공격적일 수 있다.
-    weight_position: 300.0
+    weight_position: 1000.0
     # 예측 horizon의 각 step에서 yaw 오차에 주는 비용이다.
     # 올리면 경로 방향을 강하게 맞추지만 횡오차 보정과 충돌할 수 있다.
-    weight_yaw: 2.5
+    weight_yaw: 8.0
     # horizon 마지막 예측점의 x/y 위치 오차 비용이다.
     # 올리면 예측 끝 위치를 경로에 강하게 맞추려 한다.
-    weight_terminal_position: 500.0
+    weight_terminal_position: 1600.0
     # horizon 마지막 예측점의 yaw 오차 비용이다.
-    weight_terminal_yaw: 5.0
+    weight_terminal_yaw: 20.0
     # 기준 속도와 예측 속도의 차이에 주는 비용이다.
     # 올리면 설정 속도를 잘 유지하고, 내리면 오차 보정을 위해 감속하기 쉬워진다.
-    weight_speed: 50.0
+    weight_speed: 150.0
     # 경로 feed-forward 곡률과 예측 곡률 차이에 주는 비용이다.
     # 올리면 경로 자체의 곡률을 더 따르고 횡오차에 의한 추가 보정은 약해진다.
     weight_curvature: 0.08
     # 연속 예측 step의 속도 변화에 주는 비용이다.
     # 올리면 가감속이 부드럽지만 속도 반응이 느려진다.
-    weight_speed_rate: 0.8
+    weight_speed_rate: 1.0
     # 연속 예측 step의 곡률 변화에 주는 비용이다.
     # 올리면 좌우 진동이 줄지만 코너·횡오차 반응이 느려진다.
-    weight_curvature_rate: 0.03
+    weight_curvature_rate: 0.06

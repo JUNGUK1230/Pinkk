@@ -48,12 +48,12 @@ python3 scripts/test_fixed_live_route_bridge.py
 
 허용 이동 관계는 다음과 같습니다.
 
-- `START` → `P10`~`P6`, `C1`, `C2`
-- `P10`~`P6` → `C1`, `C2`
-- `C1`, `C2` → `P1`~`P5`
-- `P1`~`P5` → `EXIT`
+- `START` → `P8`~`P5`, `C1`, `C2`
+- `P8`~`P5` → `C1`, `C2`
+- `C1`, `C2` → `P1`~`P4`
+- `P1`~`P4` → `EXIT`
 
-동일 라인 내부 전이(`P10`→`P9`, `C1`→`C2`, `P1`→`P2` 등)는 허용하지
+동일 라인 내부 전이(`P8`→`P7`, `C1`→`C2`, `P1`→`P2` 등)는 허용하지
 않으며, 다른 차량의 충전 배정은 현재 ego의 `TARGET`으로 표시하지 않습니다.
 
 ## 실시간 실행
@@ -72,7 +72,7 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 창 조작:
 
 - `e`: 현재 ego 차량을 화면의 다음 ByteTrack ID 차량으로 전환
-- `SPACE`: C1/C2 충전 완료 처리 후 P1~P5 목표 배정
+- `SPACE`: C1/C2 충전 완료 처리 후 P1~P4 목표 배정
 - `p`: 현재 운행 단계의 고정 경로 다시 선택
 - `q` 또는 `ESC`: 종료
 
@@ -112,8 +112,8 @@ velocity, stop flag는 보내지 않으며 차량 주행 코드가 경로를 바
 6. 현재 section과 목표 section에 대응하는 CSV 전체를 읽어 경로 토픽으로
    즉시 발행합니다.
 
-충전칸이 모두 사용 중이면 P6~P10의 빈 면을 대기 위치로 사용합니다. 충전
-완료 후에는 빈 P1~P5 중 출구에 가까운 면을 배정합니다.
+충전칸이 모두 사용 중이면 P5~P8의 빈 면을 대기 위치로 사용합니다. 충전
+완료 후에는 빈 P1~P4 중 출구에 가까운 면을 배정합니다.
 
 기본 실행은 runtime CSV/JSON/PNG를 저장하지 않습니다.
 `config/yolo/realtime_localization.yaml`의 `write_runtime_files: true`는

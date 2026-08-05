@@ -255,6 +255,10 @@ class MpcPathFollower(Node):
             "control_frequency_hz": 4.0,
             "path_timeout_sec": 2.5,
             "gear_pause_sec": 0.7,
+            "control_point_offset_m": 0.04,
+            "wheel_radius_m": 0.027,
+            "wheel_separation_m": 0.0961,
+            "max_wheel_angular_speed_radps": 0.105 / 0.027,
             "dt_sec": 0.25,
             "horizon_steps": 10,
             "forward_speed_mps": 0.06,
@@ -262,18 +266,35 @@ class MpcPathFollower(Node):
             "max_forward_speed_mps": 0.08,
             "max_reverse_speed_mps": 0.03,
             "max_acceleration_mps2": 0.12,
-            "max_curvature_1pm": 7.0,
+            "max_curvature_1pm": 1.0 / 0.12,
             "max_curvature_rate_1pmps": 10.0,
-            "max_angular_speed_radps": 0.35,
+            "max_angular_speed_radps": 0.40,
             "straight_curvature_threshold_1pm": 0.35,
             "straight_max_curvature_1pm": 3.0,
+            "cross_track_feedback_gain_1pm2": 15.0,
+            "heading_feedback_gain_1pmprad": 4.0,
+            "cross_track_deadband_m": 0.003,
+            "cross_track_slowdown_start_m": 0.01,
+            "cross_track_slowdown_full_m": 0.04,
+            "minimum_tracking_speed_scale": 0.35,
             "max_tracking_yaw_error_deg": 25.0,
+            "heading_recovery_full_curvature_error_deg": 45.0,
+            "heading_recovery_speed_scale": 0.60,
             "pose_timeout_sec": 0.6,
-            "goal_position_tolerance_m": 0.025,
+            "goal_position_tolerance_m": 0.03,
             "goal_yaw_tolerance_deg": 8.0,
             "gear_position_tolerance_m": 0.01,
+            "gear_fallback_position_tolerance_m": 0.04,
+            "gear_stall_speed_threshold_mps": 0.003,
+            "gear_fallback_max_segment_length_m": 0.15,
+            "gear_transition_end_guard_points": 20,
             "nearest_forward_window": 140,
             "nearest_backward_window": 4,
+            "steering_preview_points": 6,
+            "steering_preview_weight": 0.30,
+            "steering_rejoin_preview_points": 12,
+            "steering_rejoin_full_error_m": 0.03,
+            "steering_rejoin_preview_weight": 0.65,
             "curvature_smoothing_points": 5,
             "straight_lookahead_points": 4,
             "straight_history_points": 12,
@@ -306,6 +327,18 @@ class MpcPathFollower(Node):
         overrides: dict[str, object] | None = None,
     ) -> MpcLimits:
         return MpcLimits(
+            control_point_offset_m=self._nonnegative_parameter(
+                "control_point_offset_m", overrides
+            ),
+            wheel_radius_m=self._positive_parameter(
+                "wheel_radius_m", overrides
+            ),
+            wheel_separation_m=self._positive_parameter(
+                "wheel_separation_m", overrides
+            ),
+            max_wheel_angular_speed_radps=self._positive_parameter(
+                "max_wheel_angular_speed_radps", overrides
+            ),
             dt_sec=self._positive_parameter("dt_sec", overrides),
             horizon_steps=int(self._parameter_value("horizon_steps", overrides)),
             forward_speed_mps=self._positive_parameter(
@@ -338,8 +371,34 @@ class MpcPathFollower(Node):
             straight_max_curvature_1pm=self._positive_parameter(
                 "straight_max_curvature_1pm", overrides
             ),
+            cross_track_feedback_gain_1pm2=self._nonnegative_parameter(
+                "cross_track_feedback_gain_1pm2", overrides
+            ),
+            heading_feedback_gain_1pmprad=self._nonnegative_parameter(
+                "heading_feedback_gain_1pmprad", overrides
+            ),
+            cross_track_deadband_m=self._positive_parameter(
+                "cross_track_deadband_m", overrides
+            ),
+            cross_track_slowdown_start_m=self._positive_parameter(
+                "cross_track_slowdown_start_m", overrides
+            ),
+            cross_track_slowdown_full_m=self._positive_parameter(
+                "cross_track_slowdown_full_m", overrides
+            ),
+            minimum_tracking_speed_scale=self._positive_parameter(
+                "minimum_tracking_speed_scale", overrides
+            ),
             max_tracking_yaw_error_rad=math.radians(
                 self._positive_parameter("max_tracking_yaw_error_deg", overrides)
+            ),
+            heading_recovery_full_curvature_error_rad=math.radians(
+                self._positive_parameter(
+                    "heading_recovery_full_curvature_error_deg", overrides
+                )
+            ),
+            heading_recovery_speed_scale=self._positive_parameter(
+                "heading_recovery_speed_scale", overrides
             ),
             pose_timeout_sec=self._positive_parameter(
                 "pose_timeout_sec", overrides
@@ -353,11 +412,42 @@ class MpcPathFollower(Node):
             gear_position_tolerance_m=self._positive_parameter(
                 "gear_position_tolerance_m", overrides
             ),
+            gear_fallback_position_tolerance_m=self._positive_parameter(
+                "gear_fallback_position_tolerance_m", overrides
+            ),
+            gear_stall_speed_threshold_mps=self._positive_parameter(
+                "gear_stall_speed_threshold_mps", overrides
+            ),
+            gear_fallback_max_segment_length_m=self._positive_parameter(
+                "gear_fallback_max_segment_length_m", overrides
+            ),
+            gear_transition_end_guard_points=int(
+                self._parameter_value(
+                    "gear_transition_end_guard_points", overrides
+                )
+            ),
             nearest_forward_window=int(
                 self._parameter_value("nearest_forward_window", overrides)
             ),
             nearest_backward_window=int(
                 self._parameter_value("nearest_backward_window", overrides)
+            ),
+            steering_preview_points=int(
+                self._parameter_value("steering_preview_points", overrides)
+            ),
+            steering_preview_weight=self._nonnegative_parameter(
+                "steering_preview_weight", overrides
+            ),
+            steering_rejoin_preview_points=int(
+                self._parameter_value(
+                    "steering_rejoin_preview_points", overrides
+                )
+            ),
+            steering_rejoin_full_error_m=self._positive_parameter(
+                "steering_rejoin_full_error_m", overrides
+            ),
+            steering_rejoin_preview_weight=self._nonnegative_parameter(
+                "steering_rejoin_preview_weight", overrides
             ),
             curvature_smoothing_points=int(
                 self._parameter_value("curvature_smoothing_points", overrides)
@@ -495,9 +585,8 @@ class MpcPathFollower(Node):
             self._controller.weights = new_weights
             if path:
                 self._controller.set_path(path)
-                self._controller.progress_index = min(
-                    progress_index,
-                    len(path) - 1,
+                self._controller.restore_progress(
+                    min(progress_index, len(path) - 1)
                 )
 
         self._path_timeout_sec = path_timeout_sec
@@ -704,10 +793,18 @@ class MpcPathFollower(Node):
             if not self._controller.advance_gear_segment():
                 self._publish_zero("GEAR_ADVANCE_FAILED")
                 return
+            self.get_logger().info(
+                "Advanced gear segment: "
+                f"path_index={self._controller.progress_index}, "
+                f"direction={self._controller.path[self._controller.progress_index].direction}"
+            )
             self._gear_resume_monotonic = None
 
         command = self._controller.command(self._state)
         if command.status == "GEAR_CHANGE_REQUIRED":
+            self.get_logger().info(
+                f"Gear change requested at path_index={command.progress_index}"
+            )
             self._gear_resume_monotonic = now + self._gear_pause_sec
             self._publish_zero("GEAR_PAUSE")
             return

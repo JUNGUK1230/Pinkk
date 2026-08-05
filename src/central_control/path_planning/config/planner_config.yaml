@@ -42,7 +42,7 @@ hybrid_astar:
   # 막힌 goal 근처에서 모든 노드마다 expensive analytic 후보를 만들지 않는다.
   analytic_expansion_interval_nodes: 20
   analytic_max_candidates: 12
-  # 14 cm 물리 한계보다 완만한 18 cm analytic 곡선을 만들기 위한 여유값
+  # 12 cm 물리 한계보다 완만한 16 cm analytic 곡선을 만들기 위한 여유값
   analytic_turning_radius_margin_cm: 4.0
   path_smoothing_enabled: true
   # 장거리 경로에서도 조향 변화가 완만해지도록 control knot을 넓힌다.
@@ -60,7 +60,8 @@ trajectory_profile:
   max_reverse_speed_mps: 0.03
   min_curve_forward_speed_mps: 0.02
   min_curve_reverse_speed_mps: 0.015
-  max_angular_speed_radps: 0.5
+  # PinkyPro controller의 실제 각속도 상한.
+  max_angular_speed_radps: 0.4
   max_acceleration_mps2: 0.05
   max_deceleration_mps2: 0.05
 

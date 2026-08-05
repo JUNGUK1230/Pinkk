@@ -34,6 +34,7 @@ class VehicleObservation:
     confidence: float
     center_bev_px: Point
     center_lidar_px: Point
+    center_cm: Point
     rear_axle_cm: Point
     yaw_rad: float
     yaw_deg: float
@@ -52,6 +53,7 @@ class VehicleObservation:
             "confidence": self.confidence,
             "center_bev_px": list(self.center_bev_px),
             "center_lidar_px": list(self.center_lidar_px),
+            "center_cm": list(self.center_cm),
             "rear_axle_cm": list(self.rear_axle_cm),
             "yaw_rad": self.yaw_rad,
             "yaw_deg": self.yaw_deg,
@@ -486,6 +488,7 @@ class EgoVehicleTracker:
             confidence=detection.confidence,
             center_bev_px=center,
             center_lidar_px=center_lidar,
+            center_cm=center_cm,
             rear_axle_cm=rear_axle_cm,
             yaw_rad=yaw,
             yaw_deg=math.degrees(yaw),
@@ -564,14 +567,10 @@ class ParkingSlotMap:
                 center_lidar[1] * self.transform.resolution_cm,
             )
             yaw_candidates = (axis_yaw, _normalize_yaw(axis_yaw + math.pi))
-            goals = tuple(
-                (
-                    center_cm[0] - self.rear_axle_offset_cm * math.cos(yaw),
-                    center_cm[1] - self.rear_axle_offset_cm * math.sin(yaw),
-                    yaw,
-                )
-                for yaw in yaw_candidates
-            )
+            # 계획·제어 경로는 차량 중심 기준이다. yaw 후보에 따라 위치까지
+            # 4 cm 이동시키면 같은 주차면의 목표점이 서로 달라져 중심 추종
+            # 오차가 생기므로, 두 후보 모두 주차면 중심을 사용한다.
+            goals = tuple((center_cm[0], center_cm[1], yaw) for yaw in yaw_candidates)
             observations.append(
                 ParkingSlotObservation(
                     name=name,
@@ -667,11 +666,11 @@ class VehicleStateManager:
     def _state_for_slot(slot_name: str | None) -> str:
         if slot_name is None:
             return "entry_or_transit"
-        if slot_name in {"P6", "P7", "P8", "P9", "P10"}:
+        if slot_name in {"P5", "P6", "P7", "P8"}:
             return "waiting_for_charge"
         if slot_name in {"C1", "C2"}:
             return "charging"
-        if slot_name in {"P1", "P2", "P3", "P4", "P5"}:
+        if slot_name in {"P1", "P2", "P3", "P4"}:
             return "charged_waiting_exit"
         return "parked_other"
 
@@ -807,7 +806,7 @@ class SceneLocalizer:
         self.target_slot_name = target_slot_name
         self.parking_assignment = parking_assignment
         # 충전 완료는 YOLO만으로 알 수 없는 외부 이벤트다. 현재는 운영자가
-        # space를 눌러 전달하며, 해당 track_id만 P1~P5 대기 주차 단계로 넘긴다.
+        # space를 눌러 전달하며, 해당 track_id만 P1~P4 대기 주차 단계로 넘긴다.
         self.post_charge_parking_assignment = post_charge_parking_assignment
         self._charge_completed_vehicle_ids: set[int] = set()
 
@@ -826,7 +825,7 @@ class SceneLocalizer:
         vehicle_track_id: int | None,
         tracked_vehicles: Sequence[TrackedVehicleObservation],
     ) -> tuple[bool, str]:
-        """운영자 충전 완료 이벤트를 검증하고 P1~P5 단계로 전환한다."""
+        """운영자 충전 완료 이벤트를 검증하고 P1~P4 단계로 전환한다."""
         if vehicle_track_id is None:
             return False, "충전 완료 처리 실패: ego track_id가 없습니다"
         vehicle = next(
@@ -849,7 +848,7 @@ class SceneLocalizer:
         return (
             True,
             "충전이 완료되었습니다. "
-            f"track_id={vehicle_track_id}의 P1~P5 대기 주차 경로를 생성합니다.",
+            f"track_id={vehicle_track_id}의 P1~P4 대기 주차 경로를 생성합니다.",
         )
 
     def observe(
@@ -937,7 +936,7 @@ class SceneLocalizer:
                 vehicle,
                 slots,
                 None,
-                "charge completed; vehicle is waiting in P1~P5 for exit request",
+                "charge completed; vehicle is waiting in P1~P4 for exit request",
                 tracked_vehicles,
                 charge_assignment,
             )
@@ -949,7 +948,7 @@ class SceneLocalizer:
                     vehicle,
                     slots,
                     None,
-                    "charge completed but P1~P5 assignment policy is not configured",
+                    "charge completed but P1~P4 assignment policy is not configured",
                     tracked_vehicles,
                     charge_assignment,
                 )
@@ -963,7 +962,7 @@ class SceneLocalizer:
                     vehicle,
                     slots,
                     None,
-                    "charge completed but no free slot in P1~P5",
+                    "charge completed but no free slot in P1~P4",
                     tracked_vehicles,
                     charge_assignment,
                 )
@@ -992,7 +991,7 @@ class SceneLocalizer:
             and charge_assignment.status == "assigned_to_charge"
             and charge_assignment.target_slot_name is not None
         ):
-            # P6~P10 대기 차량에는 Episode 규칙이 기존 P구역 배정보다
+            # P5~P8 대기 차량에는 Episode 규칙이 기존 P구역 배정보다
             # 우선하며 C2를 먼저, 점유 시 C1을 목표로 사용한다.
             target_slot = next(
                 (
@@ -1078,8 +1077,8 @@ class SceneLocalizer:
             )
 
         start = (
-            vehicle.rear_axle_cm[0],
-            vehicle.rear_axle_cm[1],
+            vehicle.center_cm[0],
+            vehicle.center_cm[1],
             vehicle.yaw_rad,
         )
         ranked: list[tuple[float, ParkingSlotObservation, Pose, Pose]] = []
@@ -1101,7 +1100,7 @@ class SceneLocalizer:
             ranked.append((score, slot, candidates[0], candidates[1]))
         if assignment_policy is not None and self.target_slot_name is None:
             # 정책에서 이미 입구·출구 거리 기준 우선순위를 정했으므로, 첫 빈 칸만
-            # 선택한다. yaw 정렬 점수는 같은 칸의 두 rear-axle pose 순서에만 쓴다.
+            # 선택한다. yaw 정렬 점수는 같은 칸의 두 중심 pose 순서에만 쓴다.
             _, selected_slot, goal, alternative = ranked[0]
         else:
             _, selected_slot, goal, alternative = min(

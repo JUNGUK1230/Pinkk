@@ -72,7 +72,7 @@ def main() -> int:
                     "planning_ready": True,
                     "status": "planning input ready",
                     "vehicle": {
-                        "rear_axle_cm": [45.0, 72.0],
+                        "center_cm": [45.0, 72.0],
                         "yaw_rad": 0.25,
                     },
                 }

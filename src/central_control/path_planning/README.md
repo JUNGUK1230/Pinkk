@@ -14,7 +14,7 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 | 파일 | 역할 |
 |---|---|
 | `config/fixed_mission_routes.yaml` | 고정 yaw, 도로 중심선, endpoint pose와 허용 이동 관계를 정의합니다. 모든 좌표는 `lidar_map_cm` 기준입니다. |
-| `src/fixed_route_selector.py` | 현재 rear-axle pose를 `START`/주차면으로 분류하고 해당 CSV 전체를 불러옵니다. |
+| `src/fixed_route_selector.py` | 현재 차량 중심 pose를 `START`/주차면으로 분류하고 해당 CSV 전체를 불러옵니다. |
 | `scripts/test_fixed_mission_routes.py` | 허용된 32개 경로를 생성하거나 충돌 여부를 검사합니다. |
 | `scripts/test_fixed_route_selector.py` | 현재 section 판별과 CSV 선택을 회귀 검사합니다. |
 | `scripts/test_fixed_live_route_bridge.py` | YOLO scene의 현재 위치·목표가 올바른 고정 경로로 연결되는지 검사합니다. |
@@ -27,12 +27,12 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 
 ## 허용 경로
 
-- `START` → `P10`~`P6`, `C1`, `C2`
-- `P10`~`P6` → `C1`, `C2`
-- `C1`, `C2` → `P1`~`P5`
-- `P1`~`P5` → `EXIT`
+- `START` → `P8`~`P5`, `C1`, `C2`
+- `P8`~`P5` → `C1`, `C2`
+- `C1`, `C2` → `P1`~`P4`
+- `P1`~`P4` → `EXIT`
 
-같은 단계의 주차면 사이 이동(`P10`→`P9`, `C1`→`C2`, `P1`→`P2` 등)은
+같은 단계의 주차면 사이 이동(`P8`→`P7`, `C1`→`C2`, `P1`→`P2` 등)은
 생성·표시·토픽 발행 대상이 아닙니다.
 
 슬롯에서 출차할 때는 해당 주차 진입 경로를 반대로 따라 전진합니다. 목표
@@ -70,7 +70,7 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 `overhead_vision/localization/live_localization.py`가 다음 순서로 동작합니다.
 
 1. YOLO/ByteTrack으로 ego 차량의 중심을 검출합니다.
-2. Camera–LiDAR 정합으로 rear-axle 위치를 `lidar_map_cm`으로 변환합니다.
+2. Camera–LiDAR 정합으로 차량 중심 위치를 `lidar_map_cm`으로 변환합니다.
 3. 차량 중심이 포함된 주차면 또는 `START`를 현재 section으로 사용합니다.
 4. 현재 section과 배정된 목표 section으로 고정 CSV를 선택합니다.
 5. 선택한 경로를 파일 중계 없이 ROS 2 토픽으로 발행합니다.
@@ -90,7 +90,7 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 
 발행 토픽:
 
-- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 rear-axle pose
+- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 차량 중심 pose
 - `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
 - `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
   (`x_m, y_m, yaw_rad, direction`)

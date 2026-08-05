@@ -58,7 +58,7 @@ def main() -> int:
         PROJECT_ROOT / "output",
     )
     controller = IntegratedPlanningController(selector)
-    start = (68.1221, 23.7980, fixed_yaw)
+    start = tuple(selector.endpoints["START"]["staging"])
     outcome = controller._plan_request(
         frame_index=1,
         observed_at_unix_sec=time.time(),
@@ -84,10 +84,13 @@ def main() -> int:
     assert scheduler.due(11.4, has_route=True)
 
     # 다른 차량의 충전 배정 C2를 C1에 있는 ego의 다음 목표로 표시하면
-    # 안 된다. C1/C2의 유효한 다음 목표는 P1~P5뿐이다.
+    # 안 된다. C1/C2의 유효한 다음 목표는 P1~P4뿐이다.
     c1_vehicle = SimpleNamespace(
         track_id=7,
-        rear_axle_cm=(168.0, 129.0),
+        center_cm=(
+            float(selector.endpoints["C1"]["goal"][0]) + 3.5,
+            float(selector.endpoints["C1"]["goal"][1]),
+        ),
         yaw_rad=-2.4521787849,
     )
     c1_tracked = SimpleNamespace(track_id=7, assigned_slot_name="C1")
@@ -127,7 +130,7 @@ def main() -> int:
     assert not arrival_controller.consume_invalidation()
     c1_scene.vehicle = SimpleNamespace(
         track_id=7,
-        rear_axle_cm=(float(c1_goal[0]), float(c1_goal[1])),
+        center_cm=(float(c1_goal[0]), float(c1_goal[1])),
         yaw_rad=float(c1_goal[2]),
     )
     arrival_controller.update(c1_scene, route_revision=0)
@@ -146,8 +149,8 @@ def main() -> int:
     p8_scene = SimpleNamespace(
         vehicle=SimpleNamespace(
             track_id=8,
-            rear_axle_cm=(91.5897, 83.1051),
-            yaw_rad=-0.8598,
+            center_cm=tuple(selector.endpoints["P8"]["goal"][:2]),
+            yaw_rad=float(selector.endpoints["P8"]["goal"][2]),
         ),
         tracked_vehicles=(
             SimpleNamespace(track_id=8, assigned_slot_name="P8"),

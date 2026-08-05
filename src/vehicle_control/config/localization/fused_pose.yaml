@@ -19,9 +19,8 @@ pinkk_fused_pose_estimator:
     map_resolution_m_per_px: 0.01
     occupied_pixel_threshold: 100
 
-    # 상단 카메라가 발행하는 차체 중심 기준으로 rear axle은 4cm 뒤,
-    # LiDAR는 5.7cm 뒤에 있으며 rplidar_link는 yaw 180도로 장착된다.
-    rear_axle_offset_m: 0.04
+    # 상단 카메라가 발행하는 차체 중심 기준으로 LiDAR는 5.7cm 뒤에
+    # 있으며 rplidar_link는 yaw 180도로 장착된다.
     lidar_x_m: -0.057
     lidar_y_m: 0.0
     scan_frame_yaw_deg: 180.0

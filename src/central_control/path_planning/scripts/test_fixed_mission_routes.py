@@ -58,6 +58,134 @@ def _direction_only_path(
     )
 
 
+def _aligned_parking_entry(
+    planner,
+    start: Pose,
+    goal: Pose,
+    turning_radius_cm: float,
+    final_straight_cm: float,
+    slot_polygon_cm: list[list[float]] | None = None,
+):
+    """칸 밖에서 goal yaw를 완성한 뒤 직선 후진으로만 진입한다."""
+    if final_straight_cm <= 0.0:
+        return list(
+            _direction_only_path(
+                planner,
+                start,
+                goal,
+                -1,
+                turning_radius_cm,
+            ).poses
+        )
+
+    alignment = (
+        goal[0] + final_straight_cm * math.cos(goal[2]),
+        goal[1] + final_straight_cm * math.sin(goal[2]),
+        goal[2],
+    )
+    reeds_shepp = ReedsSheppPlanner(
+        turning_radius_cm,
+        planner.path_output_step_cm,
+    )
+    candidates = []
+    for candidate in reeds_shepp.iter_candidates(start, alignment):
+        if not candidate.poses or not planner.is_path_collision_free(candidate.poses):
+            continue
+        if slot_polygon_cm and any(
+            _point_in_convex_polygon(
+                (
+                    pose.x_cm
+                    - planner.rear_overhang_cm * math.cos(pose.yaw_rad),
+                    pose.y_cm
+                    - planner.rear_overhang_cm * math.sin(pose.yaw_rad),
+                ),
+                slot_polygon_cm,
+            )
+            for pose in candidate.poses
+        ):
+            # 정렬 maneuver 중 후미가 먼저 칸에 들어가는 후보는 버린다.
+            # slot 진입은 goal yaw가 고정된 마지막 직선에서만 허용한다.
+            continue
+        directions = [pose.direction for pose in candidate.poses]
+        # 통로에서 먼저 후진해 차체를 정렬하고, 짧게 전진해 alignment
+        # 자세를 완성한다. 이후 마지막 직선 후진과 합쳐 3-point 진입이 된다.
+        if directions[0] != -1 or directions[-1] != 1:
+            continue
+        gear_switches = sum(
+            first != second
+            for first, second in zip(directions, directions[1:])
+        )
+        candidates.append((gear_switches, candidate.total_length_cm, candidate))
+    if not candidates:
+        raise RuntimeError(
+            "no collision-free parking alignment path before slot entry"
+        )
+    _, _, alignment_path = min(candidates, key=lambda item: (item[0], item[1]))
+    final_reverse = _direction_only_path(
+        planner,
+        alignment,
+        goal,
+        -1,
+        turning_radius_cm,
+    )
+    return [*alignment_path.poses, *final_reverse.poses[1:]]
+
+
+def _point_in_convex_polygon(
+    point: tuple[float, float],
+    polygon: list[list[float]],
+) -> bool:
+    signs = []
+    for first, second in zip(polygon, [*polygon[1:], polygon[0]]):
+        cross = (
+            (float(second[0]) - float(first[0]))
+            * (point[1] - float(first[1]))
+            - (float(second[1]) - float(first[1]))
+            * (point[0] - float(first[0]))
+        )
+        if abs(cross) > 1e-9:
+            signs.append(cross > 0.0)
+    return not signs or all(value == signs[0] for value in signs)
+
+
+def _validate_final_straight(
+    rows: list[dict],
+    goal: Pose,
+    required_length_cm: float,
+    source: str,
+    target: str,
+) -> None:
+    if required_length_cm <= 0.0:
+        return
+    accumulated_cm = 0.0
+    for index in range(len(rows) - 1, 0, -1):
+        current = rows[index]
+        previous = rows[index - 1]
+        if int(current["direction"]) != -1:
+            raise RuntimeError(
+                f"final parking segment is not reverse: {source} -> {target}"
+            )
+        yaw_error = abs(
+            (float(current["yaw_rad"]) - goal[2] + math.pi)
+            % (2.0 * math.pi)
+            - math.pi
+        )
+        if yaw_error > 1e-6:
+            raise RuntimeError(
+                f"parking yaw changes inside final straight: {source} -> {target}"
+            )
+        accumulated_cm += math.hypot(
+            float(current["x_cm"]) - float(previous["x_cm"]),
+            float(current["y_cm"]) - float(previous["y_cm"]),
+        )
+        if accumulated_cm + 1e-6 >= required_length_cm:
+            return
+    raise RuntimeError(
+        f"final aligned reverse is shorter than {required_length_cm:.1f} cm: "
+        f"{source} -> {target}"
+    )
+
+
 def _resample_segment(first: Pose, second: Pose, step_cm: float = 0.5) -> list[dict]:
     dx, dy = second[0] - first[0], second[1] - first[1]
     length = math.hypot(dx, dy)
@@ -103,12 +231,19 @@ def _rounded_centerline(
     waypoints: list[Pose],
     turning_radius_cm: float,
     step_cm: float,
+    waypoint_turning_radii_cm: list[float] | None = None,
 ) -> list[dict]:
     """직선 waypoint chain의 모서리를 접선 원호로 교체한다."""
     points = [np.asarray(pose[:2], dtype=np.float64) for pose in waypoints]
     if len(points) < 2:
         raise ValueError("road centerline needs at least two waypoints")
     corners: list[dict[str, object]] = []
+    if (
+        waypoint_turning_radii_cm is not None
+        and len(waypoint_turning_radii_cm) != len(points)
+    ):
+        raise ValueError("waypoint turning radii must match waypoint count")
+
     for index in range(1, len(points) - 1):
         incoming_delta = points[index] - points[index - 1]
         outgoing_delta = points[index + 1] - points[index]
@@ -123,7 +258,16 @@ def _rounded_centerline(
             float(incoming[0] * outgoing[1] - incoming[1] * outgoing[0]),
             float(np.dot(incoming, outgoing)),
         )
-        tangent_length = turning_radius_cm * math.tan(abs(turn) / 2.0)
+        corner_radius_cm = (
+            float(waypoint_turning_radii_cm[index])
+            if waypoint_turning_radii_cm is not None
+            else turning_radius_cm
+        )
+        if corner_radius_cm < turning_radius_cm:
+            raise ValueError(
+                "local road corner radius must not be below the common radius"
+            )
+        tangent_length = corner_radius_cm * math.tan(abs(turn) / 2.0)
         corners.append(
             {
                 "entry": points[index] - incoming * tangent_length,
@@ -131,6 +275,7 @@ def _rounded_centerline(
                 "incoming": incoming,
                 "turn": turn,
                 "tangent_length": tangent_length,
+                "radius_cm": corner_radius_cm,
             }
         )
 
@@ -166,18 +311,19 @@ def _rounded_centerline(
         _append_line(rows, current, entry, step_cm)
         turn_sign = 1.0 if turn > 0.0 else -1.0
         left_normal = np.asarray([-incoming[1], incoming[0]])
-        center = entry + left_normal * turn_sign * turning_radius_cm
+        corner_radius_cm = float(corner["radius_cm"])
+        center = entry + left_normal * turn_sign * corner_radius_cm
         start_angle = math.atan2(
             float(entry[1] - center[1]),
             float(entry[0] - center[0]),
         )
         sample_count = max(
             1,
-            math.ceil(turning_radius_cm * abs(turn) / step_cm),
+            math.ceil(corner_radius_cm * abs(turn) / step_cm),
         )
         for sample_index in range(1, sample_count + 1):
             angle = start_angle + turn * sample_index / sample_count
-            point = center + turning_radius_cm * np.asarray(
+            point = center + corner_radius_cm * np.asarray(
                 [math.cos(angle), math.sin(angle)]
             )
             tangent_yaw = angle + turn_sign * math.pi / 2.0
@@ -197,12 +343,24 @@ def _rounded_centerline(
 def _build_road_network(config: dict, planner) -> dict[str, object]:
     """하나의 곡률 제한 도로와 각 주차면의 접선 연결 pose를 만든다."""
     route_order = list(config["route_order"])
-    turning_radius_cm = (
-        float(planner.minimum_turning_radius_cm)
-        + ROAD_TURNING_RADIUS_MARGIN_CM
+    turning_radius_cm = float(
+        config.get(
+            "road_turning_radius_cm",
+            float(planner.minimum_turning_radius_cm)
+            + ROAD_TURNING_RADIUS_MARGIN_CM,
+        )
     )
+    if turning_radius_cm < float(planner.minimum_turning_radius_cm):
+        raise ValueError(
+            "road_turning_radius_cm must not be below the vehicle minimum"
+        )
     road_waypoints = [
         _pose(config["road_backbone"][name])
+        for name in route_order
+    ]
+    local_corner_radii = config.get("road_corner_radii_cm", {})
+    road_waypoint_radii = [
+        float(local_corner_radii.get(name, turning_radius_cm))
         for name in route_order
     ]
     # START/EXIT는 검출 endpoint와 CSV 끝점이 수치상 완전히 같아야 한다.
@@ -212,16 +370,23 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
         road_waypoints,
         turning_radius_cm,
         float(planner.path_output_step_cm),
+        road_waypoint_radii,
     )
     for row in centerline:
         if planner.is_pose_collision(row["x_cm"], row["y_cm"], row["yaw_rad"]):
             raise RuntimeError("rounded road centerline collides with the map")
 
     attachment_indices: dict[str, int] = {}
+    entry_attachment_indices: dict[str, int] = {}
     exit_connectors: dict[str, object] = {}
     entry_connectors: dict[str, object] = {}
     minimum_index = 0
     for name in route_order:
+        # route_order에는 주차 endpoint가 아닌 도로 형상 전용 transit
+        # waypoint도 들어갈 수 있다. transit은 centerline에만 사용하고
+        # 위치 검출이나 경로 source/target 후보로 등록하지 않는다.
+        if name not in config["endpoints"]:
+            continue
         endpoint = config["endpoints"][name]
         nominal = _pose(endpoint["staging"])
         candidates = sorted(
@@ -252,20 +417,38 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
             )
             goal = _pose(endpoint["goal"])
             try:
+                exit_turning_radius_cm = float(
+                    endpoint.get(
+                        "exit_turning_radius_cm",
+                        turning_radius_cm,
+                    )
+                )
                 selected_exit = _direction_only_path(
                     planner,
                     goal,
                     attachment,
                     1,
-                    turning_radius_cm,
+                    exit_turning_radius_cm,
                 )
-                selected_entry = _direction_only_path(
-                    planner,
-                    attachment,
-                    goal,
-                    -1,
-                    turning_radius_cm,
-                )
+                if "entry_staging" not in endpoint:
+                    entry_turning_radius_cm = float(
+                        endpoint.get(
+                            "entry_turning_radius_cm",
+                            turning_radius_cm,
+                        )
+                    )
+                    selected_entry = _aligned_parking_entry(
+                        planner,
+                        attachment,
+                        goal,
+                        entry_turning_radius_cm,
+                        float(endpoint.get("entry_final_straight_cm", 0.0)),
+                        endpoint.get("entry_slot_polygon_cm"),
+                    )
+                else:
+                    # 충전칸 진입은 삭제된 인접 주차면을 활용하는 별도
+                    # staging에서 수행하므로 출차 attachment만 먼저 정한다.
+                    selected_entry = []
             except RuntimeError:
                 continue
             selected_index = index
@@ -275,14 +458,95 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                 f"no curvature-safe road attachment found for endpoint {name}"
             )
         attachment_indices[name] = selected_index
-        if selected_exit is not None and selected_entry is not None:
+        entry_attachment_indices[name] = selected_index
+        if selected_exit is not None:
             exit_connectors[name] = selected_exit
+        if selected_entry:
             entry_connectors[name] = selected_entry
         minimum_index = selected_index + 1
+
+    # 넓어진 충전칸 전면 공간은 공통 도로를 억지로 옮기지 않고,
+    # 진입 전용 forward approach + 3-point parking 구간에서만 사용한다.
+    for name, endpoint in config["endpoints"].items():
+        if "entry_staging" not in endpoint:
+            continue
+        sources = [
+            source
+            for source, targets in config["allowed_transitions"].items()
+            if name in targets
+        ]
+        minimum_entry_index = max(
+            attachment_indices[source]
+            for source in sources
+        )
+        maximum_entry_index = attachment_indices[name]
+        entry_staging = _pose(endpoint["entry_staging"])
+        goal = _pose(endpoint["goal"])
+        parking_entry = _aligned_parking_entry(
+            planner,
+            entry_staging,
+            goal,
+            float(endpoint["entry_turning_radius_cm"]),
+            float(endpoint.get("entry_final_straight_cm", 0.0)),
+            endpoint.get("entry_slot_polygon_cm"),
+        )
+        search_cm = float(
+            endpoint.get(
+                "entry_attachment_search_cm",
+                ENDPOINT_ATTACHMENT_SEARCH_CM,
+            )
+        )
+        candidates = sorted(
+            range(minimum_entry_index, maximum_entry_index + 1),
+            key=lambda index: (
+                (float(centerline[index]["x_cm"]) - entry_staging[0]) ** 2
+                + (float(centerline[index]["y_cm"]) - entry_staging[1]) ** 2
+            ),
+        )
+        for index in candidates:
+            row = centerline[index]
+            distance = math.hypot(
+                float(row["x_cm"]) - entry_staging[0],
+                float(row["y_cm"]) - entry_staging[1],
+            )
+            if distance > search_cm:
+                break
+            attachment = (
+                float(row["x_cm"]),
+                float(row["y_cm"]),
+                float(row["yaw_rad"]),
+            )
+            try:
+                approach = _direction_only_path(
+                    planner,
+                    attachment,
+                    entry_staging,
+                    1,
+                    float(
+                        endpoint.get(
+                            "entry_approach_turning_radius_cm",
+                            turning_radius_cm,
+                        )
+                    ),
+                )
+            except RuntimeError:
+                continue
+            entry_attachment_indices[name] = index
+            entry_connectors[name] = [
+                *approach.poses,
+                *parking_entry[1:],
+            ]
+            break
+        else:
+            raise RuntimeError(
+                f"no curvature-safe entry approach found for endpoint {name}"
+            )
 
     return {
         "centerline": centerline,
         "attachment_indices": attachment_indices,
+        "entry_attachment_indices": entry_attachment_indices,
+        "exit_attachment_indices": attachment_indices,
         "exit_connectors": exit_connectors,
         "entry_connectors": entry_connectors,
         "turning_radius_cm": turning_radius_cm,
@@ -340,31 +604,63 @@ def build_route(
         raise ValueError(f"unsupported fixed mission transition: {source} -> {target}")
     network = road_network or _build_road_network(config, planner)
     centerline = network["centerline"]
-    attachment_indices = network["attachment_indices"]
+    entry_attachment_indices = network.get(
+        "entry_attachment_indices",
+        network["attachment_indices"],
+    )
+    exit_attachment_indices = network.get(
+        "exit_attachment_indices",
+        network["attachment_indices"],
+    )
     exit_connectors = network["exit_connectors"]
     entry_connectors = network["entry_connectors"]
-    source_index = int(attachment_indices[source])
-    target_index = int(attachment_indices[target])
+    source_index = int(exit_attachment_indices[source])
+    target_index = int(entry_attachment_indices[target])
     rows: list[dict] = []
 
     # START에서 출발하는 경로는 목표 staging에서 공통 도로를 끝낸다.
     # 이렇게 해야 C1/C2를 지나 다음 구간으로 향하는 원호가 목표 주차 진입
     # pose를 잘라내지 않으며, 기존의 검증된 후진 주차 연결을 그대로 쓸 수 있다.
-    if source == config["route_order"][0]:
-        order = config["route_order"]
-        source_order_index = order.index(source)
-        target_order_index = order.index(target)
-        corridor_names = order[source_order_index : target_order_index + 1]
-        road_waypoints = [_pose(endpoints[source]["staging"])]
-        road_waypoints.extend(
-            _pose(config["road_backbone"][name])
-            for name in corridor_names[1:-1]
+    if (
+        source == config["route_order"][0]
+        and "entry_staging" not in endpoints[target]
+    ):
+        custom_waypoints = (
+            config.get("route_waypoint_sequences", {})
+            .get(source, {})
+            .get(target)
         )
+        road_waypoints = [_pose(endpoints[source]["staging"])]
+        if custom_waypoints is not None:
+            road_waypoints.extend(_pose(values) for values in custom_waypoints)
+        else:
+            order = config["route_order"]
+            source_order_index = order.index(source)
+            target_order_index = order.index(target)
+            corridor_names = order[source_order_index : target_order_index + 1]
+            route_overrides = (
+                config.get("route_waypoint_overrides", {})
+                .get(source, {})
+                .get(target, {})
+            )
+            road_waypoints.extend(
+                _pose(route_overrides.get(name, config["road_backbone"][name]))
+                for name in corridor_names[1:-1]
+            )
         road_waypoints.append(_pose(endpoints[target]["staging"]))
+        waypoint_radii = None
+        if custom_waypoints is None:
+            local_corner_radii = config.get("road_corner_radii_cm", {})
+            waypoint_names = [source, *corridor_names[1:-1], target]
+            waypoint_radii = [
+                float(local_corner_radii.get(name, network["turning_radius_cm"]))
+                for name in waypoint_names
+            ]
         rows = _rounded_centerline(
             road_waypoints,
             float(network["turning_radius_cm"]),
             float(planner.path_output_step_cm),
+            waypoint_radii,
         )
         if "goal" in endpoints[target]:
             entry_turning_radius_cm = float(
@@ -373,21 +669,29 @@ def build_route(
                     planner.minimum_turning_radius_cm,
                 )
             )
-            reverse_entry = _direction_only_path(
+            entry_poses = _aligned_parking_entry(
                 planner,
                 _pose(endpoints[target]["staging"]),
                 _pose(endpoints[target]["goal"]),
-                -1,
                 entry_turning_radius_cm,
+                float(endpoints[target].get("entry_final_straight_cm", 0.0)),
+                endpoints[target].get("entry_slot_polygon_cm"),
             )
             rows.extend(
                 {
                     "x_cm": pose.x_cm,
                     "y_cm": pose.y_cm,
                     "yaw_rad": pose.yaw_rad,
-                    "direction": -1,
+                    "direction": pose.direction,
                 }
-                for pose in reverse_entry.poses[1:]
+                for pose in entry_poses[1:]
+            )
+            _validate_final_straight(
+                rows,
+                _pose(endpoints[target]["goal"]),
+                float(endpoints[target].get("entry_final_straight_cm", 0.0)),
+                source,
+                target,
             )
         _validate_route(
             rows,
@@ -426,36 +730,79 @@ def build_route(
     )
 
     if "goal" in endpoints[target]:
-        reverse_entry = entry_connectors[target]
+        entry_poses = entry_connectors[target]
         rows.extend(
             {
                 "x_cm": pose.x_cm,
                 "y_cm": pose.y_cm,
                 "yaw_rad": pose.yaw_rad,
-                "direction": -1,
+                "direction": pose.direction,
             }
-            for pose in reverse_entry.poses[1:]
+            for pose in entry_poses[1:]
+        )
+        _validate_final_straight(
+            rows,
+            _pose(endpoints[target]["goal"]),
+            float(endpoints[target].get("entry_final_straight_cm", 0.0)),
+            source,
+            target,
         )
 
     _validate_route(
         rows,
         planner,
-        float(network["turning_radius_cm"]),
+        min(
+            float(network["turning_radius_cm"]),
+            float(
+                endpoints[target].get(
+                    "entry_turning_radius_cm",
+                    planner.minimum_turning_radius_cm,
+                )
+            ),
+        ),
         source,
         target,
     )
     return rows
 
 
-def save_route(rows: list[dict], source: str, target: str) -> Path:
+def _vehicle_center_rows(
+    rows: list[dict],
+    rear_axle_to_center_cm: float,
+) -> list[dict]:
+    """Validated rear-axle geometry를 vehicle-center trajectory로 변환한다."""
+    if rear_axle_to_center_cm < 0.0:
+        raise ValueError("rear_axle_to_center_cm must not be negative")
+    return [
+        {
+            **row,
+            "x_cm": float(row["x_cm"])
+            + rear_axle_to_center_cm * math.cos(float(row["yaw_rad"])),
+            "y_cm": float(row["y_cm"])
+            + rear_axle_to_center_cm * math.sin(float(row["yaw_rad"])),
+        }
+        for row in rows
+    ]
+
+
+def save_route(
+    rows: list[dict],
+    source: str,
+    target: str,
+    rear_axle_to_center_cm: float,
+) -> Path:
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(exist_ok=True)
     stem = f"fixed_route_{source.lower()}_to_{target.lower()}"
     csv_path = output_dir / f"{stem}.csv"
+    center_rows = _vehicle_center_rows(rows, rear_axle_to_center_cm)
     with csv_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=["index", "x_cm", "y_cm", "yaw_rad", "direction"])
         writer.writeheader()
-        writer.writerows({"index": index, **row} for index, row in enumerate(rows))
+        writer.writerows(
+            {"index": index, **row}
+            for index, row in enumerate(center_rows)
+        )
     return csv_path
 
 
@@ -471,6 +818,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     config = _load_config()
+    if config.get("trajectory_reference") != "vehicle_center":
+        raise ValueError("fixed routes must be exported in vehicle_center reference")
+    rear_axle_to_center_cm = float(config["rear_axle_to_center_cm"])
     _, planner, _, _, _ = load_planner_stack()
     road_network = _build_road_network(config, planner)
     source, target = args.source.upper(), args.target.upper()
@@ -489,7 +839,10 @@ def main() -> int:
                 )
                 if args.generate_all:
                     candidate_csv = save_route(
-                        candidate_rows, candidate_source, candidate_target
+                        candidate_rows,
+                        candidate_source,
+                        candidate_target,
+                        rear_axle_to_center_cm,
                     )
                     manifest_rows.append(
                         {
@@ -515,7 +868,7 @@ def main() -> int:
         return 0
 
     rows = build_route(config, planner, source, target, road_network)
-    csv_path = save_route(rows, source, target)
+    csv_path = save_route(rows, source, target, rear_axle_to_center_cm)
     print(f"fixed route: {source} -> {target}")
     print(f"path points: {len(rows)}")
     print(f"saved csv: {csv_path}")

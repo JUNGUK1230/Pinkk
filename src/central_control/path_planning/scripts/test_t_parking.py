@@ -18,7 +18,7 @@ from plan_from_live_vision import (  # noqa: E402
 
 def main() -> int:
     grid_map, planner, profile_config, limits, parking_config = load_planner_stack()
-    goal, _, _ = derive_reverse_parking_goal(planner, "P6", grid_map.resolution_cm)
+    goal, _, _ = derive_reverse_parking_goal(planner, "P5", grid_map.resolution_cm)
     for start in ((84.0, 26.0, 1.914), (68.0, 26.0, 0.7207016179371806)):
         _, result, trajectory, validation, staging = plan_t_parking_and_validate(
             planner,
@@ -39,11 +39,11 @@ def main() -> int:
             for index in stage_stops
         )
 
-    # 첫 주차 단계가 끝난 P6 자세에서 충전 구역으로 이동하는 실제 다음
+    # 첫 주차 단계가 끝난 P5 자세에서 충전 구역으로 이동하는 실제 다음
     # 에피소드를 검사한다. C2 우선 경로와 C2 점유 시 C1 대체 경로 모두
     # 2D guide + 짧은 Hybrid 구간 + 마지막 후진 maneuver를 통과해야 한다.
     charge_results = {}
-    for parked_slot in ("P6", "P7", "P8", "P9", "P10"):
+    for parked_slot in ("P5", "P6", "P7", "P8"):
         parked_start, _, _ = derive_reverse_parking_goal(
             planner,
             parked_slot,

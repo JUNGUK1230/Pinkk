@@ -1,4 +1,4 @@
-"""상단 카메라 localization의 최신 rear-axle pose를 ROS 2로 발행한다."""
+"""상단 카메라 localization의 최신 차량 중심 pose를 ROS 2로 발행한다."""
 
 import argparse
 import json
@@ -20,7 +20,7 @@ def load_current_vehicle_pose(
     max_age_sec: float,
     now_unix_sec: float | None = None,
 ) -> tuple[float, float, float, int]:
-    """planning-ready인 최신 rear-axle pose를 m 단위로 반환한다.
+    """planning-ready인 최신 차량 중심 pose를 m 단위로 반환한다.
 
     카메라 차량 검출이 없거나 heading/ego 선택이 모호한 프레임은 제어기에
     전달하지 않는다. 오래된 좌표도 현재 차량 위치로 오인되지 않게 거부한다.
@@ -44,11 +44,11 @@ def load_current_vehicle_pose(
     vehicle = scene.get("vehicle")
     if not isinstance(vehicle, dict):
         raise ValueError("scene has no vehicle")
-    rear_axle = vehicle.get("rear_axle_cm")
+    vehicle_center = vehicle.get("center_cm")
     yaw_rad = vehicle.get("yaw_rad")
     if (
-        not isinstance(rear_axle, list)
-        or len(rear_axle) != 2
+        not isinstance(vehicle_center, list)
+        or len(vehicle_center) != 2
         or not isinstance(yaw_rad, (int, float))
     ):
         raise ValueError("scene vehicle pose is invalid")
@@ -56,8 +56,8 @@ def load_current_vehicle_pose(
     if not isinstance(frame_index, int):
         raise ValueError("scene frame_index is invalid")
     return (
-        float(rear_axle[0]) / 100.0,
-        float(rear_axle[1]) / 100.0,
+        float(vehicle_center[0]) / 100.0,
+        float(vehicle_center[1]) / 100.0,
         float(yaw_rad),
         frame_index,
     )

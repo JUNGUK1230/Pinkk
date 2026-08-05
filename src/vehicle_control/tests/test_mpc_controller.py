@@ -1,10 +1,13 @@
 """차동구동 MPC가 실제 START→C2 전후진 경로를 추종하는지 검사한다."""
 
 import csv
+from dataclasses import fields, replace
 import math
 from pathlib import Path
 import statistics
 import sys
+
+import yaml
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -14,6 +17,8 @@ sys.path.insert(0, str(SRC_ROOT))
 
 from vehicle_control.mpc_controller import (  # noqa: E402
     DifferentialDriveMpc,
+    MpcLimits,
+    MpcWeights,
     ReferencePoint,
     VehicleState,
     normalize_angle,
@@ -42,14 +47,59 @@ def load_c2_path() -> list[ReferencePoint]:
         ]
 
 
+def production_controller() -> DifferentialDriveMpc:
+    config_path = SRC_ROOT / "vehicle_control/config/mpc/mpc.yaml"
+    with config_path.open(encoding="utf-8") as file:
+        parameters = yaml.safe_load(file)["pinkk_mpc_path_follower"][
+            "ros__parameters"
+        ]
+    limit_names = {field.name for field in fields(MpcLimits)}
+    limit_values = {
+        key: value
+        for key, value in parameters.items()
+        if key in limit_names
+    }
+    limit_values.update(
+        max_tracking_yaw_error_rad=math.radians(
+            parameters["max_tracking_yaw_error_deg"]
+        ),
+        heading_recovery_full_curvature_error_rad=math.radians(
+            parameters["heading_recovery_full_curvature_error_deg"]
+        ),
+        heading_recovery_speed_scale=parameters[
+            "heading_recovery_speed_scale"
+        ],
+        goal_yaw_tolerance_rad=math.radians(
+            parameters["goal_yaw_tolerance_deg"]
+        ),
+    )
+    weights = MpcWeights(
+        **{
+            name: parameters[f"weight_{name}"]
+            for name in (
+                "position",
+                "yaw",
+                "terminal_position",
+                "terminal_yaw",
+                "speed",
+                "curvature",
+                "speed_rate",
+                "curvature_rate",
+            )
+        }
+    )
+    return DifferentialDriveMpc(MpcLimits(**limit_values), weights)
+
+
 def simulate(
     controller: DifferentialDriveMpc,
     state: VehicleState,
     maximum_steps: int,
-) -> tuple[VehicleState, int, int, list[float], float]:
+) -> tuple[VehicleState, int, int, list[float], float, float]:
     gear_changes = 0
     solve_times: list[float] = []
     maximum_angular_speed = 0.0
+    maximum_cross_track_error = 0.0
     for step in range(maximum_steps):
         command = controller.command(state)
         solve_times.append(command.solve_time_sec)
@@ -57,8 +107,33 @@ def simulate(
             maximum_angular_speed,
             abs(command.angular_radps),
         )
+        reference = controller.path[command.progress_index]
+        error_x = state.x_m - reference.x_m
+        error_y = state.y_m - reference.y_m
+        maximum_cross_track_error = max(
+            maximum_cross_track_error,
+            abs(
+                -math.sin(reference.yaw_rad) * error_x
+                + math.cos(reference.yaw_rad) * error_y
+            ),
+        )
         assert (
             abs(command.angular_radps) <= controller.limits.max_angular_speed_radps + 1e-6
+        )
+        half_track = controller.limits.wheel_separation_m * 0.5
+        left_wheel_radps = (
+            command.linear_mps - command.angular_radps * half_track
+        ) / controller.limits.wheel_radius_m
+        right_wheel_radps = (
+            command.linear_mps + command.angular_radps * half_track
+        ) / controller.limits.wheel_radius_m
+        assert (
+            abs(left_wheel_radps)
+            <= controller.limits.max_wheel_angular_speed_radps + 1e-6
+        )
+        assert (
+            abs(right_wheel_radps)
+            <= controller.limits.max_wheel_angular_speed_radps + 1e-6
         )
         if abs(command.linear_mps) <= 1e-10:
             assert abs(command.angular_radps) <= 1e-10
@@ -67,38 +142,149 @@ def simulate(
             gear_changes += 1
             continue
         if command.status == "GOAL_REACHED":
-            return state, step, gear_changes, solve_times, maximum_angular_speed
+            return (
+                state,
+                step,
+                gear_changes,
+                solve_times,
+                maximum_angular_speed,
+                maximum_cross_track_error,
+            )
         assert command.status == "TRACKING", command.status
-        dt = controller.limits.dt_sec
-        state = VehicleState(
-            x_m=state.x_m
-            + dt * command.linear_mps * math.cos(state.yaw_rad),
-            y_m=state.y_m
-            + dt * command.linear_mps * math.sin(state.yaw_rad),
-            yaw_rad=normalize_angle(
-                state.yaw_rad + dt * command.angular_radps
-            ),
+        state = controller.propagate_state(
+            state,
+            command.linear_mps,
+            command.angular_radps,
         )
     raise AssertionError("MPC did not reach the goal within the simulation limit")
 
 
 def main() -> int:
     path = load_c2_path()
-    controller = DifferentialDriveMpc()
+
+    # MPC를 경로 중간에서 시작해도 첫 nearest 검색은 제한된 forward window가
+    # 아니라 첫 direction segment 전체에서 차량 위치에 정렬되어야 한다.
+    restart_index = 184
+    assert path[restart_index].direction == path[0].direction
+    restart_guard = DifferentialDriveMpc()
+    restart_guard.set_path(path)
+    restart_state = VehicleState(
+        path[restart_index].x_m,
+        path[restart_index].y_m,
+        path[restart_index].yaw_rad,
+    )
+    assert restart_guard._nearest_index(restart_state) < restart_index
+    restart_command = restart_guard.command(restart_state)
+    assert restart_command.status == "TRACKING"
+    assert restart_command.progress_index == restart_index
+
+    # 큰 heading 오차 복귀는 최대 곡률을 사용하더라도 좁은 벽 쪽으로
+    # 기준속도로 계속 진행하지 않고 정밀 추종용 저속으로 제한되어야 한다.
+    recovery_controller = production_controller()
+    recovery_controller.set_path(path)
+    recovery_state = VehicleState(
+        path[0].x_m,
+        path[0].y_m,
+        normalize_angle(path[0].yaw_rad - math.radians(35.0)),
+    )
+    recovery_command = recovery_controller.command(recovery_state)
+    assert recovery_command.status == "TRACKING"
+    expected_recovery_speed = min(
+        recovery_controller.limits.forward_speed_mps
+        * recovery_controller.limits.heading_recovery_speed_scale,
+        recovery_controller.limits.max_acceleration_mps2
+        * recovery_controller.limits.dt_sec,
+    )
+    assert math.isclose(
+        recovery_command.linear_mps,
+        expected_recovery_speed,
+        rel_tol=0.0,
+        abs_tol=1e-9,
+    )
+    assert abs(recovery_command.angular_radps) >= 0.12
+
+    # 카메라 검출의 mm 단위 횡방향 흔들림은 직선 조향 명령을 좌우로
+    # 뒤집지 않아야 한다.
+    deadband_controller = production_controller()
+    straight_path = [
+        ReferencePoint(index * 0.005, 0.0, 0.0, 1)
+        for index in range(40)
+    ]
+    deadband_controller.set_path(straight_path)
+    deadband_command = deadband_controller.command(
+        VehicleState(0.0, 0.002, 0.0)
+    )
+    assert deadband_command.status == "TRACKING"
+    assert abs(deadband_command.angular_radps) <= 0.01
+
+    # 직선 경로에서 2cm 떨어져 시작해도 가장 가까운 점을 지나쳐 S자로
+    # 복귀하지 않고, 앞쪽 접선에 자연스럽게 합류해야 한다.
+    rejoin_controller = production_controller()
+    rejoin_path = [
+        ReferencePoint(index * 0.005, 0.0, 0.0, 1)
+        for index in range(200)
+    ]
+    rejoin_controller.set_path(rejoin_path)
+    rejoin_state = VehicleState(0.0, 0.02, 0.0)
+    rejoin_offsets: list[float] = []
+    rejoin_angular_commands: list[float] = []
+    for _ in range(120):
+        rejoin_command = rejoin_controller.command(rejoin_state)
+        assert rejoin_command.status == "TRACKING"
+        rejoin_offsets.append(rejoin_state.y_m)
+        rejoin_angular_commands.append(rejoin_command.angular_radps)
+        rejoin_state = rejoin_controller.propagate_state(
+            rejoin_state,
+            rejoin_command.linear_mps,
+            rejoin_command.angular_radps,
+        )
+    assert abs(rejoin_offsets[-1]) <= 0.001
+    assert min(rejoin_offsets) >= -0.001
+    assert (
+        sum(
+            first * second < 0.0
+            for first, second in zip(
+                rejoin_angular_commands,
+                rejoin_angular_commands[1:],
+            )
+        )
+        <= 1
+    )
+
+    # 14 cm minimum-radius parking and all gear changes must pass with the exact
+    # parameters used by the ROS node, not with dataclass fallback values.
+    controller = production_controller()
     controller.set_path(path)
     state = VehicleState(path[0].x_m, path[0].y_m, path[0].yaw_rad)
-    final_state, steps, gear_changes, solve_times, maximum_angular_speed = simulate(
+    (
+        final_state,
+        steps,
+        gear_changes,
+        solve_times,
+        maximum_angular_speed,
+        maximum_cross_track_error,
+    ) = simulate(
         controller,
         state,
-        maximum_steps=250,
+        # Precision tuning deliberately slows down once lateral error exceeds
+        # 0.5 cm, so the complete four-segment parking route needs more steps.
+        maximum_steps=900,
     )
     final = path[-1]
     final_error = math.hypot(
         final.x_m - final_state.x_m,
         final.y_m - final_state.y_m,
     )
+    final_yaw_error = abs(
+        normalize_angle(final.yaw_rad - final_state.yaw_rad)
+    )
     assert final_error <= controller.limits.goal_position_tolerance_m
-    assert gear_changes == 1
+    assert final_yaw_error <= controller.limits.goal_yaw_tolerance_rad
+    expected_gear_changes = sum(
+        first.direction != second.direction
+        for first, second in zip(path, path[1:])
+    )
+    assert gear_changes == expected_gear_changes
     remaining_path_m = sum(
         math.hypot(second.x_m - first.x_m, second.y_m - first.y_m)
         for first, second in zip(
@@ -118,10 +304,30 @@ def main() -> int:
         for index in range(1, len(path))
         if path[index].direction != path[index - 1].direction
     )
+    # 기본 0.5cm 전환 반경 밖이더라도 전환점 4cm 안에서 최적화 속도가
+    # 사실상 0이면 보조 조건이 후진 segment로 넘길 수 있어야 한다.
+    fallback_guard = DifferentialDriveMpc(
+        replace(
+            DifferentialDriveMpc().limits,
+            gear_position_tolerance_m=0.005,
+            gear_fallback_position_tolerance_m=0.04,
+            gear_stall_speed_threshold_mps=0.10,
+            gear_fallback_max_segment_length_m=10.0,
+        )
+    )
+    fallback_guard.set_path(path)
+    forward_cusp = path[cusp_index - 1]
+    fallback_state = VehicleState(
+        forward_cusp.x_m - 0.03 * math.cos(forward_cusp.yaw_rad),
+        forward_cusp.y_m - 0.03 * math.sin(forward_cusp.yaw_rad),
+        forward_cusp.yaw_rad,
+    )
+    fallback_command = fallback_guard.command(fallback_state)
+    assert fallback_command.status == "GEAR_CHANGE_REQUIRED"
+
     reverse_start_guard = DifferentialDriveMpc()
     reverse_start_guard.set_path(path)
     reverse_start_guard.progress_index = cusp_index
-    forward_cusp = path[cusp_index - 1]
     cusp_state = VehicleState(
         forward_cusp.x_m,
         forward_cusp.y_m,
@@ -146,6 +352,9 @@ def main() -> int:
     )
     gentle_command = straight_guard.command(offset_state)
     assert gentle_command.status == "TRACKING"
+    # 경로 오른쪽(+ lateral)에 있으면 map yaw가 감소하는 방향으로 복귀한다.
+    assert gentle_command.curvature_1pm < 0.0
+    assert gentle_command.linear_mps < straight_guard.limits.forward_speed_mps
     assert (
         abs(gentle_command.curvature_1pm)
         <= straight_guard.limits.straight_max_curvature_1pm + 1e-6
@@ -156,9 +365,14 @@ def main() -> int:
         normalize_angle(start.yaw_rad + math.radians(90.0)),
     )
     guarded_command = straight_guard.command(wrong_heading)
-    assert guarded_command.status == "HEADING_ERROR_TOO_LARGE"
-    assert guarded_command.linear_mps == 0.0
-    assert guarded_command.angular_radps == 0.0
+    assert guarded_command.status == "TRACKING"
+    assert guarded_command.linear_mps > 0.0
+    assert guarded_command.curvature_1pm < 0.0
+    assert math.isclose(
+        abs(guarded_command.curvature_1pm),
+        straight_guard.limits.max_curvature_1pm,
+        rel_tol=1e-6,
+    )
 
     flat_path = [
         value
@@ -213,7 +427,11 @@ def main() -> int:
     print("Differential-drive MPC START -> C2 simulation passed")
     print(f"Steps: {steps}, gear changes: {gear_changes}")
     print(f"Final position error: {final_error * 100.0:.2f} cm")
+    print(f"Final yaw error: {math.degrees(final_yaw_error):.2f} deg")
     print(f"Maximum angular speed: {maximum_angular_speed:.3f} rad/s")
+    print(
+        f"Maximum cross-track error: {maximum_cross_track_error * 100.0:.2f} cm"
+    )
     print(f"Median solve time: {median_solve * 1000.0:.1f} ms")
     return 0
 

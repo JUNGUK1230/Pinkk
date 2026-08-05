@@ -17,7 +17,7 @@
 - 위치 입력 `/pinkk/vehicle_pose`: 상단 카메라의 `lidar_map` 차체 중심 x/y
 - 센서 입력 `/odom`: camera yaw 사이의 상대 회전
 - 센서 입력 `/scan`: LiDAR map yaw 검증·제한적 보정 및 장애물 안전정지
-- 융합 출력 `/pinkk/fused_vehicle_pose`: MPC가 사용하는 rear-axle pose
+- 융합 출력 `/pinkk/fused_vehicle_pose`: MPC가 사용하는 차량 중심 pose
 - 실차 출력 `/cmd_vel`: `geometry_msgs/Twist`
 
 MPC는 signed speed와 curvature를 최적화하고 `angular.z = speed × curvature`로

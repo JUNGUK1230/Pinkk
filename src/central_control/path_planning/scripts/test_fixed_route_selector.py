@@ -30,13 +30,15 @@ def main() -> int:
         ("P4", "EXIT"),
     )
     for expected_source, target in cases:
-        endpoint = config["endpoints"][expected_source]
+        endpoint = selector.endpoints[expected_source]
         current_pose = _pose(endpoint.get("goal", endpoint["staging"]))
         selection = selector.select(current_pose, target)
         configured_points = selector._load_route(expected_source, target)
         assert selection.source == expected_source
         assert selection.detected_location == expected_source
-        assert selection.join_distance_cm < 1e-6
+        # START 첫 road segment의 접선 yaw가 endpoint 권장 yaw와 조금 달라
+        # center 변환 후 위치가 최대 수 mm 달라질 수 있다.
+        assert selection.join_distance_cm < 0.5
         assert selection.points == tuple(configured_points)
         assert selection.points[-1]
         print(
@@ -46,7 +48,7 @@ def main() -> int:
 
     # START 검출 오차가 있어도 live pose를 CSV 앞에 삽입하지 않는다. 원본
     # 첫 구간의 방향을 유지해 시작 직후 가짜 우회전을 만들지 않아야 한다.
-    start = _pose(config["endpoints"]["START"]["staging"])
+    start = _pose(selector.endpoints["START"]["staging"])
     noisy_start = (start[0] - 2.8, start[1] + 0.4, start[2])
     noisy_selection = selector.select(noisy_start, "C2")
     configured_start = selector._load_route("START", "C2")
