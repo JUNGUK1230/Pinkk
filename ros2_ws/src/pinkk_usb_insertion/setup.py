@@ -31,6 +31,8 @@ setup(
             'port_pose_node = pinkk_usb_insertion.port_pose_node:main',
             'pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main',
             'pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main',
+            'frozen_target_executor_node = '
+            'pinkk_usb_insertion.frozen_target_executor_node:main',
             'return_to_observe = '
             'pinkk_usb_insertion.return_to_observe_node:main',
         ],
