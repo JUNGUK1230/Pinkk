@@ -189,6 +189,56 @@ def apply_rpy_locked_yaw_step(
     return validate_transform(target)
 
 
+def apply_observation_roll_pitch_with_current_yaw(
+    current_base_to_flange: np.ndarray,
+    observation_base_to_flange: np.ndarray,
+) -> np.ndarray:
+    """현재 XYZ/Yaw와 초기 관측 Roll/Pitch를 결합한 목표를 만든다."""
+    current = validate_transform(current_base_to_flange)
+    observation = validate_transform(observation_base_to_flange)
+    observation_roll, observation_pitch, _ = rotation_to_rpy_degrees(
+        observation[:3, :3]
+    )
+    _, _, current_yaw = rotation_to_rpy_degrees(current[:3, :3])
+    target = current.copy()
+    target[:3, :3] = rpy_degrees_to_rotation(
+        observation_roll,
+        observation_pitch,
+        current_yaw,
+    )
+    return validate_transform(target)
+
+
+def apply_proportional_observation_roll_pitch_with_current_yaw(
+    current_base_to_flange: np.ndarray,
+    observation_base_to_flange: np.ndarray,
+    gain: float,
+) -> np.ndarray:
+    """초기 관측 Roll/Pitch 오차의 일부만 적용하고 현재 Yaw를 유지한다."""
+    current = validate_transform(current_base_to_flange)
+    observation = validate_transform(observation_base_to_flange)
+    kp = float(gain)
+    if not math.isfinite(kp) or not 0.0 < kp <= 1.0:
+        raise ValueError('Roll/Pitch P gain은 0보다 크고 1 이하여야 합니다')
+    current_roll, current_pitch, current_yaw = rotation_to_rpy_degrees(
+        current[:3, :3]
+    )
+    observation_roll, observation_pitch, _ = rotation_to_rpy_degrees(
+        observation[:3, :3]
+    )
+    roll_error = (observation_roll - current_roll + 180.0) % 360.0 - 180.0
+    pitch_error = (
+        (observation_pitch - current_pitch + 180.0) % 360.0 - 180.0
+    )
+    target = current.copy()
+    target[:3, :3] = rpy_degrees_to_rotation(
+        current_roll + kp * roll_error,
+        current_pitch + kp * pitch_error,
+        current_yaw,
+    )
+    return validate_transform(target)
+
+
 def invert_orientation_step(
     current_base_to_flange: np.ndarray,
     target_base_to_flange: np.ndarray,

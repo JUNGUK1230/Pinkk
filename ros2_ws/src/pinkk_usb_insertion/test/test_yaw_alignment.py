@@ -1,6 +1,8 @@
 import numpy as np
 from pinkk_usb_insertion.control.yaw_alignment import (
     apply_base_yaw_step,
+    apply_observation_roll_pitch_with_current_yaw,
+    apply_proportional_observation_roll_pitch_with_current_yaw,
     apply_rpy_locked_yaw_step,
     calibrated_keypoint_joint_step_rad,
     invert_orientation_step,
@@ -152,6 +154,46 @@ def test_rpy_locked_yaw_preserves_xyz_roll_and_pitch() -> None:
     assert np.isclose(roll, -179.0)
     assert np.isclose(pitch, 1.2)
     assert np.isclose(yaw, -131.0)
+
+
+def test_observation_roll_pitch_target_preserves_current_xyz_and_yaw() -> None:
+    current = np.eye(4)
+    current[:3, 3] = (0.12, -0.08, 0.24)
+    current[:3, :3] = rpy_degrees_to_rotation(-174.0, 7.0, -132.0)
+    observation = np.eye(4)
+    observation[:3, 3] = (0.01, 0.02, 0.30)
+    observation[:3, :3] = rpy_degrees_to_rotation(-179.0, 1.5, 45.0)
+
+    target = apply_observation_roll_pitch_with_current_yaw(
+        current,
+        observation,
+    )
+    roll, pitch, yaw = rotation_to_rpy_degrees(target[:3, :3])
+
+    assert np.allclose(target[:3, 3], current[:3, 3])
+    assert np.isclose(roll, -179.0)
+    assert np.isclose(pitch, 1.5)
+    assert np.isclose(yaw, -132.0)
+
+
+def test_proportional_observation_roll_pitch_applies_half_error() -> None:
+    current = np.eye(4)
+    current[:3, 3] = (0.12, -0.08, 0.24)
+    current[:3, :3] = rpy_degrees_to_rotation(-170.0, 11.0, -132.0)
+    observation = np.eye(4)
+    observation[:3, :3] = rpy_degrees_to_rotation(-178.0, 1.0, 45.0)
+
+    target = apply_proportional_observation_roll_pitch_with_current_yaw(
+        current,
+        observation,
+        0.5,
+    )
+    roll, pitch, yaw = rotation_to_rpy_degrees(target[:3, :3])
+
+    assert np.allclose(target[:3, 3], current[:3, 3])
+    assert np.isclose(roll, -174.0)
+    assert np.isclose(pitch, 6.0)
+    assert np.isclose(yaw, -132.0)
 
 
 def test_inverts_relative_yaw_step_without_changing_position() -> None:
