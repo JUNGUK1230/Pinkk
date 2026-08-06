@@ -73,9 +73,46 @@ keypoint image angle
 | 명령 | 역할 |
 |---|---|
 | `coarse_xy` | 포트의 절대 XY와 pre-approach Z로 큰 이동 |
-| `coarse_xy_then_yaw` | 초기 영상 Yaw 저장 후 coarse XY 완료 시 Joint6 단발 회전 |
+| `coarse_xy_then_yaw` | coarse XY/Z → 자동 Z 가시성 복구 → 새 관측 refine XY(제한 반복) → Joint6 Yaw를 한 명령으로 실행 |
 | `refine_xy` | 현재 Z/자세를 유지하고 새 관측의 XY만 적용 |
 | `refine_yaw` | keypoint 영상각으로 Joint6만 제한 회전 |
+| `recover_z_once` | 현재 X/Y를 목표로 유지하고 mode 1로 초기 관측 Z 방향 상승 (수동 및 coarse 자동 가시성 복구) |
+| `waypoint_pbvs_align` | 마지막 가시 자세 복귀 + 제한된 waypoint stop-and-go PBVS (아래 참고) |
+
+XY 및 Z 복구 목표의 Roll/Pitch는 초기 관측 기준을 다시 사용하고, Yaw는
+이동 직전 현재값을 유지한다. Cartesian 이동 중 Roll/Pitch가 bridge 경로
+허용값을 넘으면 중단하고 정지 후에도 초기 기준과의 오차를 확인한다.
+Joint6 Yaw는 새 PBVS 목표의 XY 잔여오차가 허용값 안일 때만 실행하며,
+Yaw 후 포트 재관측은 요구하지 않는다.
+
+## waypoint_pbvs_align (2026-08-03 추가)
+
+기존 문제:
+- Z-only 30mm 복구는 현재 XY에서 IK가 없어 움직이지 않는 경우가 많았다.
+- 포트 방향으로 60~70mm를 한 번에 이동하면 이동 후 XY 오차와 화각
+  소실이 커졌다.
+
+새 흐름:
+1. 명령 시작 시 PBVS target이 fresh하면 현재 flange를
+   `last_visible_flange_pose`로 저장한다(포트가 지금 보인다는 뜻).
+2. PBVS 절대 목표까지 한 번에 이동하지 않고, 목표 방향으로 XY 15mm/
+   Z 10mm까지만 이동하는 waypoint를 계산해 mode 0 `send_coords`로
+   한 번만 이동한다.
+3. 0.8초 정지 후 재관측한다.
+   - 성공: `last_visible_flange_pose`를 방금 도착한 실제 자세로 갱신하고
+     다음 waypoint를 다시 계산한다.
+   - 실패: 임의로 Z를 올리지 않고 `last_visible_flange_pose`(방금 실제로
+     지나온 도달 가능한 자세)로 Cartesian 복귀한 뒤 재관측하고 자동
+     연속 이동을 중단한다.
+4. 재관측 XY 잔여오차가 5mm 이하가 되면 XY 이동을 멈추고 Joint6 Yaw를
+   한 번 실행한 뒤 반드시 새 관측으로 XY/Yaw를 다시 확인한다. XY가
+   5mm를 넘으면 `refine_xy`를 한 번 실행하고 끝낸다.
+5. `waypoint_max_cycles`(기본 6회) 또는 누적 이동량 한도에 도달하면
+   XY가 수렴하지 않아도 자동 이동을 멈춘다.
+
+`last_visible_flange_pose`는 세션 시작 시 한 번만 잠기는 기존
+`observation_reference_pose`(Roll/Pitch 기준용)와는 다른, 재검출마다
+계속 갱신되는 상태다. 실제 삽입은 이 명령의 범위에 포함하지 않는다.
 
 ## 제거한 실험 경로
 
@@ -92,11 +129,11 @@ Joint6 범위 제한은 실제 장비 실행에 필요한 최소 보호로 유�
 
 ## 다음 개발 순서
 
-### 1. 재관측 복구
+### 1. 재관측 복구 (완료: waypoint_pbvs_align)
 
-- 유효한 포트 관측마다 `last_visible_joint_pose`를 저장한다.
-- 이동 후 포트가 사라지면 Cartesian 좌표를 새로 풀지 않고 저장한
-  관절 자세로 복귀한다.
+- 유효한 포트 관측마다 `last_visible_flange_pose`를 저장한다.
+- 이동 후 포트가 사라지면 관절 자세가 아니라 방금 실제로 지나온
+  Cartesian flange 자세로 복귀한다(위 `waypoint_pbvs_align` 참고).
 
 ### 2. 도달 가능한 관측 자세 검색
 
@@ -135,7 +172,87 @@ Joint6 회전으로 생기는 화면 중심 이동까지 포함한 로컬 영상
 ## 완료 기준
 
 - 여러 포트 위치에서 PBVS coarse 이동 후 포트를 다시 검출한다.
-- 포트 소실 시 마지막 가시 관절 자세로 반복 복귀한다.
+- 포트 소실 시 마지막 가시 flange 자세로 반복 복귀한다.
 - 정지 영상 중심과 Yaw 오차가 정한 허용 범위에서 유지된다.
 - 도달 불가능한 재관측 자세를 실행 전에 걸러낸다.
 - 충전기 TCP 보정 후에만 삽입 단계로 넘어간다.
+
+## 진단: 로봇 실행 오차와 PBVS 인식 오차 분리
+
+실기에서 로봇 PC bridge가 보고하는 `xy_residual`(실제 `get_coords()` 기준
+정지 오차, 현재 3mm 이내 확인)과 waypoint 이동 후 노트북이 다시 계산하는
+PBVS XY 오차(약 19.1mm 관측 사례)가 크게 다르면, 원인이 로봇 실행이
+아니라 인식/보정 쪽에 있을 가능성이 크다. 다음 순서로 분리해서 확인한다.
+
+1. **로봇 실행 오차**: 로봇 PC bridge 로그의
+   `Cartesian 진행 상태: ... xy_residual=...mm, orientation_residual=...`
+   와 최종 `Cartesian 목표 자세 도달: xy_residual=...` 메시지를 사용한다.
+   이 값이 이미 3mm 안이면 로봇 자체의 위치 추종은 문제가 아니다.
+2. **PBVS 재인식 오차**: waypoint 이동 후 `_wait_for_reobservation()`으로
+   받은 새 `/robot_arm/pbvs/target_flange_pose`와 실제 flange TF의 XY
+   차이(`_require_yaw_xy_ready()`가 계산하는 값, 상태 토픽에 로그됨)를
+   비교한다. 이 값이 bridge `xy_residual`보다 훨씬 크면 다음을 의심한다.
+   - 카메라 intrinsic/distortion (`config/camera_intrinsics.yaml`)
+   - SolvePnP 포트 모델 크기 (`insertion_control.yaml`의 포트 치수)
+   - YOLO keypoint 편향 (RQT `debug_image`에서 keypoint가 실제 모서리에
+     정확히 붙는지 확인)
+   - flange-camera Hand-eye 변환 (`config/handeye.yaml`)
+   - 카메라 장착부 흔들림 (이동/정지 시 카메라가 물리적으로 흔들리는지)
+   - TCP offset 미적용 (현재 미보정 상태, 충전기 장착 전이므로 당연히
+     남아 있는 오차)
+
+### 고정 포트 기준 `port_pose_base` 안정성 시험 방법
+
+포트를 움직이지 않고 로봇(카메라)만 이동시켰을 때 계산된 포트 절대
+위치(`/robot_arm/pbvs/port_pose_base`)가 이상적으로는 변하지 않아야
+한다. 실제로 변한다면 그 변화량이 위 원인들(주로 Hand-eye/카메라
+흔들림/SolvePnP)이 만드는 오차의 상한이다.
+
+1. 포트를 고정한 채 초기 관측 자세에서
+   `ros2 topic echo /robot_arm/pbvs/port_pose_base --once`로 base XYZ를
+   기록한다.
+2. `waypoint_pbvs_align` 등으로 로봇을 다른 자세(다른 XY/Z)로 이동시킨다.
+3. 같은 포트가 여전히 보이는 새 자세에서 다시
+   `ros2 topic echo /robot_arm/pbvs/port_pose_base --once`로 기록한다.
+4. 두 base XYZ 차이를 계산한다. 포트는 실제로 움직이지 않았으므로 이
+   차이가 곧 카메라 이동 전후 인식 파이프라인의 절대 오차다.
+   `xy_residual`(로봇 실행 오차)보다 이 값이 훨씬 크면 로봇이 아니라
+   인식/보정 체인이 원인이다.
+5. 여러 자세 쌍에서 반복해 편차가 특정 방향(예: Z가 커질수록 XY 오차
+   증가)으로 나타나는지 확인하면 Hand-eye 회전 오차인지 SolvePnP 깊이
+   오차인지 좁힐 수 있다.
+
+## 2026-08-06: frozen-target 혼합 하강으로 주 경로 통합
+
+현재 실기 주 경로를 하나로 정리했다.
+
+```text
+초기 YOLO/SolvePnP/PBVS 관측
+→ frozen XY/pre-approach coarse
+→ 초기 Roll/Pitch와 Joint6 Yaw 정렬
+→ 관절 Jacobian Z
+→ Cartesian XY
+→ Cartesian 초기 Roll/Pitch
+→ 제조사 실제 pose로 절대 포트 Z 잔여거리 재계산
+```
+
+실측 결과:
+
+- 관절 Jacobian Z 명령 3mm에서 실제 약 9.5mm 하강
+- 관절 Jacobian R/P 보정은 자세가 약 1.7도 악화되고 Z가 6.8mm 결합 이동
+- Cartesian R/P 보정은 Roll 9.13→3.65도, Pitch 8.79→3.33도로 개선
+- 같은 Cartesian R/P 보정에서 Z가 11.9mm 결합 이동
+
+따라서 Jacobian은 Z에만 사용하고 XY/R/P는 Cartesian 제어로 통합했다.
+상대 Z drift 경고만으로 이미 끝난 이동을 폐기하지 않고 포트 기반 절대 목표
+Z까지 남은 거리를 다음 P 사이클 입력으로 사용한다. 단일 Z 실제 하강 15mm,
+한 혼합 사이클 총하강 30mm를 하드 한계로 두고 목표 15mm 위에서 자동 반복을
+끝낸다.
+
+중복된 `frozen_target_p` 노드·launch·스크립트·문서는 기본 실행기에 기능이
+통합되어 제거했다. 현재 사용 명령은 `execute_once`, `yaw_only_once`,
+`descend_joint_z_once`, `descend_joint_z_to_guard`다. 이전 Cartesian Z 반복
+메서드는 비교 이력으로 코드에 남아 있지만 ROS 명령 입력에서는 차단했다.
+
+상세 원인과 해결 근거는 `TROUBLESHOOTING_KO.md`, 현재 실행 절차와 YAML
+파라미터는 `FROZEN_TARGET_TEST_KO.md`에 분리했다.
