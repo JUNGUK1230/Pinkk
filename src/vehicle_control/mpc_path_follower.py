@@ -273,6 +273,7 @@ class MpcPathFollower(Node):
             "straight_max_curvature_1pm": 3.0,
             "cross_track_feedback_gain_1pm2": 15.0,
             "heading_feedback_gain_1pmprad": 4.0,
+            "heading_feedback_deadband_deg": 2.0,
             "cross_track_deadband_m": 0.003,
             "cross_track_slowdown_start_m": 0.01,
             "cross_track_slowdown_full_m": 0.04,
@@ -287,6 +288,7 @@ class MpcPathFollower(Node):
             "gear_fallback_position_tolerance_m": 0.04,
             "gear_stall_speed_threshold_mps": 0.003,
             "gear_fallback_max_segment_length_m": 0.15,
+            "gear_passed_endpoint_lateral_tolerance_m": 0.06,
             "gear_transition_end_guard_points": 20,
             "nearest_forward_window": 140,
             "nearest_backward_window": 4,
@@ -295,6 +297,9 @@ class MpcPathFollower(Node):
             "steering_rejoin_preview_points": 12,
             "steering_rejoin_full_error_m": 0.03,
             "steering_rejoin_preview_weight": 0.65,
+            "curve_feedforward_preview_points": 14,
+            "curve_feedforward_gain": 0.55,
+            "curve_feedforward_deadband_1pm": 0.5,
             "curvature_smoothing_points": 5,
             "straight_lookahead_points": 4,
             "straight_history_points": 12,
@@ -377,6 +382,12 @@ class MpcPathFollower(Node):
             heading_feedback_gain_1pmprad=self._nonnegative_parameter(
                 "heading_feedback_gain_1pmprad", overrides
             ),
+            heading_feedback_deadband_rad=math.radians(
+                self._nonnegative_parameter(
+                    "heading_feedback_deadband_deg",
+                    overrides,
+                )
+            ),
             cross_track_deadband_m=self._positive_parameter(
                 "cross_track_deadband_m", overrides
             ),
@@ -421,6 +432,10 @@ class MpcPathFollower(Node):
             gear_fallback_max_segment_length_m=self._positive_parameter(
                 "gear_fallback_max_segment_length_m", overrides
             ),
+            gear_passed_endpoint_lateral_tolerance_m=self._positive_parameter(
+                "gear_passed_endpoint_lateral_tolerance_m",
+                overrides,
+            ),
             gear_transition_end_guard_points=int(
                 self._parameter_value(
                     "gear_transition_end_guard_points", overrides
@@ -448,6 +463,20 @@ class MpcPathFollower(Node):
             ),
             steering_rejoin_preview_weight=self._nonnegative_parameter(
                 "steering_rejoin_preview_weight", overrides
+            ),
+            curve_feedforward_preview_points=int(
+                self._parameter_value(
+                    "curve_feedforward_preview_points",
+                    overrides,
+                )
+            ),
+            curve_feedforward_gain=self._nonnegative_parameter(
+                "curve_feedforward_gain",
+                overrides,
+            ),
+            curve_feedforward_deadband_1pm=self._nonnegative_parameter(
+                "curve_feedforward_deadband_1pm",
+                overrides,
             ),
             curvature_smoothing_points=int(
                 self._parameter_value("curvature_smoothing_points", overrides)

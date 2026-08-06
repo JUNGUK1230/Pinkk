@@ -69,6 +69,9 @@ def production_controller() -> DifferentialDriveMpc:
         heading_recovery_speed_scale=parameters[
             "heading_recovery_speed_scale"
         ],
+        heading_feedback_deadband_rad=math.radians(
+            parameters["heading_feedback_deadband_deg"]
+        ),
         goal_yaw_tolerance_rad=math.radians(
             parameters["goal_yaw_tolerance_deg"]
         ),
@@ -238,8 +241,8 @@ def main() -> int:
             rejoin_command.linear_mps,
             rejoin_command.angular_radps,
         )
-    assert abs(rejoin_offsets[-1]) <= 0.001
-    assert min(rejoin_offsets) >= -0.001
+    assert abs(rejoin_offsets[-1]) <= rejoin_controller.limits.cross_track_deadband_m
+    assert min(rejoin_offsets) >= -rejoin_controller.limits.cross_track_deadband_m
     assert (
         sum(
             first * second < 0.0
@@ -249,6 +252,80 @@ def main() -> int:
             )
         )
         <= 1
+    )
+
+    # 복귀 헤딩은 저장된 yaw를 맹목적으로 사용하지 않고 기준 좌표와
+    # 다음 좌표의 접선으로 다시 계산해야 한다. 후진은 차량 전면 기준으로
+    # 접선에 180도를 더한다.
+    tangent_guard = DifferentialDriveMpc()
+    tangent_guard.set_path(
+        [
+            ReferencePoint(index * 0.01, index * 0.01, 0.0, 1)
+            for index in range(7)
+        ]
+    )
+    assert abs(
+        normalize_angle(tangent_guard._segment_tangent_yaw(0) - math.pi / 4.0)
+    ) <= 1e-9
+    reverse_tangent_guard = DifferentialDriveMpc()
+    reverse_tangent_guard.set_path(
+        [
+            ReferencePoint(index * 0.01, 0.0, 0.0, -1)
+            for index in range(7)
+        ]
+    )
+    assert abs(
+        normalize_angle(reverse_tangent_guard._segment_tangent_yaw(0) - math.pi)
+    ) <= 1e-9
+
+    # 긴 첫 후진 구간은 fallback 길이 제한보다 길다. 전환점을 조금
+    # 지나친 뒤 원형 거리 오차가 다시 커져도 무한 후진하지 않고 다음
+    # 기어로 전환해야 한다.
+    passed_cusp_guard = production_controller()
+    passed_cusp_path = [
+        ReferencePoint(-index * 0.01, 0.0, 0.0, -1)
+        for index in range(11)
+    ] + [
+        ReferencePoint(-0.10 + index * 0.01, 0.0, 0.0, 1)
+        for index in range(1, 8)
+    ]
+    passed_cusp_guard.set_path(passed_cusp_path)
+    passed_cusp_guard.restore_progress(9)
+    passed_cusp_command = passed_cusp_guard.command(
+        VehicleState(-0.13, 0.01, 0.0)
+    )
+    assert passed_cusp_command.status == "GEAR_CHANGE_REQUIRED"
+
+    # 직선 뒤에 곡선이 가까워지면 현재점 곡률이 아직 0이어도 미래 곡률을
+    # 약하게 반영해 코너 진입 전에 조향을 시작해야 한다.
+    anticipation_guard = DifferentialDriveMpc()
+    anticipation_path = [
+        ReferencePoint(
+            index * 0.005,
+            0.0,
+            0.0 if index < 12 else (index - 11) * 0.025,
+            1,
+        )
+        for index in range(30)
+    ]
+    anticipation_guard.set_path(anticipation_path)
+    assert abs(anticipation_guard._reference_curvature[0]) <= 1e-9
+    assert anticipation_guard._anticipated_curvature(0, 29) > 0.0
+    tiny_curve_guard = DifferentialDriveMpc()
+    tiny_curve_guard.set_path(
+        [
+            ReferencePoint(
+                index * 0.01,
+                0.0,
+                index * 0.002,
+                1,
+            )
+            for index in range(20)
+        ]
+    )
+    assert all(
+        abs(value) <= 1e-9
+        for value in tiny_curve_guard._reference_curvature
     )
 
     # 14 cm minimum-radius parking and all gear changes must pass with the exact

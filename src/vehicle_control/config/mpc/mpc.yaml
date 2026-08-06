@@ -82,12 +82,12 @@ pinkk_mpc_path_follower:
     # [m/s] 후진 경로에서 따라가려는 속도의 절댓값이다.
     # 좁은 주차 구간에서는 카메라 pose 갱신 사이 이동량을 줄여 정밀도를
     # 확보한다. 실제 cmd_vel에는 음수로 출력된다.
-    reverse_speed_mps: 0.018
+    reverse_speed_mps: 0.022
     # [m/s] 최적화가 허용하는 최대 전진 속도다.
     max_forward_speed_mps: 0.05
     # [m/s] 최적화가 허용하는 최대 후진 속도의 절댓값이다.
     # 기준 속도보다 약간만 높여 오차 복귀 중 과속하지 않게 한다.
-    max_reverse_speed_mps: 0.024
+    max_reverse_speed_mps: 0.028
     # [m/s²] 연속 제어 step 사이 선속도 변화 한계다.
     # 작게 하면 출발·감속이 부드럽지만 반응이 느리고, 크게 하면 급격해진다.
     max_acceleration_mps2: 0.2
@@ -118,15 +118,18 @@ pinkk_mpc_path_follower:
     # [1/(m·rad)] 경로 접선 yaw와 차량 yaw 차이를 곡률에 반영한다.
     # 위치만 맞추고 선을 넘어가지 않도록 합류하면서 차체를 경로와 나란히 한다.
     heading_feedback_gain_1pmprad: 4.0
-    # [m] 카메라 중심 검출의 작은 흔들림으로 조향 부호가 반복해서 바뀌지
-    # 않도록 3mm 이내 횡오차는 추가 feedback에 사용하지 않는다.
-    cross_track_deadband_m: 0.003
-    # [m] 횡오차가 0.5cm를 넘으면 즉시 속도를 낮춰 위치 복귀를 우선한다.
-    cross_track_slowdown_start_m: 0.005
-    # [m] 횡오차가 2.5cm에 도달하면 아래 최소 속도 비율까지 감속한다.
-    cross_track_slowdown_full_m: 0.025
+    # [deg] 이보다 작은 헤딩 오차는 카메라/heading 흔들림으로 보고 추가
+    # 복귀 조향에 사용하지 않는다.
+    heading_feedback_deadband_deg: 2.0
+    # [m] 6mm 이내 횡오차는 고 gain 추가 복귀 조향에 사용하지 않는다.
+    # MPC의 부드러운 기본 곡률은 유지해 deadband 경계에서 튀지 않게 한다.
+    cross_track_deadband_m: 0.006
+    # [m] 횡오차 1.2cm까지는 정상속도를 유지한다.
+    cross_track_slowdown_start_m: 0.012
+    # [m] 횡오차가 4cm에 도달할 때 아래 최소 속도 비율까지 감속한다.
+    cross_track_slowdown_full_m: 0.040
     # 횡오차 감속 시 기준 속도에 곱할 최소 비율이다.
-    minimum_tracking_speed_scale: 0.25
+    minimum_tracking_speed_scale: 0.55
     # [deg] 직선·곡선·후진 구간에서 경로 yaw 오차가 이 값을 넘으면
     # 정지하지 않고 주행 방향에 맞는 비례 곡률로 경로 방향에 복귀한다.
     max_tracking_yaw_error_deg: 25.0
@@ -146,26 +149,30 @@ pinkk_mpc_path_follower:
     # [m] 최종 경로점까지 이 거리 이내이고 yaw 오차도 허용 범위 이내이면
     # GOAL_REACHED로 판단한다.
     # 상단 카메라 중심 검출 흔들림보다 작은 2cm는 종점 직전 정지를 유발하므로
-    # 3cm 안에서 yaw까지 맞으면 완료로 판정한다.
-    goal_position_tolerance_m: 0.03
+    # 후진이 덜 들어간 상태에서 완료되지 않도록 2cm 안에서 yaw까지
+    # 맞아야 완료로 판정한다.
+    goal_position_tolerance_m: 0.02
     # [deg] 최종 위치에서 허용하는 경로 종점 yaw 오차다.
     # 충전 접점 정렬을 위해 기존 9도보다 엄격한 6도로 완료를 판정한다.
     # 5도에서는 C1 목표 위치 0.6cm 안에서 5.54도 상태로 정지 해에 고정됐다.
     goal_yaw_tolerance_deg: 6.0
     # [m] direction 전환점까지 이 거리 이내일 때 GEAR_CHANGE_REQUIRED를 발생시킨다.
     # progress가 아래 마지막 N점 안에 들어온 뒤에는 카메라 위치 오차를
-    # 고려해 전환점 4cm 이내에서 후진으로 전환한다.
-    gear_position_tolerance_m: 0.025
+    # 고려해 전환점 2cm 이내에서만 다음 기어로 전환한다.
+    gear_position_tolerance_m: 0.020
     # [m] 3-point 주차의 짧은 전진 정렬에서 비홀로노믹 종점 바로 앞에
     # 속도가 0으로 굳을 때만 쓰는 보조 전환 반경이다. 아래 end guard 안이고
     # 정지 상태일 때만 적용되므로 정상 주행 중 조기 전환에는 사용되지 않는다.
-    gear_fallback_position_tolerance_m: 0.07
+    gear_fallback_position_tolerance_m: 0.04
     # [m/s] 보조 기어 전환에서 정지 상태로 판단할 선속도 절댓값이다.
     gear_stall_speed_threshold_mps: 0.003
     # [m] 보조 전환은 3-point 정렬의 짧은 구간에서만 허용한다.
     # 긴 도로 접근 구간에는 2.5cm 기본 전환 오차를 강제해 다음 급곡선을
     # 잘못된 시작 자세로 진입하지 않게 한다.
     gear_fallback_max_segment_length_m: 0.30
+    # [m] 기어 전환점의 접선 평면을 지나친 경우 이 횡오차 안이면 다음
+    # 기어로 전환한다. 이 범위를 벗어나면 계속 후진하지 않고 안전 정지한다.
+    gear_passed_endpoint_lateral_tolerance_m: 0.06
     # direction 구간의 마지막 N점 안에 progress가 들어온 경우에만
     # 전진→후진 전환을 허용해 가까이 지나가는 후진 경로로의 오인 전환을 막는다.
     gear_transition_end_guard_points: 12
@@ -191,6 +198,17 @@ pinkk_mpc_path_follower:
     # 최대 이탈 시 현재 횡오차보다 앞쪽 경로와의 예측 오차를 더 많이 사용한다.
     # 가장 가까운 한 점으로 급히 꺾지 않고 경로 접선으로 합류하게 한다.
     steering_rejoin_preview_weight: 0.65
+
+    # 큰 곡선을 만난 뒤가 아니라 진입 전에 곡률을 점진적으로 적용한다.
+    # 0.5cm 경로 간격에서 14점은 약 7cm 앞이며 MPC horizon을 늘리지 않아
+    # 최적화 계산시간과 10Hz 제어 주기를 유지한다.
+    curve_feedforward_preview_points: 14
+    # 현재 MPC 조향과 위 미래 곡률 평균을 섞는 비율이다. 작은 곡선은
+    # 약하게 유지하고 큰 곡선이 가까워질수록 선행 조향이 커진다.
+    curve_feedforward_gain: 0.55
+    # [1/m] 이보다 작은 경로 곡률은 지도·resampling의 미세 흔들림으로
+    # 보고 0으로 만든다. 0.5는 반경 2m보다 완만한 곡선을 무시한다.
+    curve_feedforward_deadband_1pm: 0.5
 
     # 경로 yaw로 계산한 feed-forward 곡률의 이동평균 점 개수다.
     # 양의 홀수만 허용한다. 크게 하면 부드럽지만 코너 진입 반응이 늦어진다.
