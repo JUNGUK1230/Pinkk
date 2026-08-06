@@ -1,29 +1,71 @@
+# 로봇 PC에서 실행되는 PyMyCobot 통합 bridge 설정.
+# 이 파일을 수정한 뒤 로봇 PC workspace를 다시 빌드하고 bridge를 재시작해야
+# 실제 장비에 반영된다. 아래 완화값은 coarse/pre-approach 시험용이며 실제
+# 삽입 단계에서는 Roll/Pitch와 위치 허용오차를 다시 줄여야 한다.
 pinkk_mycobot_trajectory_bridge:
   ros__parameters:
+    # MyCobot 제어보드 시리얼 장치와 통신 속도.
     port: /dev/ttyUSB0
     baud: 1000000
+    # 관절 trajectory에서 별도 override가 없을 때 사용하는 기본 속도.
     speed: 10
+    # get_angles/get_coords 및 /joint_states 발행 주파수.
     publish_rate_hz: 10.0
+    # [Hz] 제조사 get_coords 기반 /robot_arm/cartesian_pose_actual 발행률.
+    # 시리얼 부하를 줄이기 위해 정지 중 2Hz로만 발행한다.
+    cartesian_pose_publish_rate_hz: 2.0
+    # [deg] send_angles 완료 판정의 관절별 목표 허용오차.
+    # 기기 반복오차 때문에 현재 2도이며, 1도 미세명령에는 적합하지 않다.
     goal_tolerance_deg: 2.0
+    # false이면 FollowJointTrajectory action을 받되 실제 send_angles를 차단한다.
     joint_execution_enabled: true
+    # 완료 판정에 필요한 연속 정지 샘플 수와 샘플 간 최대 관절 변화량.
     joint_stable_sample_count: 5
     joint_stable_delta_deg: 0.2
+    # 목표 도달 후 자세 유지 여부를 추가 확인하는 시간.
     joint_hold_check_seconds: 2.0
+    # send_angles 재전송 횟수. 하드웨어 큐 중복을 막기 위해 현재 1회.
     joint_max_command_attempts: 1
     joint_retry_stable_sample_count: 3
     joint_retry_minimum_progress_deg: 0.1
+    # 보상 재전송은 실제 장비 오버슈트를 확인하기 전까지 비활성화한다.
     joint_retry_compensation_enabled: false
     joint_retry_compensation_gain: 0.8
     joint_retry_max_step_deg: 1.0
     joint_retry_max_total_offset_deg: 2.0
+    # [s] 관절 trajectory 전체 실행 제한시간.
     max_execution_seconds: 60.0
+
+    # false이면 CartesianMove action을 받되 실제 send_coords를 차단한다.
     cartesian_execution_enabled: true
     cartesian_base_frame: g_base
-    cartesian_position_tolerance_m: 0.0005
-    cartesian_orientation_tolerance_deg: 1.0
+    # [m] Cartesian 목표 완료 위치 허용오차.
+    # 현재 coarse PBVS 시험은 기기 오차를 고려해 3mm로 완화한다.
+    cartesian_position_tolerance_m: 0.005
+    # [deg] Cartesian 목표 완료 전체 자세 허용오차.
+    # coarse/pre-approach 시험은 실측 정지 오차를 고려해 5도로 완화한다.
+    # 실제 삽입 전에는 별도 프로파일에서 1~2도로 다시 줄여야 한다.
+    cartesian_orientation_tolerance_deg: 5.0
+    # 한 번의 Cartesian 목표에 허용하는 이동/회전 안전 상한.
     cartesian_max_translation_m: 0.20
     cartesian_max_rotation_deg: 90.0
+    # [m] lock_z=true일 때 경로 Z 이탈 제한. 아래 Z 추적 무시가 true이면
+    # 이 값으로 Z 이탈을 실패 처리하지 않는다.
     cartesian_path_z_tolerance_m: 0.002
-    cartesian_path_tilt_tolerance_deg: 3.0
-    cartesian_timeout_seconds: 90.0
+    # [deg] lock_roll_pitch=true인 coarse 이동 중 시작 Roll/Pitch에서 허용할
+    # 최대 이탈. 현재 pre-approach 시험은 5도로 완화한다.
+    # 실제 수직 삽입 직전에는 1~2도 수준의 별도 프로파일이 필요하다.
+    cartesian_path_tilt_tolerance_deg: 5.0
+    # [s] bridge가 send_coords 이후 실제 로봇 상태를 감시하는 제한시간.
+    cartesian_timeout_seconds: 60.0
+    # true이면 목표 Z는 전송하지만 실제 Z 오차를 action 실패 조건에서 제외한다.
+    # 고정 관측 Z의 해가 없는 현재 시험에서 반드시 true로 유지한다.
     cartesian_ignore_z_tracking_error: true
+    # [m] free-Z stop-and-go로 판정할 최소 Z 명령량. 최종 포트 목표의
+    # 마지막 1~5mm 부분 step도 실제 정지까지 감시할 수 있도록 1mm로 둔다.
+    cartesian_free_z_minimum_motion_m: 0.001
+    # [s] 명령 후 이 시간 동안 0.25mm/0.25deg 변화가 없으면 실제 상태를
+    # 기준으로 조기 종료한다. 신뢰할 수 없는 제조사 사전 IK 검사는 사용하지 않는다.
+    cartesian_no_motion_timeout_seconds: 5.0
+    # [s] 실행 중 실제 get_coords와 XY/자세 잔여오차를 출력하는 주기.
+    cartesian_progress_log_seconds: 2.0

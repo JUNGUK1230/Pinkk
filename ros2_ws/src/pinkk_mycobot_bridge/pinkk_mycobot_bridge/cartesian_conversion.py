@@ -108,6 +108,36 @@ def wrapped_angle_difference_deg(first_deg: float, second_deg: float) -> float:
     return (first - second + 180.0) % 360.0 - 180.0
 
 
+def is_z_dominant_recovery_motion(
+    planned_xy_distance_m: float,
+    planned_z_m: float,
+    planned_yaw_deg: float,
+    position_tolerance_m: float,
+    orientation_tolerance_deg: float,
+    minimum_z_motion_m: float = 0.005,
+) -> bool:
+    """TF/get_coords 미세 차이를 허용해 의도된 Z-only 복구를 식별한다."""
+    xy, z, yaw, xy_tolerance, yaw_tolerance, minimum_z = _finite(
+        (
+            planned_xy_distance_m,
+            planned_z_m,
+            planned_yaw_deg,
+            position_tolerance_m,
+            orientation_tolerance_deg,
+            minimum_z_motion_m,
+        ),
+        6,
+        'Z-only 판정값',
+    )
+    if xy_tolerance < 0.0 or yaw_tolerance < 0.0 or minimum_z <= 0.0:
+        raise ValueError('Z-only 판정 허용값은 유효한 양수여야 합니다')
+    return (
+        abs(z) >= minimum_z
+        and abs(xy) <= xy_tolerance
+        and abs(yaw) <= yaw_tolerance
+    )
+
+
 def pose_error(
     target_position: Sequence[float],
     target_quaternion: Sequence[float],

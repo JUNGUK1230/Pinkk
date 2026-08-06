@@ -2,6 +2,7 @@ import math
 
 from pinkk_mycobot_bridge.cartesian_conversion import (
     apply_cartesian_locks,
+    is_z_dominant_recovery_motion,
     pose_error,
     pose_values_to_robot_coords,
     quaternion_to_rpy_degrees,
@@ -78,3 +79,44 @@ def test_cartesian_locks_leave_unlocked_axes_requested() -> None:
     )
 
     assert target == pytest.approx(requested)
+
+
+def test_z_recovery_allows_small_tf_and_hardware_pose_difference() -> None:
+    assert is_z_dominant_recovery_motion(
+        planned_xy_distance_m=0.0012,
+        planned_z_m=0.030,
+        planned_yaw_deg=0.4,
+        position_tolerance_m=0.003,
+        orientation_tolerance_deg=3.0,
+    )
+
+
+def test_z_recovery_rejects_meaningful_xy_motion() -> None:
+    assert not is_z_dominant_recovery_motion(
+        planned_xy_distance_m=0.006,
+        planned_z_m=0.030,
+        planned_yaw_deg=0.4,
+        position_tolerance_m=0.003,
+        orientation_tolerance_deg=3.0,
+    )
+
+
+def test_z_recovery_requires_meaningful_z_motion() -> None:
+    assert not is_z_dominant_recovery_motion(
+        planned_xy_distance_m=0.001,
+        planned_z_m=0.003,
+        planned_yaw_deg=0.4,
+        position_tolerance_m=0.003,
+        orientation_tolerance_deg=3.0,
+    )
+
+
+def test_z_recovery_accepts_partial_final_step_with_lower_threshold() -> None:
+    assert is_z_dominant_recovery_motion(
+        planned_xy_distance_m=0.001,
+        planned_z_m=0.002,
+        planned_yaw_deg=0.4,
+        position_tolerance_m=0.003,
+        orientation_tolerance_deg=3.0,
+        minimum_z_motion_m=0.001,
+    )

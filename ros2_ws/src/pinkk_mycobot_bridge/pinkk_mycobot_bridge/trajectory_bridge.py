@@ -22,6 +22,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 
 from .cartesian_conversion import (
     apply_cartesian_locks,
+    is_z_dominant_recovery_motion,
     pose_error,
     pose_values_to_robot_coords,
     robot_coords_to_pose_values,
@@ -89,6 +90,7 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("baud", 1_000_000)
         self.declare_parameter("speed", 10)
         self.declare_parameter("publish_rate_hz", 10.0)
+        self.declare_parameter("cartesian_pose_publish_rate_hz", 2.0)
         self.declare_parameter("goal_tolerance_deg", 2.0)
         self.declare_parameter("joint_execution_enabled", False)
         self.declare_parameter("joint_stable_sample_count", 5)
@@ -112,11 +114,17 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("cartesian_path_tilt_tolerance_deg", 3.0)
         self.declare_parameter("cartesian_timeout_seconds", 15.0)
         self.declare_parameter("cartesian_ignore_z_tracking_error", False)
+        self.declare_parameter("cartesian_free_z_minimum_motion_m", 0.001)
+        self.declare_parameter("cartesian_no_motion_timeout_seconds", 5.0)
+        self.declare_parameter("cartesian_progress_log_seconds", 2.0)
 
         port = str(self.get_parameter("port").value)
         baud = int(self.get_parameter("baud").value)
         self._speed = int(self.get_parameter("speed").value)
         rate = float(self.get_parameter("publish_rate_hz").value)
+        cartesian_pose_rate = float(
+            self.get_parameter("cartesian_pose_publish_rate_hz").value
+        )
         self._tolerance_rad = math.radians(
             float(self.get_parameter("goal_tolerance_deg").value)
         )
@@ -192,12 +200,25 @@ class MyCobotTrajectoryBridge(Node):
         self._cartesian_ignore_z_tracking_error = bool(
             self.get_parameter("cartesian_ignore_z_tracking_error").value
         )
+        self._cartesian_free_z_minimum_motion = float(
+            self.get_parameter("cartesian_free_z_minimum_motion_m").value
+        )
+        self._cartesian_no_motion_timeout = float(
+            self.get_parameter("cartesian_no_motion_timeout_seconds").value
+        )
+        self._cartesian_progress_log_seconds = float(
+            self.get_parameter("cartesian_progress_log_seconds").value
+        )
         if not Path(port).exists():
             raise FileNotFoundError(f"로봇 serial port가 없습니다: {port}")
         if not 1 <= self._speed <= 100:
             raise ValueError("speed는 1~100이어야 합니다")
         if rate <= 0.0 or rate > 50.0:
             raise ValueError("publish_rate_hz는 0보다 크고 50 이하여야 합니다")
+        if cartesian_pose_rate <= 0.0 or cartesian_pose_rate > 10.0:
+            raise ValueError(
+                "cartesian_pose_publish_rate_hz는 0보다 크고 10 이하여야 합니다"
+            )
         if self._tolerance_rad <= 0.0:
             raise ValueError("goal_tolerance_deg는 0보다 커야 합니다")
         if self._joint_stable_sample_count < 2:
@@ -240,6 +261,9 @@ class MyCobotTrajectoryBridge(Node):
             self._cartesian_path_z_tolerance,
             self._cartesian_path_tilt_tolerance,
             self._cartesian_timeout,
+            self._cartesian_free_z_minimum_motion,
+            self._cartesian_no_motion_timeout,
+            self._cartesian_progress_log_seconds,
         )
         if any(value <= 0.0 for value in positive_cartesian_parameters):
             raise ValueError("Cartesian 제한값과 timeout은 0보다 커야 합니다")
@@ -271,8 +295,17 @@ class MyCobotTrajectoryBridge(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
         self._joint_publisher = self.create_publisher(JointState, "/joint_states", qos)
+        self._cartesian_pose_publisher = self.create_publisher(
+            PoseStamped,
+            "/robot_arm/cartesian_pose_actual",
+            qos,
+        )
         self._latest_positions: list[float] | None = None
         self._state_timer = self.create_timer(1.0 / rate, self._read_and_publish_state)
+        self._cartesian_pose_timer = self.create_timer(
+            1.0 / cartesian_pose_rate,
+            self._read_and_publish_cartesian_pose,
+        )
         self._action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -313,8 +346,31 @@ class MyCobotTrajectoryBridge(Node):
             f"action={self.CARTESIAN_ACTION_NAME}, max_step="
             f"{self._cartesian_max_translation * 1000.0:.1f}mm, "
             "ignore_z_tracking_error="
-            f"{self._cartesian_ignore_z_tracking_error}"
+            f"{self._cartesian_ignore_z_tracking_error}, "
+            "free_z_minimum_motion="
+            f"{self._cartesian_free_z_minimum_motion * 1000.0:.1f}mm, "
+            f"no_motion_timeout={self._cartesian_no_motion_timeout:.1f}s, "
+            f"progress_log={self._cartesian_progress_log_seconds:.1f}s"
         )
+
+    def _robot_error_diagnostic(self) -> str:
+        reader = getattr(self._robot, 'get_error_information', None)
+        if not callable(reader):
+            return 'get_error_information API 없음'
+        try:
+            with self._serial_lock:
+                code = reader()
+        except Exception as error:
+            return f'get_error_information 호출 실패: {error}'
+        descriptions = {
+            0: '펌웨어 오류 없음',
+            32: '역기구학 해 없음',
+            33: '선형 이동 인접 해 없음',
+            34: '선형 이동 인접 해 없음',
+        }
+        if isinstance(code, int) and 1 <= code <= 6:
+            return f'error={code}: joint{code} 한계 초과'
+        return f'error={code!r}: {descriptions.get(code, "제조사 미정의 오류")}'
 
     def _check_cartesian_api(self) -> bool:
         required = (
@@ -756,6 +812,9 @@ class MyCobotTrajectoryBridge(Node):
                     target_coords, int(request.speed), int(request.mode)
                 )
             require_no_explicit_command_failure('send_coords', response)
+            self.get_logger().info(
+                'send_coords 호출 종료: 실제 Cartesian 상태 감시를 시작합니다'
+            )
         except Exception as error:
             result.success = False
             result.message = f"Cartesian 명령 실패: {error}"
@@ -774,12 +833,19 @@ class MyCobotTrajectoryBridge(Node):
         )
         free_z_only_command = (
             self._cartesian_ignore_z_tracking_error
-            and planned_distance < 1e-9
-            and abs(planned_yaw_deg) < 1e-9
-            and abs(planned_z_m) >= 1e-9
+            and is_z_dominant_recovery_motion(
+                planned_distance,
+                planned_z_m,
+                planned_yaw_deg,
+                self._cartesian_position_tolerance,
+                self._cartesian_orientation_tolerance,
+                self._cartesian_free_z_minimum_motion,
+            )
         )
         started = time.monotonic()
+        next_progress_log = started
         stationary_samples = 0
+        motion_observed = False
         while rclpy.ok():
             if goal_handle.is_cancel_requested:
                 self._stop_robot()
@@ -804,6 +870,17 @@ class MyCobotTrajectoryBridge(Node):
                     )
                 self._validate_locked_path(request, start_coords, actual_coords)
                 robot_is_moving = self._robot_is_moving()
+                moved_position_m, moved_orientation_deg = pose_error(
+                    actual_position,
+                    actual_quaternion,
+                    start_position,
+                    start_quaternion,
+                )
+                motion_observed = motion_observed or (
+                    robot_is_moving
+                    or moved_position_m >= 0.00025
+                    or moved_orientation_deg >= 0.25
+                )
             except Exception as error:
                 self._stop_robot()
                 result.success = False
@@ -816,6 +893,34 @@ class MyCobotTrajectoryBridge(Node):
             feedback.position_error_m = position_error_m
             feedback.orientation_error_deg = orientation_error_deg
             goal_handle.publish_feedback(feedback)
+            now = time.monotonic()
+            if now >= next_progress_log:
+                self.get_logger().info(
+                    'Cartesian 진행 상태: '
+                    f'moving={robot_is_moving}, '
+                    f'xy_residual={position_error_m * 1000.0:.3f}mm, '
+                    f'orientation_residual={orientation_error_deg:.3f}deg, '
+                    'actual=[mm, deg] '
+                    f'{[round(value, 3) for value in actual_coords]}'
+                )
+                next_progress_log = now + self._cartesian_progress_log_seconds
+            if (
+                not motion_observed
+                and now - started
+                >= self._cartesian_no_motion_timeout
+            ):
+                diagnostic = self._robot_error_diagnostic()
+                self._stop_robot()
+                result.success = False
+                result.message = (
+                    'Cartesian 명령 후 로봇 무동작: '
+                    f'{self._cartesian_no_motion_timeout:.1f}초 동안 '
+                    f'0.25mm/0.25deg 이상의 변화가 없습니다; {diagnostic}'
+                )
+                result.actual = actual
+                goal_handle.abort()
+                self.get_logger().error(f'[CARTESIAN-DIAG] {result.message}')
+                return result
             if (
                 position_error_m <= self._cartesian_position_tolerance
                 and orientation_error_deg <= self._cartesian_orientation_tolerance
@@ -830,7 +935,13 @@ class MyCobotTrajectoryBridge(Node):
                     goal_handle.abort()
                     return result
                 result.success = True
-                result.message = "Cartesian 목표 자세 도달"
+                result.message = (
+                    'Cartesian 목표 자세 도달: '
+                    f'xy_residual={position_error_m * 1000.0:.3f}mm, '
+                    f'orientation_residual={orientation_error_deg:.3f}deg, '
+                    'actual=[mm, deg] '
+                    f'{[round(value, 3) for value in actual_coords]}'
+                )
                 result.actual = actual
                 goal_handle.succeed()
                 self.get_logger().info(result.message)
@@ -865,25 +976,33 @@ class MyCobotTrajectoryBridge(Node):
                     if abs(planned_z_m) < 1e-9
                     else actual_z_m * math.copysign(1.0, planned_z_m)
                 )
-                sufficient_directional_progress = (
-                    directional_progress >= 0.00025
-                    if planned_distance >= 1e-9
-                    else (
-                        directional_yaw_progress_deg >= 0.25
-                        if abs(planned_yaw_deg) >= 1e-9
-                        else directional_z_progress_m >= 0.00025
+                if free_z_only_command:
+                    # TF 목표와 get_coords 시작값 사이에 작은 XY 차이가 있어도
+                    # Z 복구 완료는 실제 Z 방향 진행량으로 판정한다.
+                    sufficient_directional_progress = (
+                        directional_z_progress_m >= 0.00025
                     )
-                )
+                else:
+                    sufficient_directional_progress = (
+                        directional_progress >= 0.00025
+                        if planned_distance >= 1e-9
+                        else (
+                            directional_yaw_progress_deg >= 0.25
+                            if abs(planned_yaw_deg) >= 1e-9
+                            else directional_z_progress_m >= 0.00025
+                        )
+                    )
                 stationary_samples = (
                     stationary_samples + 1
                     if (
-                        not robot_is_moving
+                        free_z_only_command
+                        and not robot_is_moving
                         and time.monotonic() - started >= 0.5
                         and sufficient_directional_progress
                     )
                     else 0
                 )
-                if stationary_samples >= 3:
+                if free_z_only_command and stationary_samples >= 3:
                     if not self._stop_robot():
                         result.success = False
                         result.message = (
@@ -907,12 +1026,16 @@ class MyCobotTrajectoryBridge(Node):
                     goal_handle.succeed()
                     self.get_logger().warning(result.message)
                     return result
-            if time.monotonic() - started > self._cartesian_timeout:
+            if now - started > self._cartesian_timeout:
                 self._stop_robot()
                 result.success = False
                 result.message = (
                     f"{self._cartesian_timeout:.1f}초 안에 Cartesian 목표에 "
-                    "도달하지 못했습니다"
+                    '도달하지 못했습니다: '
+                    f'xy_residual={position_error_m * 1000.0:.3f}mm, '
+                    f'orientation_residual={orientation_error_deg:.3f}deg, '
+                    'actual=[mm, deg] '
+                    f'{[round(value, 3) for value in actual_coords]}'
                 )
                 result.actual = actual
                 goal_handle.abort()
@@ -1012,6 +1135,20 @@ class MyCobotTrajectoryBridge(Node):
         message.position = positions
         self._joint_publisher.publish(message)
         return positions
+
+    def _read_and_publish_cartesian_pose(self) -> None:
+        """정지 중 제조사 get_coords pose를 저주파 ROS topic으로 발행한다."""
+        if self._motion_lock.locked() or not self._cartesian_ready:
+            return
+        try:
+            coords = self._read_robot_coords()
+        except Exception as error:
+            self.get_logger().warning(
+                f"get_coords pose 발행 실패: {error}",
+                throttle_duration_sec=2.0,
+            )
+            return
+        self._cartesian_pose_publisher.publish(self._pose_from_coords(coords))
 
     def _stop_robot(self) -> bool:
         try:
