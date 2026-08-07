@@ -19,6 +19,29 @@ def angle_difference(target: float, source: float) -> float:
     return normalize_angle(target - source)
 
 
+def motion_heading(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    direction: int,
+    minimum_baseline_m: float,
+) -> float | None:
+    """차량 중심 이동 벡터에서 차체 yaw를 계산한다."""
+    if direction not in (-1, 1):
+        raise ValueError("motion direction must be -1 or 1")
+    if not math.isfinite(minimum_baseline_m) or minimum_baseline_m <= 0.0:
+        raise ValueError("motion heading baseline must be positive and finite")
+    delta_x = float(end[0]) - float(start[0])
+    delta_y = float(end[1]) - float(start[1])
+    if not all(math.isfinite(value) for value in (delta_x, delta_y)):
+        raise ValueError("motion positions must be finite")
+    if math.hypot(delta_x, delta_y) < minimum_baseline_m:
+        return None
+    yaw = math.atan2(delta_y, delta_x)
+    if direction < 0:
+        yaw += math.pi
+    return normalize_angle(yaw)
+
+
 def quaternion_yaw_xyzw(x: float, y: float, z: float, w: float) -> float:
     values = (x, y, z, w)
     if any(not math.isfinite(value) for value in values):

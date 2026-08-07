@@ -10,7 +10,7 @@ import numpy as np
 
 try:
     import rclpy
-    from geometry_msgs.msg import PoseStamped
+    from geometry_msgs.msg import PoseStamped, Twist
     from nav_msgs.msg import Odometry
     from rclpy.executors import ExternalShutdownException
     from rclpy.node import Node
@@ -29,6 +29,9 @@ from .heading_fusion import (
     HeadingMatch,
     ImuLidarHeadingFusion,
     LidarMapHeadingMatcher,
+    angle_difference,
+    motion_heading,
+    normalize_angle,
     quaternion_yaw_xyzw,
 )
 
@@ -100,6 +103,21 @@ class FusedPoseEstimator(Node):
         self._heading_reset_position_jump_m = self._positive(
             "heading_reset_position_jump_m"
         )
+        self._motion_heading_baseline_m = self._positive(
+            "motion_heading_baseline_m"
+        )
+        self._motion_heading_alpha = self._positive("motion_heading_alpha")
+        if self._motion_heading_alpha > 1.0:
+            raise ValueError("motion_heading_alpha must not exceed 1")
+        self._motion_heading_max_step_rad = math.radians(
+            self._positive("motion_heading_max_step_deg")
+        )
+        self._motion_command_timeout_sec = self._positive(
+            "motion_command_timeout_sec"
+        )
+        self._motion_command_min_speed_mps = self._positive(
+            "motion_command_min_speed_mps"
+        )
 
         sensor_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -146,6 +164,12 @@ class FusedPoseEstimator(Node):
             self._trajectory_callback,
             trajectory_qos,
         )
+        self._command_subscription = self.create_subscription(
+            Twist,
+            str(self.get_parameter("motion_command_topic").value),
+            self._command_callback,
+            pose_qos,
+        )
         self._pose_publisher = self.create_publisher(
             PoseStamped,
             str(self.get_parameter("fused_pose_topic").value),
@@ -168,10 +192,15 @@ class FusedPoseEstimator(Node):
         self._lidar_only_yaw_rad: float | None = None
         self._heading_prior_rad: float | None = None
         self._trajectory_signature: tuple[float, ...] | None = None
+        self._motion_anchor_m: tuple[float, float] | None = None
+        self._motion_yaw_rad: float | None = None
+        self._motion_direction = 0
         self._last_camera_monotonic: float | None = None
         self._last_imu_monotonic: float | None = None
         self._last_odom_monotonic: float | None = None
         self._last_lidar_heading_monotonic: float | None = None
+        self._last_motion_command_monotonic: float | None = None
+        self._last_motion_heading_monotonic: float | None = None
         self._last_match: HeadingMatch | None = None
         self._last_status: str | None = None
         self.get_logger().info(
@@ -179,8 +208,9 @@ class FusedPoseEstimator(Node):
                 "Fused pose: camera x/y + IMU relative yaw + LiDAR map absolute yaw"
                 if self._require_imu
                 else (
-                    "Fused pose: camera x/y + fixed-route yaw + wheel odom; "
-                    "camera/LiDAR gated correction (IMU disabled)"
+                    "Fused pose: camera x/y + LiDAR initial yaw + wheel odom; "
+                    "camera-motion/LiDAR correction and fixed-route search fallback "
+                    "(IMU disabled)"
                     if self._require_odom
                     else "Fused pose: camera x/y + LiDAR map heading (IMU disabled)"
                 )
@@ -197,6 +227,7 @@ class FusedPoseEstimator(Node):
             # ROS odom +yaw는 반시계, 이미지 map +yaw는 시계 방향이다.
             "odom_yaw_sign": -1.0,
             "scan_topic": "/scan",
+            "motion_command_topic": "/cmd_vel",
             "trajectory_topic": "/pinkk/planned_trajectory",
             "fused_pose_topic": "/pinkk/fused_vehicle_pose",
             "diagnostic_topic": "/pinkk/heading_diagnostics",
@@ -233,6 +264,11 @@ class FusedPoseEstimator(Node):
             "lidar_correction_alpha": 0.15,
             "lidar_only_yaw_alpha": 0.35,
             "heading_reset_position_jump_m": 0.20,
+            "motion_heading_baseline_m": 0.015,
+            "motion_heading_alpha": 0.50,
+            "motion_heading_max_step_deg": 6.0,
+            "motion_command_timeout_sec": 0.60,
+            "motion_command_min_speed_mps": 0.01,
             "camera_pose_timeout_sec": 1.0,
             "imu_timeout_sec": 0.3,
             "odom_timeout_sec": 0.5,
@@ -290,6 +326,9 @@ class FusedPoseEstimator(Node):
             self._last_match = None
             self._odom_origin_yaw_rad = None
             self._map_origin_yaw_rad = None
+            self._motion_anchor_m = None
+            self._motion_yaw_rad = None
+            self._last_motion_heading_monotonic = None
             self._log_status("LIDAR_HEADING_RESET_FOR_NEW_POSITION")
         if self._position_m is None or position_jump:
             self._position_m = (x_m, y_m)
@@ -299,6 +338,7 @@ class FusedPoseEstimator(Node):
                 self._position_m[0] + alpha * (x_m - self._position_m[0]),
                 self._position_m[1] + alpha * (y_m - self._position_m[1]),
             )
+        self._update_motion_heading()
         self._camera_yaw_rad = camera_yaw
         if self._require_odom and self._odom_yaw_rad is not None:
             predicted = self._odom_map_heading()
@@ -322,6 +362,59 @@ class FusedPoseEstimator(Node):
                         f"error={math.degrees(camera_error):.1f}deg"
                     )
         self._last_camera_monotonic = time.monotonic()
+
+    def _command_callback(self, message: Twist) -> None:
+        speed = float(message.linear.x)
+        if not math.isfinite(speed):
+            return
+        if abs(speed) < self._motion_command_min_speed_mps:
+            return
+        direction = 1 if speed > 0.0 else -1
+        if direction != self._motion_direction:
+            self._motion_anchor_m = self._position_m
+        self._motion_direction = direction
+        self._last_motion_command_monotonic = time.monotonic()
+
+    def _update_motion_heading(self) -> None:
+        if self._position_m is None:
+            return
+        now = time.monotonic()
+        if (
+            self._motion_direction == 0
+            or self._last_motion_command_monotonic is None
+            or now - self._last_motion_command_monotonic
+            > self._motion_command_timeout_sec
+        ):
+            self._motion_anchor_m = self._position_m
+            return
+        if self._motion_anchor_m is None:
+            self._motion_anchor_m = self._position_m
+            return
+        measured = motion_heading(
+            self._motion_anchor_m,
+            self._position_m,
+            self._motion_direction,
+            self._motion_heading_baseline_m,
+        )
+        if measured is None:
+            return
+        self._motion_anchor_m = self._position_m
+        self._motion_yaw_rad = measured
+        self._last_motion_heading_monotonic = now
+        predicted = self._odom_map_heading()
+        if predicted is None or self._map_origin_yaw_rad is None:
+            return
+        correction = angle_difference(measured, predicted)
+        applied = float(
+            np.clip(
+                self._motion_heading_alpha * correction,
+                -self._motion_heading_max_step_rad,
+                self._motion_heading_max_step_rad,
+            )
+        )
+        self._map_origin_yaw_rad = normalize_angle(
+            self._map_origin_yaw_rad + applied
+        )
 
     def _imu_callback(self, message: Imu) -> None:
         try:
@@ -348,12 +441,6 @@ class FusedPoseEstimator(Node):
             self._log_status("ODOM_ORIENTATION_INVALID")
             return
         self._last_odom_monotonic = time.monotonic()
-        if (
-            self._heading_prior_rad is not None
-            and self._odom_origin_yaw_rad is None
-        ):
-            self._odom_origin_yaw_rad = self._odom_yaw_rad
-            self._map_origin_yaw_rad = self._heading_prior_rad
 
     def _trajectory_callback(self, message: Float64MultiArray) -> None:
         """고정 경로의 첫 yaw를 LiDAR 전역 정합의 초기 방향 힌트로 사용한다."""
@@ -379,9 +466,6 @@ class FusedPoseEstimator(Node):
         heading = (heading + math.pi) % (2.0 * math.pi) - math.pi
         previous = self._heading_prior_rad
         self._heading_prior_rad = heading
-        if self._require_odom:
-            self._odom_origin_yaw_rad = self._odom_yaw_rad
-            self._map_origin_yaw_rad = heading
         if (
             not self._require_imu
             and previous is not None
@@ -434,8 +518,23 @@ class FusedPoseEstimator(Node):
                 else self._lidar_only_yaw_rad
             )
         )
+        if (
+            self._motion_yaw_rad is not None
+            and self._last_motion_heading_monotonic is not None
+            and time.monotonic() - self._last_motion_heading_monotonic
+            <= self._motion_command_timeout_sec
+        ):
+            predicted = self._motion_yaw_rad
         if predicted is None:
-            if self._heading_prior_rad is None:
+            # 카메라 장축은 경로 yaw를 이용해 앞/뒤 180도 모호성만 해소한
+            # 실제 관측값이다. 이를 LiDAR 초기 검색 중심으로 우선 사용한다.
+            # 카메라가 아직 없을 때만 고정 경로 yaw를 검색 힌트로 쓴다.
+            initial_heading = (
+                self._camera_yaw_rad
+                if self._camera_yaw_rad is not None
+                else self._heading_prior_rad
+            )
+            if initial_heading is None:
                 match = self._matcher.match_global(
                     self._position_m[0],
                     self._position_m[1],
@@ -446,7 +545,7 @@ class FusedPoseEstimator(Node):
                     self._position_m[0],
                     self._position_m[1],
                     points,
-                    self._heading_prior_rad,
+                    initial_heading,
                     self._initial_search_half_width_deg,
                     self._local_search_step_deg,
                 )
@@ -477,7 +576,20 @@ class FusedPoseEstimator(Node):
             self._fusion.correct(self._imu_yaw_rad, match.yaw_rad)
         elif self._require_odom:
             odom_heading = self._odom_map_heading()
-            if odom_heading is None or self._map_origin_yaw_rad is None:
+            if (
+                odom_heading is None
+                or self._map_origin_yaw_rad is None
+                or self._odom_origin_yaw_rad is None
+            ):
+                if self._odom_yaw_rad is None:
+                    return
+                # 카메라 yaw 또는 경로 fallback 주변에서 찾은 실제 LiDAR
+                # 정합값으로 map yaw를 잡는다.
+                self._odom_origin_yaw_rad = self._odom_yaw_rad
+                self._map_origin_yaw_rad = match.yaw_rad
+                self._last_match = match
+                self._last_lidar_heading_monotonic = time.monotonic()
+                self._log_status("LIDAR_HEADING_INITIALIZED")
                 return
             correction = (
                 match.yaw_rad - odom_heading + math.pi
@@ -531,7 +643,7 @@ class FusedPoseEstimator(Node):
                 self._log_status("ODOM_TIMEOUT")
                 return
             if self._odom_map_heading() is None:
-                self._log_status("WAITING_FOR_ROUTE_HEADING")
+                self._log_status("WAITING_FOR_MEASURED_HEADING")
                 return
         else:
             if (
@@ -585,6 +697,9 @@ class FusedPoseEstimator(Node):
             if self._camera_yaw_rad is not None
             else math.nan,
             self._odom_yaw_rad if self._odom_yaw_rad is not None else math.nan,
+            self._motion_yaw_rad
+            if self._motion_yaw_rad is not None
+            else math.nan,
         ]
         self._diagnostic_publisher.publish(diagnostic)
         self._log_status(

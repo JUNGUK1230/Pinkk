@@ -13,6 +13,7 @@ import numpy as np
 
 Point = tuple[float, float]
 Pose = tuple[float, float, float]
+PARKING_OCCUPANCY_CLASS_NAMES = frozenset({"car", "dummy"})
 
 
 @dataclass(frozen=True)
@@ -534,21 +535,22 @@ class ParkingSlotMap:
     ) -> tuple[ParkingSlotObservation, ...]:
         excluded_track_ids = excluded_track_ids or set()
         height, width = image_shape
-        vehicle_mask = np.zeros((height, width), dtype=np.uint8)
+        occupancy_mask = np.zeros((height, width), dtype=np.uint8)
         for detection in detections:
-            if detection.class_name != "car":
+            if detection.class_name not in PARKING_OCCUPANCY_CLASS_NAMES:
                 continue
             # 현재 운행 중인 ego가 슬롯 가장자리를 스치더라도 목표 칸을 다른
-            # 차량이 점유한 것으로 오판하지 않는다. 다른 track_id 차량은 기존
-            # 그대로 점유 계산에 포함한다.
+            # 차량이 점유한 것으로 오판하지 않는다. dummy는 차량 추적 대상이
+            # 아니므로 tracker ID가 우연히 같아도 항상 점유 계산에 포함한다.
             if (
-                detection.track_id is not None
+                detection.class_name == "car"
+                and detection.track_id is not None
                 and detection.track_id in excluded_track_ids
             ):
                 continue
             polygon = np.rint(detection.polygon_bev).astype(np.int32)
             if len(polygon) >= 3:
-                cv2.fillPoly(vehicle_mask, [polygon], 255)
+                cv2.fillPoly(occupancy_mask, [polygon], 255)
 
         observations: list[ParkingSlotObservation] = []
         for name, polygon in self.polygons.items():
@@ -556,7 +558,7 @@ class ParkingSlotMap:
             polygon_int = np.rint(polygon).astype(np.int32)
             cv2.fillPoly(slot_mask, [polygon_int], 255)
             slot_area = cv2.countNonZero(slot_mask)
-            overlap = cv2.bitwise_and(slot_mask, vehicle_mask)
+            overlap = cv2.bitwise_and(slot_mask, occupancy_mask)
             ratio = cv2.countNonZero(overlap) / max(slot_area, 1)
             center = _polygon_center(polygon)
             axis, _ = _principal_axis(polygon)

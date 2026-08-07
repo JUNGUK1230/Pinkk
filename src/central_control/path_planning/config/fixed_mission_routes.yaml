@@ -68,17 +68,19 @@ endpoints:
     # 삭제된 기존 P6 공간을 더 사용해 첫 후진을 약 41cm 유지한다.
     # 이동한 C1 중심까지 안전하게 연결하기 위해 cusp 오차를 12도 이내로
     # 허용하고, 이후 전진 정렬과 마지막 직선 후진에서 goal yaw를 맞춘다.
-    entry_staging: [116.2106659660, 112.8489814508, 2.7925268032]
+    # C1 접근 중 좌측 벽/주차 구획과의 명목 전방 여유를 약 2.5cm 늘린다.
+    # 최종 충전 위치는 유지하고 넓어진 진입 전용 공간만 사용한다.
+    entry_staging: [118.7106659660, 112.8489814508, 2.7925268032]
     goal: [170.9913709964, 128.7119903448, -2.4521787849]
     # 차량 후미가 C1 경계를 통과하기 전에 goal yaw 정렬을 완료한다.
-    # 마지막 32cm는 조향하지 않고 goal yaw를 유지한 직선 후진이다.
+    # 마지막 38cm는 조향하지 않고 goal yaw를 유지한 직선 후진이다.
     entry_turning_radius_cm: 40.0
     entry_maximum_cusp_yaw_error_deg: 12.0
     entry_approach_turning_radius_cm: 16.0
     entry_attachment_search_cm: 60.0
     # 충전 후 삭제된 하단 우측 칸 옆의 넓은 통로로 부드럽게 합류한다.
     exit_turning_radius_cm: 20.0
-    entry_final_straight_cm: 32.0
+    entry_final_straight_cm: 38.0
     # camera BEV의 C1 사각형을 등록 affine으로 변환한 lidar_map_cm polygon.
     # 정렬 maneuver 중 차량 후미가 이 영역에 들어가는 후보는 폐기한다.
     entry_slot_polygon_cm:

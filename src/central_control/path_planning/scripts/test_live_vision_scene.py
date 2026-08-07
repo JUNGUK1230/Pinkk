@@ -50,10 +50,11 @@ def detection(
     width: float = 80.0,
     height: float = 35.0,
     track_id: int | None = None,
+    class_name: str = "car",
 ) -> Detection:
     polygon = rectangle(center[0], center[1], width, height)
     return Detection(
-        "car",
+        class_name,
         confidence,
         polygon,
         (
@@ -226,6 +227,48 @@ def main() -> int:
         assert not filtered_c2.occupied
         assert grazing_scene.planning_request is not None
         assert grazing_scene.planning_request.slot_name == "C2"
+
+        # dummy가 주차칸을 덮으면 차량으로 추적하지는 않지만 점유물로 처리해
+        # 해당 칸으로 경로를 만들지 않는다. tracker ID가 ego와 우연히 같아도
+        # dummy는 ego 점유 제외 규칙의 영향을 받지 않아야 한다.
+        dummy = detection(
+            (900.0, 400.0),
+            0.97,
+            100.0,
+            70.0,
+            track_id=31,
+            class_name="dummy",
+        )
+        dummy_ego = detection(
+            (120.0, 120.0),
+            0.90,
+            track_id=31,
+        )
+        dummy_tracker = EgoVehicleTracker(
+            transform,
+            rear_axle_offset_cm=4.0,
+            initial_center_bev_px=(120.0, 120.0),
+            initial_yaw_rad=math.radians(40.0),
+            position_alpha=1.0,
+            yaw_alpha=1.0,
+        )
+        dummy_scene = SceneLocalizer(
+            dummy_tracker,
+            parking,
+            target_slot_name="free_slot",
+        ).observe(
+            [dummy, dummy_ego],
+            (800, 1600),
+            frame_index=8,
+            observed_at_unix_sec=100.1,
+        )
+        dummy_slot = next(
+            slot for slot in dummy_scene.parking_slots if slot.name == "free_slot"
+        )
+        assert dummy_slot.occupied
+        assert dummy_scene.planning_request is None
+        assert "occupied" in dummy_scene.status
+        assert {vehicle.track_id for vehicle in dummy_scene.tracked_vehicles} == {31}
 
         # 입구 기준 자동 배정은 허용 칸 중 빈 자리만 남긴 뒤, 가장 먼 칸부터
         # 후보 순서를 만든다. planner는 첫 후보만 받아 불필요한 주차칸 탐색을 줄인다.

@@ -202,6 +202,7 @@ class MpcPathFollower(Node):
         self._front_obstacle_m: float | None = None
         self._rear_obstacle_m: float | None = None
         self._path_signature: bytes | None = None
+        self._pose_received_after_path = False
         self._path_valid = True
         self._gear_resume_monotonic: float | None = None
         self._last_status: str | None = None
@@ -721,6 +722,7 @@ class MpcPathFollower(Node):
             self._controller.clear_path()
             self._path_signature = None
             self._last_path_monotonic = None
+            self._pose_received_after_path = False
             return
 
         self._last_path_monotonic = now
@@ -728,6 +730,7 @@ class MpcPathFollower(Node):
             return
         self._controller.set_path(points)
         self._path_signature = signature
+        self._pose_received_after_path = False
         self._gear_resume_monotonic = None
         self.get_logger().info(
             f"Loaded new MPC path: {len(points)} points, "
@@ -741,6 +744,7 @@ class MpcPathFollower(Node):
         self._controller.clear_path()
         self._path_signature = None
         self._last_path_monotonic = None
+        self._pose_received_after_path = False
         self._gear_resume_monotonic = None
         self._publish_zero("PATH_INVALIDATED")
 
@@ -791,6 +795,8 @@ class MpcPathFollower(Node):
             yaw_rad=quaternion_yaw(message),
         )
         self._last_pose_monotonic = time.monotonic()
+        if self._path_signature is not None:
+            self._pose_received_after_path = True
 
     def _scan_callback(self, message: LaserScan) -> None:
         self._front_obstacle_m, self._rear_obstacle_m = scan_sector_minima(
@@ -814,14 +820,17 @@ class MpcPathFollower(Node):
         if not self._path_valid:
             self._publish_zero("PATH_INVALIDATED")
             return
+        if self._last_path_monotonic is None:
+            self._publish_zero("WAITING_FOR_PATH")
+            return
+        if not self._pose_received_after_path:
+            self._publish_zero("WAITING_FOR_POSE_AFTER_PATH")
+            return
         if self._state is None or self._last_pose_monotonic is None:
             self._publish_zero("WAITING_FOR_POSE")
             return
         if now - self._last_pose_monotonic > self._controller.limits.pose_timeout_sec:
             self._publish_zero("POSE_TIMEOUT")
-            return
-        if self._last_path_monotonic is None:
-            self._publish_zero("WAITING_FOR_PATH")
             return
         if now - self._last_path_monotonic > self._path_timeout_sec:
             self._publish_zero("PATH_TIMEOUT")

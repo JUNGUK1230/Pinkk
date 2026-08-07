@@ -16,6 +16,7 @@ from vehicle_control.heading_fusion import (  # noqa: E402
     ImuLidarHeadingFusion,
     LidarMapHeadingMatcher,
     angle_difference,
+    motion_heading,
 )
 
 
@@ -104,6 +105,14 @@ def main() -> int:
     assert abs(angle_difference(predicted, math.radians(27.0))) < 1e-8
     corrected = fusion.correct(math.radians(30.0), math.radians(28.0))
     assert abs(angle_difference(corrected, math.radians(27.2))) < 1e-8
+
+    assert motion_heading((0.0, 0.0), (0.01, 0.0), 1, 0.015) is None
+    forward_motion = motion_heading((0.0, 0.0), (0.02, 0.02), 1, 0.015)
+    assert forward_motion is not None
+    assert abs(angle_difference(forward_motion, math.radians(45.0))) < 1e-8
+    reverse_motion = motion_heading((0.02, 0.02), (0.0, 0.0), -1, 0.015)
+    assert reverse_motion is not None
+    assert abs(angle_difference(reverse_motion, math.radians(45.0))) < 1e-8
 
     print("IMU + LiDAR map heading fusion test passed")
     print(f"Recovered global heading: {math.degrees(match.yaw_rad):.2f} deg")

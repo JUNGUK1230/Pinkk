@@ -717,31 +717,44 @@ def draw_scene(
             1,
             cv2.LINE_AA,
         )
-    # 모든 검출 차량에 ByteTrack ID를 표시한다. ego 차량은 아래에서 더 굵은
-    # 외곽선과 차량 중심 pose로 다시 강조한다.
+    # 차량과 주차칸 점유용 dummy 검출을 함께 표시한다. ego 차량은 아래에서
+    # 더 굵은 외곽선과 차량 중심 pose로 다시 강조한다.
     for detection in detections:
-        if detection.class_name != "car":
+        if detection.class_name not in {"car", "dummy"}:
             continue
         polygon = np.rint(detection.polygon_bev).astype(np.int32)
-        cv2.polylines(canvas, [polygon], True, (255, 128, 0), 1, cv2.LINE_AA)
-        x1, y1, _, _ = detection.bbox_xyxy
-        label = (
-            (
-                f"car id={detection.track_id} "
-                f"{tracked_by_id[detection.track_id].state} "
-                f"{tracked_by_id[detection.track_id].assigned_slot_name or ''}"
-            )
-            if detection.track_id is not None
-            and detection.track_id in tracked_by_id
-            else f"car id=pending {detection.confidence:.2f}"
+        detection_color = (
+            (255, 128, 0) if detection.class_name == "car" else (0, 165, 255)
         )
+        cv2.polylines(
+            canvas,
+            [polygon],
+            True,
+            detection_color,
+            1,
+            cv2.LINE_AA,
+        )
+        x1, y1, _, _ = detection.bbox_xyxy
+        if detection.class_name == "dummy":
+            label = f"dummy OCC {detection.confidence:.2f}"
+        else:
+            label = (
+                (
+                    f"car id={detection.track_id} "
+                    f"{tracked_by_id[detection.track_id].state} "
+                    f"{tracked_by_id[detection.track_id].assigned_slot_name or ''}"
+                )
+                if detection.track_id is not None
+                and detection.track_id in tracked_by_id
+                else f"car id=pending {detection.confidence:.2f}"
+            )
         cv2.putText(
             canvas,
             label,
             (max(0, round(x1)), max(18, round(y1) - 6)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.48,
-            (255, 128, 0),
+            detection_color,
             2,
             cv2.LINE_AA,
         )
