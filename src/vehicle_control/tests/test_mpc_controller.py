@@ -72,6 +72,9 @@ def production_controller() -> DifferentialDriveMpc:
         heading_feedback_deadband_rad=math.radians(
             parameters["heading_feedback_deadband_deg"]
         ),
+        reverse_heading_feedback_deadband_rad=math.radians(
+            parameters["reverse_heading_feedback_deadband_deg"]
+        ),
         goal_yaw_tolerance_rad=math.radians(
             parameters["goal_yaw_tolerance_deg"]
         ),

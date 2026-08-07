@@ -54,6 +54,10 @@ class MpcLimits:
     heading_feedback_gain_1pmprad: float = 4.0
     heading_feedback_deadband_rad: float = math.radians(2.0)
     cross_track_deadband_m: float = 0.003
+    reverse_cross_track_deadband_m: float = 0.006
+    reverse_heading_feedback_deadband_rad: float = math.radians(2.0)
+    reverse_cross_track_gain_scale: float = 1.20
+    reverse_heading_gain_scale: float = 1.15
     cross_track_slowdown_start_m: float = 0.01
     cross_track_slowdown_full_m: float = 0.04
     minimum_tracking_speed_scale: float = 0.35
@@ -103,6 +107,9 @@ class MpcLimits:
             self.straight_curvature_threshold_1pm,
             self.straight_max_curvature_1pm,
             self.cross_track_deadband_m,
+            self.reverse_cross_track_deadband_m,
+            self.reverse_cross_track_gain_scale,
+            self.reverse_heading_gain_scale,
             self.cross_track_slowdown_start_m,
             self.cross_track_slowdown_full_m,
             self.minimum_tracking_speed_scale,
@@ -137,6 +144,13 @@ class MpcLimits:
             or self.heading_feedback_deadband_rad < 0.0
         ):
             raise ValueError("heading feedback deadband must be finite and non-negative")
+        if (
+            not math.isfinite(self.reverse_heading_feedback_deadband_rad)
+            or self.reverse_heading_feedback_deadband_rad < 0.0
+        ):
+            raise ValueError(
+                "reverse heading feedback deadband must be finite and non-negative"
+            )
         if (
             not math.isfinite(self.control_point_offset_m)
             or self.control_point_offset_m < 0.0
@@ -583,6 +597,11 @@ class DifferentialDriveMpc:
             -math.sin(nearest_yaw) * error_x
             + math.cos(nearest_yaw) * error_y
         )
+        active_cross_track_deadband = (
+            self.limits.reverse_cross_track_deadband_m
+            if direction < 0
+            else self.limits.cross_track_deadband_m
+        )
 
         # 정상 추종에서는 가까운 경로만 보지만, 이탈량이 커질수록 더 앞쪽
         # 경로 접선을 향하도록 preview 거리와 비중을 연속적으로 늘린다.
@@ -592,11 +611,11 @@ class DifferentialDriveMpc:
             np.clip(
                 (
                     abs(current_cross_track_error)
-                    - self.limits.cross_track_deadband_m
+                    - active_cross_track_deadband
                 )
                 / (
                     self.limits.steering_rejoin_full_error_m
-                    - self.limits.cross_track_deadband_m
+                    - active_cross_track_deadband
                 ),
                 0.0,
                 1.0,
@@ -683,29 +702,44 @@ class DifferentialDriveMpc:
             max(
                 0.0,
                 abs(cross_track_error)
-                - self.limits.cross_track_deadband_m,
+                - active_cross_track_deadband,
             ),
             cross_track_error,
         )
         feedback = (
             -self.limits.cross_track_feedback_gain_1pm2
+            * (
+                self.limits.reverse_cross_track_gain_scale
+                if direction < 0
+                else 1.0
+            )
             * effective_cross_track_error
         )
         # 경로에 닿는 위치만 맞추면 차량이 접선과 비스듬한 상태로 선을
         # 통과한 뒤 반대 조향하며 S자가 된다. 진행 방향을 고려한 heading
         # feedback으로 합류 순간에 경로 접선과 나란해지도록 감쇠한다.
         tracking_heading_error = normalize_angle(nearest_yaw - state.yaw_rad)
+        active_heading_deadband = (
+            self.limits.reverse_heading_feedback_deadband_rad
+            if direction < 0
+            else self.limits.heading_feedback_deadband_rad
+        )
         effective_heading_error = math.copysign(
             max(
                 0.0,
                 abs(tracking_heading_error)
-                - self.limits.heading_feedback_deadband_rad,
+                - active_heading_deadband,
             ),
             tracking_heading_error,
         )
         feedback += (
             direction
             * self.limits.heading_feedback_gain_1pmprad
+            * (
+                self.limits.reverse_heading_gain_scale
+                if direction < 0
+                else 1.0
+            )
             * effective_heading_error
         )
         curvature_delta = (

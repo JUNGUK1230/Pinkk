@@ -124,6 +124,11 @@ pinkk_mpc_path_follower:
     # [m] 6mm 이내 횡오차는 고 gain 추가 복귀 조향에 사용하지 않는다.
     # MPC의 부드러운 기본 곡률은 유지해 deadband 경계에서 튀지 않게 한다.
     cross_track_deadband_m: 0.006
+    # 후진 주차에서만 전진보다 강한 위치·헤딩 보정을 적용한다.
+    reverse_cross_track_deadband_m: 0.006
+    reverse_heading_feedback_deadband_deg: 2.0
+    reverse_cross_track_gain_scale: 1.20
+    reverse_heading_gain_scale: 1.15
     # [m] 횡오차 1.2cm까지는 정상속도를 유지한다.
     cross_track_slowdown_start_m: 0.012
     # [m] 횡오차가 4cm에 도달할 때 아래 최소 속도 비율까지 감속한다.

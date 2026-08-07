@@ -20,8 +20,8 @@ CAMERA_ID = 2
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 BEV_WIDTH = 1600
-BEV_HEIGHT = 800
 
+BEV_HEIGHT = 800    
 SCRIPT_DIR = Path(__file__).resolve().parent
 CALIBRATION_PATH = SCRIPT_DIR / "camera_calibration.npz"
 HOMOGRAPHY_PATH = SCRIPT_DIR / "bev_homography.npz"

@@ -274,6 +274,10 @@ class MpcPathFollower(Node):
             "cross_track_feedback_gain_1pm2": 15.0,
             "heading_feedback_gain_1pmprad": 4.0,
             "heading_feedback_deadband_deg": 2.0,
+            "reverse_cross_track_deadband_m": 0.006,
+            "reverse_heading_feedback_deadband_deg": 2.0,
+            "reverse_cross_track_gain_scale": 1.20,
+            "reverse_heading_gain_scale": 1.15,
             "cross_track_deadband_m": 0.003,
             "cross_track_slowdown_start_m": 0.01,
             "cross_track_slowdown_full_m": 0.04,
@@ -387,6 +391,24 @@ class MpcPathFollower(Node):
                     "heading_feedback_deadband_deg",
                     overrides,
                 )
+            ),
+            reverse_cross_track_deadband_m=self._positive_parameter(
+                "reverse_cross_track_deadband_m",
+                overrides,
+            ),
+            reverse_heading_feedback_deadband_rad=math.radians(
+                self._nonnegative_parameter(
+                    "reverse_heading_feedback_deadband_deg",
+                    overrides,
+                )
+            ),
+            reverse_cross_track_gain_scale=self._positive_parameter(
+                "reverse_cross_track_gain_scale",
+                overrides,
+            ),
+            reverse_heading_gain_scale=self._positive_parameter(
+                "reverse_heading_gain_scale",
+                overrides,
             ),
             cross_track_deadband_m=self._positive_parameter(
                 "cross_track_deadband_m", overrides

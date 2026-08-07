@@ -65,6 +65,7 @@ def _aligned_parking_entry(
     turning_radius_cm: float,
     final_straight_cm: float,
     slot_polygon_cm: list[list[float]] | None = None,
+    maximum_cusp_yaw_error_deg: float | None = None,
 ):
     """칸 밖에서 goal yaw를 완성한 뒤 직선 후진으로만 진입한다."""
     if final_straight_cm <= 0.0:
@@ -111,10 +112,21 @@ def _aligned_parking_entry(
         # 자세를 완성한다. 이후 마지막 직선 후진과 합쳐 3-point 진입이 된다.
         if directions[0] != -1 or directions[-1] != 1:
             continue
-        gear_switches = sum(
-            first != second
-            for first, second in zip(directions, directions[1:])
-        )
+        switch_indices = [
+            index
+            for index in range(1, len(directions))
+            if directions[index] != directions[index - 1]
+        ]
+        gear_switches = len(switch_indices)
+        if maximum_cusp_yaw_error_deg is not None:
+            cusp = candidate.poses[switch_indices[0]]
+            cusp_yaw_error = abs(
+                (cusp.yaw_rad - goal[2] + math.pi)
+                % (2.0 * math.pi)
+                - math.pi
+            )
+            if cusp_yaw_error > math.radians(maximum_cusp_yaw_error_deg):
+                continue
         candidates.append((gear_switches, candidate.total_length_cm, candidate))
     if not candidates:
         raise RuntimeError(
@@ -444,6 +456,7 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                         entry_turning_radius_cm,
                         float(endpoint.get("entry_final_straight_cm", 0.0)),
                         endpoint.get("entry_slot_polygon_cm"),
+                        endpoint.get("entry_maximum_cusp_yaw_error_deg"),
                     )
                 else:
                     # 충전칸 진입은 삭제된 인접 주차면을 활용하는 별도
@@ -489,6 +502,7 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
             float(endpoint["entry_turning_radius_cm"]),
             float(endpoint.get("entry_final_straight_cm", 0.0)),
             endpoint.get("entry_slot_polygon_cm"),
+            endpoint.get("entry_maximum_cusp_yaw_error_deg"),
         )
         search_cm = float(
             endpoint.get(
@@ -676,6 +690,7 @@ def build_route(
                 entry_turning_radius_cm,
                 float(endpoints[target].get("entry_final_straight_cm", 0.0)),
                 endpoints[target].get("entry_slot_polygon_cm"),
+                endpoints[target].get("entry_maximum_cusp_yaw_error_deg"),
             )
             rows.extend(
                 {
