@@ -11,9 +11,11 @@ frames:
   plug_tip: plug_tip
 
 port_model:
-  # YOLO keypoint로 라벨링한 고정 경계의 실측 크기
+  # YOLO keypoint로 라벨링한 포트 외곽 네 모서리의 실측 크기.
+  # keypoint 순서: LEFT_TOP, RIGHT_TOP, RIGHT_BOTTOM, LEFT_BOTTOM.
+  # 장축(X)=18mm, 단축(Y)=10mm인 중심 기준 평면 모델을 SolvePnP에 사용한다.
   width_m: 0.018
-  height_m: 0.008
+  height_m: 0.010
 
 pose_estimation:
   input_mode: yolo_topic
@@ -57,7 +59,7 @@ yaw_pbvs:
   pending_requirement: yolo_keypoint_order_verification
   # 플러그 Yaw는 joint6_flange Yaw와 동일하며 장축은 flange X축을 사용.
   flange_long_axis: x
-  # 18×8mm 포트 모델에서 긴 18mm 변에 해당하는 축.
+  # 18×10mm 포트 모델에서 긴 18mm 변에 해당하는 축.
   port_long_axis: x
   maximum_step_deg: 2.0
   tolerance_deg: 1.0

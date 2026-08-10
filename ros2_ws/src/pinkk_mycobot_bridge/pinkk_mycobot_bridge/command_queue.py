@@ -18,6 +18,17 @@ def require_no_explicit_command_failure(name: str, response: object) -> None:
         raise RuntimeError(f'{name}() 실패 응답: {response!r}')
 
 
+def command_gripper_value(robot: object, value: int, speed: int) -> object:
+    """그리퍼 개방값을 한 번 명령하고 명시적인 API 실패를 거부한다."""
+    if not 0 <= value <= 100:
+        raise ValueError('gripper value는 0~100이어야 합니다')
+    if not 1 <= speed <= 100:
+        raise ValueError('gripper speed는 1~100이어야 합니다')
+    response = _required_method(robot, 'set_gripper_value')(value, speed)
+    require_no_explicit_command_failure('set_gripper_value', response)
+    return response
+
+
 def _require_stopped(
     robot: object,
     *,

@@ -29,6 +29,7 @@ from .cartesian_conversion import (
     wrapped_angle_difference_deg,
 )
 from .command_queue import (
+    command_gripper_value,
     prepare_command_queue,
     require_no_explicit_command_failure,
     stop_and_clear_command_queue,
@@ -117,6 +118,11 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("cartesian_free_z_minimum_motion_m", 0.001)
         self.declare_parameter("cartesian_no_motion_timeout_seconds", 5.0)
         self.declare_parameter("cartesian_progress_log_seconds", 2.0)
+        self.declare_parameter("gripper_initialize_on_startup", False)
+        self.declare_parameter("gripper_target_value", 10)
+        self.declare_parameter("gripper_speed", 20)
+        self.declare_parameter("gripper_warning_delay_seconds", 3.0)
+        self.declare_parameter("gripper_settle_seconds", 2.0)
 
         port = str(self.get_parameter("port").value)
         baud = int(self.get_parameter("baud").value)
@@ -209,6 +215,19 @@ class MyCobotTrajectoryBridge(Node):
         self._cartesian_progress_log_seconds = float(
             self.get_parameter("cartesian_progress_log_seconds").value
         )
+        self._gripper_initialize_on_startup = bool(
+            self.get_parameter("gripper_initialize_on_startup").value
+        )
+        self._gripper_target_value = int(
+            self.get_parameter("gripper_target_value").value
+        )
+        self._gripper_speed = int(self.get_parameter("gripper_speed").value)
+        self._gripper_warning_delay = float(
+            self.get_parameter("gripper_warning_delay_seconds").value
+        )
+        self._gripper_settle_seconds = float(
+            self.get_parameter("gripper_settle_seconds").value
+        )
         if not Path(port).exists():
             raise FileNotFoundError(f"로봇 serial port가 없습니다: {port}")
         if not 1 <= self._speed <= 100:
@@ -219,6 +238,16 @@ class MyCobotTrajectoryBridge(Node):
             raise ValueError(
                 "cartesian_pose_publish_rate_hz는 0보다 크고 10 이하여야 합니다"
             )
+        if not 0 <= self._gripper_target_value <= 100:
+            raise ValueError("gripper_target_value는 0~100이어야 합니다")
+        if not 1 <= self._gripper_speed <= 100:
+            raise ValueError("gripper_speed는 1~100이어야 합니다")
+        if not 0.0 <= self._gripper_warning_delay <= 10.0:
+            raise ValueError(
+                "gripper_warning_delay_seconds는 0~10초여야 합니다"
+            )
+        if not 0.0 <= self._gripper_settle_seconds <= 10.0:
+            raise ValueError("gripper_settle_seconds는 0~10초여야 합니다")
         if self._tolerance_rad <= 0.0:
             raise ValueError("goal_tolerance_deg는 0보다 커야 합니다")
         if self._joint_stable_sample_count < 2:
@@ -287,6 +316,30 @@ class MyCobotTrajectoryBridge(Node):
             'MyCobot 이동 안전 상태 확인 완료: fresh_mode=1, '
             'queue clear requested, stopped verified'
         )
+        if self._gripper_initialize_on_startup:
+            self.get_logger().warning(
+                f'{self._gripper_warning_delay:.1f}초 후 그리퍼 최소 개방값을 '
+                f'적용합니다: value={self._gripper_target_value}, '
+                f'speed={self._gripper_speed}. 손과 물체를 치우세요'
+            )
+            time.sleep(self._gripper_warning_delay)
+            try:
+                with self._serial_lock:
+                    response = command_gripper_value(
+                        self._robot,
+                        self._gripper_target_value,
+                        self._gripper_speed,
+                    )
+                time.sleep(self._gripper_settle_seconds)
+            except Exception as error:
+                raise RuntimeError(
+                    f'그리퍼 초기 고정 명령 실패: {error}'
+                ) from error
+            self.get_logger().info(
+                '그리퍼 초기 고정 명령 완료: '
+                f'value={self._gripper_target_value}, '
+                f'speed={self._gripper_speed}, response={response!r}'
+            )
         self._cartesian_ready = self._check_cartesian_api()
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,

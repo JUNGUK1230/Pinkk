@@ -3,7 +3,9 @@
 # 확인한 뒤 수정한다. 가능하면 /dev/v4l/by-id/... 영구 경로를 사용한다.
 pinkk_usb_camera_node:
   ros__parameters:
-    camera_device: /dev/video0
+    # Sonix 로봇팔 카메라의 영구 경로. USB 재연결로 video 번호가 바뀌어도
+    # 실제 영상 인터페이스(index0)를 계속 선택한다.
+    camera_device: /dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd._USB_2.0_Camera-video-index0
     # 카메라 발행 주파수. 장치가 지원하지 않으면 실제 주파수는 더 낮을 수 있다.
     publish_rate_hz: 30.0
 
@@ -12,7 +14,7 @@ pinkk_usb_camera_node:
 pinkk_yolo_keypoint_node:
   ros__parameters:
     # 현재 노트북의 모델 절대경로. 다른 PC에서는 실제 pt 파일 경로로 수정한다.
-    model_path: /home/juwon/Desktop/usb_01.pt
+    model_path: /home/juwon/Desktop/usb_02.pt
     image_size: 640
     # 낮추면 검출은 늘지만 오검출도 증가한다.
     confidence_threshold: 0.25
@@ -217,7 +219,7 @@ pinkk_frozen_target_executor_node:
     # true이면 coarse/XY 이동 목표의 Roll/Pitch를 시작 자세로 고정 요청한다.
     lock_roll_pitch: true
     # [deg] 초기 관측 Roll/Pitch와 정지 후 허용하는 최대 차이.
-    roll_pitch_tolerance_deg: 7.0
+    roll_pitch_tolerance_deg: 5.0
     # true이면 정지 후 Roll/Pitch가 위 허용오차를 넘을 때 즉시 실패하지 않고,
     # Cartesian path lock을 잠시 풀어 초기 관측 Roll/Pitch로 복구한다.
     # 복구 과정에서 변한 XY는 저장된 목표를 기준으로 다시 보정한다.
@@ -229,7 +231,7 @@ pinkk_frozen_target_executor_node:
     final_coupled_validation_max_cycles: 2
     # [m] 포트 기반 최종 flange 목표 Z의 절대 base Z 하한.
     # 위 minimum_target_z_m은 coarse 목표 검사용이고 이 값은 최종 목표 검사용이다.
-    final_z_descent_minimum_z_m: 0.150
+    final_z_descent_minimum_z_m: 0.100
     # true이면 초기 /robot_arm/pbvs/port_pose_base Z를 저장하고 아래 식으로
     # 최종 flange Z를 자동 계산한다:
     # target_flange_z = port_z + tcp_offset_z - insertion_depth
@@ -297,9 +299,9 @@ pinkk_frozen_target_executor_node:
     joint_vertical_hard_maximum_descent_m: 0.015
     # 각 correction 단계가 실제로 실행되는 오차 deadband.
     joint_vertical_xy_correction_deadband_m: 0.003
-    # 최종 허용값 7도 안에서는 5도 bridge 완료 허용오차에 묻힐 수 있는
-    # 불필요한 Cartesian R/P 명령을 보내지 않는다.
-    joint_vertical_roll_pitch_correction_deadband_deg: 7.0
+    # 매 하강 사이클과 최종 안전 여유 도달 사이클에서 초기 관측 R/P와
+    # 5도보다 차이나면 Cartesian R/P 보정을 수행한다.
+    joint_vertical_roll_pitch_correction_deadband_deg: 5.0
     # R/P는 이 하드 한계까지 보정을 시도하고, 넘으면 즉시 중단한다.
     joint_vertical_roll_pitch_hard_limit_deg: 12.0
     # R/P 보정 후 최대 tilt 오차가 이 값 이상 감소해야 다음 사이클 허용.
@@ -315,7 +317,7 @@ pinkk_frozen_target_executor_node:
     # descend_joint_z_to_guard 한 명령에서 반복할 최대 혼합 P제어 사이클 수.
     joint_vertical_max_cycles: 8
     joint_vertical_xy_tolerance_m: 0.005
-    joint_vertical_roll_pitch_tolerance_deg: 7.0
+    joint_vertical_roll_pitch_tolerance_deg: 5.0
 
 # 세션 중 기존 bridge를 유지한 채 초기 관측 관절 자세로 복귀하는 노드.
 pinkk_return_to_observe:

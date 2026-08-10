@@ -12,7 +12,7 @@ def test_synthetic_port_pose_depth() -> None:
         [[1000.0, 0.0, 320.0], [0.0, 1000.0, 240.0], [0.0, 0.0, 1.0]]
     )
     distortion = np.zeros(5)
-    object_points = usb_port_object_points(0.018, 0.008)
+    object_points = usb_port_object_points(0.018, 0.010)
     image_points, _ = cv2.projectPoints(
         object_points,
         np.zeros(3),
@@ -25,7 +25,7 @@ def test_synthetic_port_pose_depth() -> None:
         camera_matrix,
         distortion,
         0.018,
-        0.008,
+        0.010,
     )
     assert np.isclose(estimate.depth_m, 0.25, atol=1e-6)
     assert estimate.reprojection_error_px < 1e-6

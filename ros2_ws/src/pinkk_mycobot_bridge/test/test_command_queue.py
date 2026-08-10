@@ -3,6 +3,7 @@
 import pytest
 
 from pinkk_mycobot_bridge.command_queue import (
+    command_gripper_value,
     prepare_command_queue,
     require_no_explicit_command_failure,
     stop_and_clear_command_queue,
@@ -45,6 +46,10 @@ class FakeRobot:
         if len(self.moving_responses) > 1:
             return self.moving_responses.pop(0)
         return self.moving_responses[0]
+
+    def set_gripper_value(self, value, speed):
+        self.calls.append(('set_gripper_value', value, speed))
+        return -1
 
 
 def test_prepare_stops_clears_and_enables_fresh_mode() -> None:
@@ -133,3 +138,18 @@ def test_rejects_explicit_command_failure() -> None:
     """명시적인 실패 응답은 후속 상태 감시로 넘기지 않는다."""
     with pytest.raises(RuntimeError, match='send_angles'):
         require_no_explicit_command_failure('send_angles', 0)
+
+
+def test_commands_gripper_value() -> None:
+    robot = FakeRobot()
+
+    response = command_gripper_value(robot, 10, 20)
+
+    assert response == -1
+    assert robot.calls == [('set_gripper_value', 10, 20)]
+
+
+@pytest.mark.parametrize(('value', 'speed'), [(-1, 20), (101, 20), (10, 0)])
+def test_rejects_invalid_gripper_command(value, speed) -> None:
+    with pytest.raises(ValueError):
+        command_gripper_value(FakeRobot(), value, speed)

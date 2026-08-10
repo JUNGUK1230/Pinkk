@@ -73,7 +73,7 @@ URDF Jacobian 관절 Z 하강(send_angles)
 - Z 명령은 남은 절대 Z 오차에 P gain을 적용하고 최대 3mm로 제한한다.
 - Jacobian 관절 하나의 계산 step은 최대 2도다.
 - XY와 Roll/Pitch는 앞선 정렬에서 더 잘 동작한 Cartesian 좌표 제어를 쓴다.
-- XY 5mm, Roll/Pitch 7도 안이면 다음 사이클을 허용한다.
+- XY 5mm, Roll/Pitch 5도 안이면 다음 사이클을 허용한다.
 - 모든 단계는 이전 action 종료와 정지 자세 측정 후 진행한다.
 
 ### 3. `descend_joint_z_to_guard`: 안전 여유까지 자동 반복
@@ -83,7 +83,8 @@ URDF Jacobian 관절 Z 하강(send_angles)
 
 - XY/Roll-Pitch 보정 중 Z 결합 이동 5mm 초과는 경고로 기록한다.
 - 한 사이클 총하강 30mm 초과 또는 목표 Z 아래로 이동하면 중단한다.
-- 목표 Z까지 15mm 이내이면 추가 Roll/Pitch와 다음 Z 사이클을 차단한다.
+- 목표 Z까지 15mm 이내인 마지막 사이클에서도 초기 Roll/Pitch를 확인하고
+  필요하면 보정한 뒤, 다음 Z 사이클만 차단한다.
 - 15mm guard 이후 마지막 삽입은 이 명령의 범위가 아니다.
 
 3mm 명령에 실제 약 9.5mm, Cartesian 자세 복구 중 약 11.9mm의 Z 결합
@@ -187,7 +188,7 @@ EXECUTED: 자동 혼합 P제어가 포트 기반 최종 Z 안전 여유에 도�
 | `joint_vertical_z_step_m` | 0.003 | 관절 Z 1회 명령 상한 |
 | `joint_vertical_max_joint_step_deg` | 2.0 | 관절별 계산 증분 상한 |
 | `joint_vertical_xy_tolerance_m` | 0.005 | 다음 사이클 XY 허용오차 |
-| `joint_vertical_roll_pitch_tolerance_deg` | 7.0 | 다음 사이클 자세 허용오차 |
+| `joint_vertical_roll_pitch_tolerance_deg` | 5.0 | 다음 사이클 자세 허용오차 |
 | `joint_vertical_final_z_guard_m` | 0.015 | 자동 하강 종료 안전 여유 |
 | `joint_vertical_max_cycles` | 8 | 한 자동 명령의 반복 상한 |
 

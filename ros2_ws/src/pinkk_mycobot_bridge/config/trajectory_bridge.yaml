@@ -42,10 +42,12 @@ pinkk_mycobot_trajectory_bridge:
     # [m] Cartesian 목표 완료 위치 허용오차.
     # 현재 coarse PBVS 시험은 기기 오차를 고려해 3mm로 완화한다.
     cartesian_position_tolerance_m: 0.005
-    # [deg] Cartesian 목표 완료 전체 자세 허용오차.
-    # coarse/pre-approach 시험은 실측 정지 오차를 고려해 5도로 완화한다.
-    # 실제 삽입 전에는 별도 프로파일에서 1~2도로 다시 줄여야 한다.
-    cartesian_orientation_tolerance_deg: 5.0
+    # [deg] bridge action을 끝내기 위한 전체 자세 허용오차.
+    # 상위 frozen-target 실행기의 최종 Roll/Pitch 기준은 5도이므로 bridge는
+    # 6도에서 먼저 반환하고, 실행기가 실제 자세를 재측정해 필요하면 다음
+    # 보정 사이클을 보낸다. 두 기준을 모두 5도로 두면 5.0도 부근의 기기
+    # 정지오차에서 action이 60초 timeout되어 후속 보정을 못 한다.
+    cartesian_orientation_tolerance_deg: 6.0
     # 한 번의 Cartesian 목표에 허용하는 이동/회전 안전 상한.
     cartesian_max_translation_m: 0.20
     cartesian_max_rotation_deg: 90.0
@@ -69,3 +71,13 @@ pinkk_mycobot_trajectory_bridge:
     cartesian_no_motion_timeout_seconds: 5.0
     # [s] 실행 중 실제 get_coords와 XY/자세 잔여오차를 출력하는 주기.
     cartesian_progress_log_seconds: 2.0
+
+    # bridge 시작 시 그리퍼를 한 번 완전 닫힘 상태로 명령한다.
+    # PyMyCobot 기준 0=완전 닫힘, 100=완전 열림이다. 이동 중 반복
+    # 명령하지 않으며, 그리퍼 구동기가 닫힌 위치를 유지한다.
+    gripper_initialize_on_startup: true
+    gripper_target_value: 0
+    gripper_speed: 20
+    # bridge 시작 직후 손이나 물체를 치울 수 있는 경고 대기와 정착 시간.
+    gripper_warning_delay_seconds: 3.0
+    gripper_settle_seconds: 2.0

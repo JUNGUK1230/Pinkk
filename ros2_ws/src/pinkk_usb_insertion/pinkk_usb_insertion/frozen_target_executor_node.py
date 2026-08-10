@@ -176,7 +176,7 @@ class FrozenTargetExecutorNode(Node):
         )
         self.declare_parameter('joint_vertical_xy_correction_deadband_m', 0.003)
         self.declare_parameter(
-            'joint_vertical_roll_pitch_correction_deadband_deg', 7.0
+            'joint_vertical_roll_pitch_correction_deadband_deg', 5.0
         )
         self.declare_parameter(
             'joint_vertical_roll_pitch_hard_limit_deg', 12.0
@@ -194,7 +194,7 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('joint_vertical_max_cycles', 8)
         self.declare_parameter('joint_vertical_xy_tolerance_m', 0.005)
         self.declare_parameter(
-            'joint_vertical_roll_pitch_tolerance_deg', 7.0
+            'joint_vertical_roll_pitch_tolerance_deg', 5.0
         )
 
         self._enabled = bool(self.get_parameter('enable_execution').value)
@@ -1867,17 +1867,7 @@ class FrozenTargetExecutorNode(Node):
         tilt_before = max(rp_before)
         after_rp = after_xy
         rp_executed = False
-        remaining_after_xy = float(
-            after_xy[2, 3] - self._aligned_hardware_final_target_z
-        )
-        if remaining_after_xy <= self._joint_vertical_final_z_guard:
-            self._publish(
-                '혼합 순차 P제어 3/3 Cartesian Roll/Pitch 보정 생략: '
-                '포트 기반 목표 Z 안전 여유 안입니다: '
-                f'remaining={remaining_after_xy * 1000.0:.1f}mm, '
-                f'guard={self._joint_vertical_final_z_guard * 1000.0:.1f}mm'
-            )
-        elif tilt_before > self._joint_vertical_roll_pitch_correction_deadband:
+        if tilt_before > self._joint_vertical_roll_pitch_correction_deadband:
             rp_target = (
                 apply_proportional_observation_roll_pitch_with_current_yaw(
                     after_xy,

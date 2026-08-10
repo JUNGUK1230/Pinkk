@@ -520,7 +520,8 @@ bridge의 coarse 시험 허용값을 위치 5mm, 자세 5도로 완화하고 진
 
 - 관절 Jacobian은 Z에만 사용한다.
 - XY와 Roll/Pitch는 기존 정렬에서 검증된 `send_coords()`를 사용한다.
-- Roll/Pitch 7도 이하는 불필요한 보정을 생략한다.
+- Roll/Pitch 5도 이하는 불필요한 보정을 생략한다. 마지막 안전 여유 도달
+  사이클에서도 5도를 넘으면 초기 관측 Roll/Pitch로 보정한 뒤 최종 측정한다.
 - 보정 후 XY, Roll/Pitch, 절대 Z를 다시 측정한다.
 
 Cartesian Roll/Pitch 복구는 예를 들어 Roll 9.13→3.65도, Pitch
