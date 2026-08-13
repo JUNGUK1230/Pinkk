@@ -25,4 +25,5 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 unset ROS_LOCALHOST_ONLY
 
+cd "${REPO_ROOT}"
 exec ros2 launch pinkk_usb_insertion frozen_target_alignment.launch.py
