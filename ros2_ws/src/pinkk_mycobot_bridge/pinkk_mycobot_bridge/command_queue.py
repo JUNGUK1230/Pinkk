@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 
@@ -34,6 +35,9 @@ def _require_stopped(
     *,
     attempts: int = 5,
     interval_seconds: float = 0.1,
+    allow_stable_angles_fallback: bool = False,
+    stable_sample_count: int = 3,
+    stable_delta_deg: float = 0.2,
 ) -> None:
     """응답 없는 stop 명령 대신 실제 이동 상태를 조회해 정지를 확인한다."""
     is_moving = _required_method(robot, 'is_moving')
@@ -45,9 +49,57 @@ def _require_stopped(
             return
         if attempt + 1 < attempts:
             time.sleep(interval_seconds)
+    if allow_stable_angles_fallback and all(
+        response in (None, -1) for response in responses
+    ):
+        _require_stable_angles(
+            robot,
+            sample_count=stable_sample_count,
+            interval_seconds=interval_seconds,
+            maximum_delta_deg=stable_delta_deg,
+        )
+        return
     raise RuntimeError(
         f'stop 확인 실패: is_moving() 응답={responses!r}'
     )
+
+
+def _require_stable_angles(
+    robot: object,
+    *,
+    sample_count: int,
+    interval_seconds: float,
+    maximum_delta_deg: float,
+) -> None:
+    """is_moving 조회 불가 시 연속 관절각 안정성으로 정지를 확인한다."""
+    get_angles = _required_method(robot, 'get_angles')
+    samples: list[list[float]] = []
+    for index in range(sample_count):
+        response = get_angles()
+        if not isinstance(response, (list, tuple)) or len(response) != 6:
+            raise RuntimeError(
+                'stop 대체 확인 실패: get_angles() 응답이 '
+                f'6개 관절각이 아닙니다: {response!r}'
+            )
+        values = [float(value) for value in response]
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError(
+                f'stop 대체 확인 실패: 유효하지 않은 관절각={values!r}'
+            )
+        samples.append(values)
+        if index + 1 < sample_count:
+            time.sleep(interval_seconds)
+    maximum_delta = max(
+        abs(current - previous)
+        for previous, current in zip(samples, samples[1:])
+        for previous, current in zip(previous, current)
+    )
+    if maximum_delta > maximum_delta_deg:
+        raise RuntimeError(
+            'stop 대체 확인 실패: 관절각이 안정되지 않았습니다: '
+            f'max_delta={maximum_delta:.3f}deg, '
+            f'limit={maximum_delta_deg:.3f}deg'
+        )
 
 
 def prepare_command_queue(
@@ -74,7 +126,10 @@ def prepare_command_queue(
         raise RuntimeError(f'fresh mode 확인 실패: get_fresh_mode()={mode!r}')
     # fresh mode 전환 뒤 stop을 최신 명령으로 다시 보내 잔류 명령을 덮는다.
     _required_method(robot, 'stop')()
-    _require_stopped(robot)
+    _require_stopped(
+        robot,
+        allow_stable_angles_fallback=allow_unconfirmed_fresh_mode,
+    )
     return confirmed
 
 

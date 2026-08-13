@@ -19,12 +19,17 @@ class FakeRobot:
         fresh_mode=1,
         clear_response=1,
         moving_responses=None,
+        angle_responses=None,
     ) -> None:
         """가짜 펌웨어 응답과 호출 기록을 초기화한다."""
         self.calls = []
         self.fresh_mode = fresh_mode
         self.clear_response = clear_response
         self.moving_responses = list(moving_responses or [0])
+        self.angle_responses = list(
+            angle_responses
+            or [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+        )
 
     def stop(self):
         """정지 명령을 기록한다."""
@@ -52,6 +57,13 @@ class FakeRobot:
         if len(self.moving_responses) > 1:
             return self.moving_responses.pop(0)
         return self.moving_responses[0]
+
+    def get_angles(self):
+        """순서대로 설정된 실제 관절각을 반환한다."""
+        self.calls.append(('get_angles',))
+        if len(self.angle_responses) > 1:
+            return self.angle_responses.pop(0)
+        return self.angle_responses[0]
 
     def set_gripper_value(self, value, speed):
         """그리퍼 명령을 기록하고 무응답을 모의한다."""
@@ -160,6 +172,50 @@ def test_rejects_unconfirmed_stop() -> None:
 
     with pytest.raises(RuntimeError, match='stop 확인 실패'):
         prepare_command_queue(robot)
+
+
+def test_compatible_firmware_uses_stable_angles_for_stop() -> None:
+    """is_moving 미지원 시 안정된 관절각으로 정지를 확인한다."""
+    robot = FakeRobot(
+        fresh_mode=-1,
+        moving_responses=[-1],
+        angle_responses=[
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            [1.1, 2.0, 3.0, 4.0, 5.0, 6.0],
+            [1.1, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ],
+    )
+
+    confirmed = prepare_command_queue(
+        robot,
+        allow_unconfirmed_fresh_mode=True,
+    )
+
+    assert confirmed is False
+    assert robot.calls[-3:] == [
+        ('get_angles',),
+        ('get_angles',),
+        ('get_angles',),
+    ]
+
+
+def test_compatible_firmware_rejects_changing_angles() -> None:
+    """is_moving 미지원이어도 관절이 움직이면 정지로 보지 않는다."""
+    robot = FakeRobot(
+        fresh_mode=-1,
+        moving_responses=[-1],
+        angle_responses=[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match='관절각이 안정되지 않았습니다'):
+        prepare_command_queue(
+            robot,
+            allow_unconfirmed_fresh_mode=True,
+        )
 
 
 @pytest.mark.parametrize('response', [None, -1, True, 1])
