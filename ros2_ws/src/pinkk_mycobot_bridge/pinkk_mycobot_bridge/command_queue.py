@@ -50,7 +50,11 @@ def _require_stopped(
     )
 
 
-def prepare_command_queue(robot: object) -> None:
+def prepare_command_queue(
+    robot: object,
+    *,
+    allow_unconfirmed_fresh_mode: bool = False,
+) -> bool:
     """기존 이동을 정지·삭제하고 항상 최신 명령만 실행하도록 설정한다."""
     # pymycobot의 stop(), clear_queue(), set_fresh_mode()는 펌웨어에 따라
     # 성공 응답을 반환하지 않는다. 큐 삭제를 요청하고 fresh mode와 실제
@@ -62,11 +66,16 @@ def prepare_command_queue(robot: object) -> None:
     )
     _required_method(robot, 'set_fresh_mode')(1)
     mode = _required_method(robot, 'get_fresh_mode')()
-    if mode not in (True, 1):
+    confirmed = mode in (True, 1)
+    unconfirmed = mode in (None, -1)
+    if not confirmed and not (
+        allow_unconfirmed_fresh_mode and unconfirmed
+    ):
         raise RuntimeError(f'fresh mode 확인 실패: get_fresh_mode()={mode!r}')
     # fresh mode 전환 뒤 stop을 최신 명령으로 다시 보내 잔류 명령을 덮는다.
     _required_method(robot, 'stop')()
     _require_stopped(robot)
+    return confirmed
 
 
 def stop_and_clear_command_queue(robot: object) -> None:

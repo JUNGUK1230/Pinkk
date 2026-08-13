@@ -104,6 +104,7 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("joint_retry_compensation_gain", 0.8)
         self.declare_parameter("joint_retry_max_step_deg", 1.0)
         self.declare_parameter("joint_retry_max_total_offset_deg", 2.0)
+        self.declare_parameter("allow_unconfirmed_fresh_mode", False)
         self.declare_parameter("max_execution_seconds", 60.0)
         self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
@@ -127,6 +128,9 @@ class MyCobotTrajectoryBridge(Node):
         port = str(self.get_parameter("port").value)
         baud = int(self.get_parameter("baud").value)
         self._speed = int(self.get_parameter("speed").value)
+        self._allow_unconfirmed_fresh_mode = bool(
+            self.get_parameter("allow_unconfirmed_fresh_mode").value
+        )
         rate = float(self.get_parameter("publish_rate_hz").value)
         cartesian_pose_rate = float(
             self.get_parameter("cartesian_pose_publish_rate_hz").value
@@ -307,15 +311,28 @@ class MyCobotTrajectoryBridge(Node):
         self._robot = MyCobot280(port, baud)
         try:
             with self._serial_lock:
-                prepare_command_queue(self._robot)
+                fresh_mode_confirmed = prepare_command_queue(
+                    self._robot,
+                    allow_unconfirmed_fresh_mode=(
+                        self._allow_unconfirmed_fresh_mode
+                    ),
+                )
         except Exception as error:
             raise RuntimeError(
                 f'MyCobot 이동 큐 안전 초기화 실패: {error}'
             ) from error
-        self.get_logger().warning(
-            'MyCobot 이동 안전 상태 확인 완료: fresh_mode=1, '
-            'queue clear requested, stopped verified'
-        )
+        if fresh_mode_confirmed:
+            self.get_logger().warning(
+                'MyCobot 이동 안전 상태 확인 완료: fresh_mode=1, '
+                'queue clear requested, stopped verified'
+            )
+        else:
+            self.get_logger().warning(
+                'MyCobot get_fresh_mode() 조회가 -1/None이라 설정값을 '
+                '확인하지 못했습니다. 펌웨어 호환 모드로 계속하지만 '
+                'stop, queue clear, set_fresh_mode(1), stopped 검증은 '
+                '완료했습니다'
+            )
         if self._gripper_initialize_on_startup:
             self.get_logger().warning(
                 f'{self._gripper_warning_delay:.1f}초 후 그리퍼 최소 개방값을 '
@@ -724,7 +741,12 @@ class MyCobotTrajectoryBridge(Node):
             f'{self._joint_max_command_attempts} [deg]: {list(target_deg)}'
         )
         with self._serial_lock:
-            prepare_command_queue(self._robot)
+            prepare_command_queue(
+                self._robot,
+                allow_unconfirmed_fresh_mode=(
+                    self._allow_unconfirmed_fresh_mode
+                ),
+            )
             queue_ready_at = time.monotonic()
             response = self._robot.send_angles(
                 list(target_deg),
@@ -860,7 +882,12 @@ class MyCobotTrajectoryBridge(Node):
                 f"speed={request.speed}, mode={request.mode}"
             )
             with self._serial_lock:
-                prepare_command_queue(self._robot)
+                prepare_command_queue(
+                    self._robot,
+                    allow_unconfirmed_fresh_mode=(
+                        self._allow_unconfirmed_fresh_mode
+                    ),
+                )
                 response = self._robot.send_coords(
                     target_coords, int(request.speed), int(request.mode)
                 )
