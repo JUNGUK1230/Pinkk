@@ -13,8 +13,9 @@ pinkk_usb_camera_node:
 # /robot_arm/perception/usb_port/debug_image를 발행한다.
 pinkk_yolo_keypoint_node:
   ros__parameters:
-    # 사용자 홈 기준 모델 경로.
-    model_path: ~/Downloads/usb_02.pt
+    # 저장소 루트(Pinkk-robot-arm) 기준으로 한 단계 위 Desktop의 모델 파일.
+    # scripts/run_laptop_frozen_target_test.sh가 실행 위치를 저장소 루트로 고정한다.
+    model_path: ../usb_02.pt
     image_size: 640
     # 낮추면 검출은 늘지만 오검출도 증가한다.
     confidence_threshold: 0.25
@@ -40,9 +41,10 @@ pinkk_pbvs_alignment_node:
     # 포트의 g_base 절대 X/Y와 pre-approach Z를 목표로 사용하는 현재 시험 모드.
     absolute_port_xy_yaw_mode: true
     # [m] 포트 base Z보다 높은 coarse pre-approach 높이.
-    # 화각/도달성에 따라 0.10~0.15 범위에서 시험한다.
+    # Yaw/Roll/Pitch 정렬 중 실측 약 26mm의 Z 결합 하강이 발생해, TCP
+    # 120mm 시험에서는 정렬 완료 후 하강 여유를 확보하도록 180mm를 쓴다.
     # 0이면 초기 관측 flange Z를 목표로 사용하므로 해가 없을 수 있다.
-    absolute_pre_approach_height_m: 0.15
+    absolute_pre_approach_height_m: 0.18
     # [m] 비절대 TARGET_ONLY 모드의 PBVS 1회 최대 XY step.
     # absolute_port_xy_yaw_mode=true에서는 실행기의 maximum_xy_step_m이
     # 실제 절대 XY 목표 제한으로 사용된다.
@@ -72,11 +74,11 @@ pinkk_pbvs_step_executor_node:
     cartesian_speed: 10
     # send_coords mode: 0=비선형/각도 우선, 1=선형 좌표 이동.
     # 현재 XY 직선 이동 비교 시험을 위해 mode 1을 사용한다.
-    cartesian_mode: 1
+    cartesian_mode: 0
     # [s] 노트북 실행기가 bridge action 결과를 기다리는 최대 시간.
     cartesian_timeout_seconds: 100.0
     # [s] 실제 이동 직전 사용자가 중단할 수 있는 경고 대기 시간.
-    warning_delay_seconds: 3.0
+    warning_delay_seconds: 1.5
     # [s] coarse XY 완료 후 이동 진동이 가라앉기를 기다리는 시간.
     post_coarse_yaw_delay_seconds: 0.8
     # [s] coarse XY 뒤 새로운 PBVS target과 keypoint를 기다리는 최대 시간.
@@ -177,6 +179,19 @@ pinkk_frozen_target_executor_node:
     # [s] 로봇 PC get_coords 기반 실제 Cartesian pose 최대 허용 age.
     # 브리지가 2Hz로 발행하므로 2초 이내 값만 증분 명령 기준으로 사용한다.
     hardware_cartesian_pose_maximum_age_seconds: 2.0
+    # 초기 목표는 마지막 한 장이 아니라 최근 유효 관측 5장을 집계해 고정한다.
+    initial_observation_sample_count: 5
+    # median은 한두 프레임의 YOLO/SolvePnP 이상값에 덜 끌린다.
+    # 비교 시험이 필요하면 mean으로 바꿀 수 있다.
+    initial_observation_aggregation_method: median
+    # [s] 평균에 포함할 최근 관측 시간창. 5장이 이 안에 없으면 실행을 거부한다.
+    initial_observation_sample_window_seconds: 1.0
+    # [m] 평균 XY에서 가장 멀리 벗어난 표본의 허용 거리.
+    initial_observation_maximum_xy_spread_m: 0.008
+    # [m] PBVS target Z와 port Z 각각의 평균 대비 최대 허용 편차.
+    initial_observation_maximum_z_spread_m: 0.015
+    # [deg] 원형 평균 Yaw에서 각 표본의 최대 허용 편차.
+    initial_observation_maximum_yaw_spread_deg: 8.0
     # [m] 하드웨어 데드밴드보다 작은 XY 명령은 보내지 않는다: 3mm.
     minimum_xy_step_m: 0.003
     # [m] 초기 관측에서 허용하는 첫 coarse XY 이동 거리 상한: 100mm.
@@ -185,10 +200,13 @@ pinkk_frozen_target_executor_node:
     # 현재 도달 자세를 수용하고 아래 XY refine을 계속한다.
     maximum_partial_coarse_xy_residual_m: 0.030
     # 저장 목표와 현재 flange TF의 XY 오차가 이 값 이하면 수렴으로 본다.
-    robot_xy_tracking_tolerance_m: 0.004
+    # 서로 다른 포트 각도에서도 R/P 복구 뒤 XY가 4.5~5mm에서 반복 정지해,
+    # 추가 refine으로 Z 여유만 소모하지 않도록 하강 단계와 같은 5mm를 쓴다.
+    robot_xy_tracking_tolerance_m: 0.005
     # 카메라 재관측 없이 flange TF로 반복할 최대 XY 보정 횟수.
     robot_xy_refine_max_cycles: 3
-    # 한 번의 로봇좌표 보정에서 허용하는 최대 XY 이동량.
+    # 한 번의 로봇좌표 보정에서 허용하는 최대 XY 이동량. frozen X/Y는
+    # TF 절대 목표를 사용하고 endpoint Z/RPY는 제조사 actual pose를 쓴다.
     robot_xy_refine_maximum_step_m: 0.020
     # 한 사이클에서 이 값 이상 오차가 줄지 않으면 추가 이동을 중단한다.
     robot_xy_minimum_improvement_m: 0.001
@@ -197,14 +215,24 @@ pinkk_frozen_target_executor_node:
     stop_on_insufficient_xy_improvement: false
     # PyMyCobot send_coords의 coarse/XY/Roll-Pitch 보정 기본 속도(1~100).
     cartesian_speed: 10
-    # 1=Cartesian 직선 이동 시험. 해가 없으면 0으로 비교한다.
+    # 1=제조사 Cartesian 직선 이동. 초기 비교 조합으로 복귀한다.
+    # 순수 Z 단계는 아래 joint backend라 이 값의 영향을 받지 않는다.
     cartesian_mode: 1
     # [s] 노트북 실행기가 로봇 PC Cartesian action 결과를 기다리는 상한.
     cartesian_timeout_seconds: 100.0
-    # [s] 각 실제 이동 전에 사람이 중단할 수 있도록 기다리는 시간.
-    warning_delay_seconds: 3.0
+    # [s] 통합 XY/Yaw/Z 시험에서 각 실제 이동 전 중단 여유 시간.
+    # 반복 명령마다 적용되는 소프트웨어 대기만 0.5초로 줄인다.
+    # 브리지의 실제 정지 확인과 action timeout은 이 값과 별개로 유지된다.
+    warning_delay_seconds: 0.5
     # [s] 각 이동 완료 후 진동이 가라앉은 뒤 TF를 다시 읽기까지의 시간.
-    settle_seconds: 0.8
+    settle_seconds: 0.5
+    # 통합 Z 단계에서 사용할 제조사 send_coords 속도와 mode.
+    vertical_z_cartesian_speed: 5
+    # 1=제조사 직선 Cartesian 이동.
+    vertical_z_cartesian_mode: 1
+    # 통합 실행의 guard 하강, 최종 10mm, R/P 뒤 3mm에 사용할 Z 제어 방식.
+    # joint는 Jacobian으로 관절 증분을 계산해 send_angles로 실행한다.
+    vertical_z_control_backend: joint
     # true이면 초기 관측 Z 대신 PBVS target Z를 사용한다. 위 alignment의
     # 위 absolute_pre_approach_height_m만큼 포트 Z보다 높은 목표를 사용한다.
     use_pbvs_target_z: true
@@ -216,8 +244,17 @@ pinkk_frozen_target_executor_node:
     maximum_target_z_m: 0.350
     # false이면 Z 목표는 전송하지만 이동 경로에서 시작 Z 고정을 요구하지 않는다.
     lock_z: false
-    # true이면 coarse/XY 이동 목표의 Roll/Pitch를 시작 자세로 고정 요청한다.
-    lock_roll_pitch: true
+    # false이면 coarse 이동 경로의 Roll/Pitch 이탈을 즉시 차단하지 않는다.
+    # 이동 정지 후 아래 복구 로직이 초기 관측 Roll/Pitch를 다시 확인·보정한다.
+    lock_roll_pitch: false
+    # true이면 초기 실측 R/P 대신 모든 정렬·하강 보정·최종 오차 기준을
+    # 아래 절대 Roll/Pitch로 고정한다. Yaw는 기존 초기 관측/보정값을 유지한다.
+    use_fixed_roll_pitch_target: true
+    fixed_roll_target_deg: -180.0
+    fixed_pitch_target_deg: 0.0
+    # Pitch 보정량에만 곱하는 개별 gain. Roll gain은 기존값 그대로이다.
+    # 1.2는 계산된 Pitch 오차의 120%를 명령해 반복적인 미달을 보상한다.
+    pitch_correction_gain: 1.70
     # [deg] 초기 관측 Roll/Pitch와 정지 후 허용하는 최대 차이.
     roll_pitch_tolerance_deg: 5.0
     # true이면 정지 후 Roll/Pitch가 위 허용오차를 넘을 때 즉시 실패하지 않고,
@@ -236,7 +273,8 @@ pinkk_frozen_target_executor_node:
     # 최종 flange Z를 자동 계산한다:
     # target_flange_z = port_z + tcp_offset_z - insertion_depth
     final_z_p_use_port_target: true
-    # [m] flange에서 수직 아래 USB-A 끝단까지의 실측 거리: 120mm.
+    # [m] 그리퍼를 완전히 닫은 상태에서 flange부터 수직 아래 USB 충전기
+    # 단자 끝까지의 시험 실측 거리: 120mm.
     # X/Y 편심은 0이고 USB 축은 flange 축과 평행하다고 가정한다.
     final_tcp_offset_z_m: 0.120
     # [m] USB 끝이 포트 입구 평면보다 안쪽으로 들어갈 목표 깊이: 10mm.
@@ -328,6 +366,28 @@ pinkk_frozen_target_executor_node:
     joint_vertical_max_cycles: 8
     joint_vertical_xy_tolerance_m: 0.005
     joint_vertical_roll_pitch_tolerance_deg: 5.0
+    # --- guard 도달 후 최종 Z-only 삽입 ---
+    # true이면 insert_final_z_once 또는 execute_full_sequence_with_final_z로
+    # 마지막 상대 Z 이동을 승인할 수 있다. 이 단계는 XY/Roll/Pitch를
+    # 보정하지 않고 실제 오차만 최종 로그에 기록한다.
+    enable_final_insertion_z: true
+    # [m] guard 도달 자세에서 추가로 내릴 상대 거리: 10mm.
+    # 포트 기반 configured 최종 flange Z가 더 위라면 그 위치에서 자른다.
+    final_insertion_relative_distance_m: 0.010
+    # [m] 상대 최종 Z 목표 완료 허용오차.
+    final_insertion_tolerance_m: 0.002
+    # [m] guard 시작점부터 단 한 번의 관절 명령으로 허용하는 실제 하강 한계.
+    final_insertion_hard_maximum_total_descent_m: 0.015
+    # true이면 마지막 Z-only 이동 뒤 제조사 actual XYZ/Yaw를 유지하는 목표에
+    # 초기 관측 Roll/Pitch 전체값을 한 번 적용한다.
+    enable_post_insertion_roll_pitch_recovery: true
+    # PyMyCobot Cartesian 자세 복구 속도. 추가 Z 결합 이동은 제한하거나
+    # 실패 조건으로 사용하지 않고 결과 로그에만 기록한다.
+    post_insertion_roll_pitch_speed: 10
+    # true이면 최종 Z 10mm → 초기 Roll/Pitch 복구 뒤 Z만 한 번 더 내린다.
+    enable_post_recovery_final_z: true
+    # [m] R/P 복구 뒤 상대 추가 하강 거리. 현재 시험값은 3mm이다.
+    post_recovery_final_z_distance_m: 0.003
 
 # 세션 중 기존 bridge를 유지한 채 초기 관측 관절 자세로 복귀하는 노드.
 pinkk_return_to_observe:
@@ -336,7 +396,8 @@ pinkk_return_to_observe:
     observation_joint_degrees: [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
     # [s] 초기 관측 자세 이동 목표 시간.
     motion_seconds: 20.0
-    warning_delay_seconds: 3.0
+    # [s] 초기 관측 자세 복귀 전 중단 여유 시간.
+    warning_delay_seconds: 1.5
     # [deg] 제조사 하드웨어 반복오차를 고려한 복귀 완료 허용값.
     accepted_error_deg: 3.5
     # [s] 통합 trajectory bridge action이 나타날 때까지 기다리는 시간.

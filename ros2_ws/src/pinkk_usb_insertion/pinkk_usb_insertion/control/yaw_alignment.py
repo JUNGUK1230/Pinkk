@@ -213,13 +213,17 @@ def apply_proportional_observation_roll_pitch_with_current_yaw(
     current_base_to_flange: np.ndarray,
     observation_base_to_flange: np.ndarray,
     gain: float,
+    pitch_gain_multiplier: float = 1.0,
 ) -> np.ndarray:
-    """초기 관측 Roll/Pitch 오차의 일부만 적용하고 현재 Yaw를 유지한다."""
+    """R/P 오차를 보정하되 Pitch에는 별도 gain 배율을 적용한다."""
     current = validate_transform(current_base_to_flange)
     observation = validate_transform(observation_base_to_flange)
     kp = float(gain)
+    pitch_multiplier = float(pitch_gain_multiplier)
     if not math.isfinite(kp) or not 0.0 < kp <= 1.0:
         raise ValueError('Roll/Pitch P gain은 0보다 크고 1 이하여야 합니다')
+    if not math.isfinite(pitch_multiplier) or not 0.1 <= pitch_multiplier <= 2.0:
+        raise ValueError('Pitch gain 배율은 0.1~2.0이어야 합니다')
     current_roll, current_pitch, current_yaw = rotation_to_rpy_degrees(
         current[:3, :3]
     )
@@ -233,7 +237,7 @@ def apply_proportional_observation_roll_pitch_with_current_yaw(
     target = current.copy()
     target[:3, :3] = rpy_degrees_to_rotation(
         current_roll + kp * roll_error,
-        current_pitch + kp * pitch_error,
+        current_pitch + kp * pitch_multiplier * pitch_error,
         current_yaw,
     )
     return validate_transform(target)

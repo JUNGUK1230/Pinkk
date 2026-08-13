@@ -196,6 +196,25 @@ def test_proportional_observation_roll_pitch_applies_half_error() -> None:
     assert np.isclose(yaw, -132.0)
 
 
+def test_proportional_observation_roll_pitch_applies_separate_pitch_gain() -> None:
+    current = np.eye(4)
+    current[:3, :3] = rpy_degrees_to_rotation(-170.0, 10.0, -132.0)
+    observation = np.eye(4)
+    observation[:3, :3] = rpy_degrees_to_rotation(-180.0, 0.0, 45.0)
+
+    target = apply_proportional_observation_roll_pitch_with_current_yaw(
+        current,
+        observation,
+        0.5,
+        1.2,
+    )
+    roll, pitch, yaw = rotation_to_rpy_degrees(target[:3, :3])
+
+    assert np.isclose(roll, -175.0)
+    assert np.isclose(pitch, 4.0)
+    assert np.isclose(yaw, -132.0)
+
+
 def test_inverts_relative_yaw_step_without_changing_position() -> None:
     current = np.eye(4)
     current[:3, 3] = (0.1, -0.2, 0.3)

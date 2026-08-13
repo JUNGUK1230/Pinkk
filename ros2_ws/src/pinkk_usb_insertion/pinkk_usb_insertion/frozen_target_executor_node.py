@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import threading
 import time
+from collections import deque
+from copy import deepcopy
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -25,7 +27,11 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from .control.frozen_target import (
+    circular_mean_degrees,
+    circular_median_degrees,
+    final_insertion_target_z_m,
     limited_xy_target,
+    maximum_angular_deviation_degrees,
     port_based_flange_target_z,
     proportional_xy_target,
     proportional_z_descent_m,
@@ -83,6 +89,22 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter(
             'hardware_cartesian_pose_maximum_age_seconds', 2.0
         )
+        self.declare_parameter('initial_observation_sample_count', 5)
+        self.declare_parameter(
+            'initial_observation_aggregation_method', 'median'
+        )
+        self.declare_parameter(
+            'initial_observation_sample_window_seconds', 1.0
+        )
+        self.declare_parameter(
+            'initial_observation_maximum_xy_spread_m', 0.008
+        )
+        self.declare_parameter(
+            'initial_observation_maximum_z_spread_m', 0.015
+        )
+        self.declare_parameter(
+            'initial_observation_maximum_yaw_spread_deg', 8.0
+        )
         self.declare_parameter('minimum_xy_step_m', 0.003)
         self.declare_parameter('maximum_coarse_xy_step_m', 0.100)
         self.declare_parameter(
@@ -104,6 +126,10 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('maximum_target_z_m', 0.350)
         self.declare_parameter('lock_z', True)
         self.declare_parameter('lock_roll_pitch', True)
+        self.declare_parameter('use_fixed_roll_pitch_target', False)
+        self.declare_parameter('fixed_roll_target_deg', -180.0)
+        self.declare_parameter('fixed_pitch_target_deg', 0.0)
+        self.declare_parameter('pitch_correction_gain', 1.0)
         self.declare_parameter('roll_pitch_tolerance_deg', 5.0)
         self.declare_parameter('enable_roll_pitch_recovery', True)
         self.declare_parameter('roll_pitch_recovery_max_cycles', 2)
@@ -113,6 +139,10 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('final_z_descent_step_m', 0.005)
         self.declare_parameter('final_z_descent_speed', 5)
         self.declare_parameter('final_z_descent_cartesian_mode', 0)
+        self.declare_parameter('vertical_z_cartesian_speed', 5)
+        self.declare_parameter('vertical_z_cartesian_mode', 1)
+        # joint=기존 Jacobian/send_angles, cartesian=send_coords Z-only.
+        self.declare_parameter('vertical_z_control_backend', 'cartesian')
         self.declare_parameter(
             'final_z_descent_minimum_progress_m', 0.002
         )
@@ -205,6 +235,22 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter(
             'joint_vertical_roll_pitch_tolerance_deg', 5.0
         )
+        # guard 도달 뒤 별도 승인 또는 전용 통합 명령으로 수행하는 최종 Z.
+        self.declare_parameter('enable_final_insertion_z', True)
+        self.declare_parameter('final_insertion_relative_distance_m', 0.010)
+        self.declare_parameter('final_insertion_tolerance_m', 0.002)
+        self.declare_parameter(
+            'final_insertion_hard_maximum_total_descent_m', 0.015
+        )
+        # 최종 Z 이동 뒤 초기 관측 R/P 전체값을 한 번 적용한다. 이 시험
+        # 단계에서는 결합 Z 하강을 제한하거나 실패 조건으로 사용하지 않는다.
+        self.declare_parameter(
+            'enable_post_insertion_roll_pitch_recovery', True
+        )
+        self.declare_parameter('post_insertion_roll_pitch_speed', 10)
+        # 최종 Z 삽입과 R/P 복구가 끝난 뒤 상대 Z를 한 번 더 내린다.
+        self.declare_parameter('enable_post_recovery_final_z', True)
+        self.declare_parameter('post_recovery_final_z_distance_m', 0.003)
 
         self._enabled = bool(self.get_parameter('enable_execution').value)
         self._base_frame = str(self.get_parameter('base_frame').value)
@@ -215,6 +261,34 @@ class FrozenTargetExecutorNode(Node):
         self._hardware_pose_maximum_age = float(
             self.get_parameter(
                 'hardware_cartesian_pose_maximum_age_seconds'
+            ).value
+        )
+        self._initial_sample_count = int(
+            self.get_parameter('initial_observation_sample_count').value
+        )
+        self._initial_aggregation_method = str(
+            self.get_parameter(
+                'initial_observation_aggregation_method'
+            ).value
+        ).strip().lower()
+        self._initial_sample_window = float(
+            self.get_parameter(
+                'initial_observation_sample_window_seconds'
+            ).value
+        )
+        self._initial_maximum_xy_spread = float(
+            self.get_parameter(
+                'initial_observation_maximum_xy_spread_m'
+            ).value
+        )
+        self._initial_maximum_z_spread = float(
+            self.get_parameter(
+                'initial_observation_maximum_z_spread_m'
+            ).value
+        )
+        self._initial_maximum_yaw_spread = float(
+            self.get_parameter(
+                'initial_observation_maximum_yaw_spread_deg'
             ).value
         )
         self._minimum_xy_step = float(
@@ -274,6 +348,18 @@ class FrozenTargetExecutorNode(Node):
         self._lock_roll_pitch = bool(
             self.get_parameter('lock_roll_pitch').value
         )
+        self._use_fixed_roll_pitch_target = bool(
+            self.get_parameter('use_fixed_roll_pitch_target').value
+        )
+        self._fixed_roll_target = float(
+            self.get_parameter('fixed_roll_target_deg').value
+        )
+        self._fixed_pitch_target = float(
+            self.get_parameter('fixed_pitch_target_deg').value
+        )
+        self._pitch_correction_gain = float(
+            self.get_parameter('pitch_correction_gain').value
+        )
         self._roll_pitch_tolerance = float(
             self.get_parameter('roll_pitch_tolerance_deg').value
         )
@@ -303,6 +389,15 @@ class FrozenTargetExecutorNode(Node):
         self._final_z_descent_cartesian_mode = int(
             self.get_parameter('final_z_descent_cartesian_mode').value
         )
+        self._vertical_z_cartesian_speed = int(
+            self.get_parameter('vertical_z_cartesian_speed').value
+        )
+        self._vertical_z_cartesian_mode = int(
+            self.get_parameter('vertical_z_cartesian_mode').value
+        )
+        self._vertical_z_control_backend = str(
+            self.get_parameter('vertical_z_control_backend').value
+        ).strip().lower()
         self._final_z_descent_minimum_progress = float(
             self.get_parameter(
                 'final_z_descent_minimum_progress_m'
@@ -530,6 +625,34 @@ class FrozenTargetExecutorNode(Node):
                 'joint_vertical_roll_pitch_tolerance_deg'
             ).value
         )
+        self._enable_final_insertion_z = bool(
+            self.get_parameter('enable_final_insertion_z').value
+        )
+        self._final_insertion_relative_distance = float(
+            self.get_parameter('final_insertion_relative_distance_m').value
+        )
+        self._final_insertion_tolerance = float(
+            self.get_parameter('final_insertion_tolerance_m').value
+        )
+        self._final_insertion_hard_maximum_total_descent = float(
+            self.get_parameter(
+                'final_insertion_hard_maximum_total_descent_m'
+            ).value
+        )
+        self._enable_post_insertion_roll_pitch_recovery = bool(
+            self.get_parameter(
+                'enable_post_insertion_roll_pitch_recovery'
+            ).value
+        )
+        self._post_insertion_roll_pitch_speed = int(
+            self.get_parameter('post_insertion_roll_pitch_speed').value
+        )
+        self._enable_post_recovery_final_z = bool(
+            self.get_parameter('enable_post_recovery_final_z').value
+        )
+        self._post_recovery_final_z_distance = float(
+            self.get_parameter('post_recovery_final_z_distance_m').value
+        )
         self._validate_parameters()
 
         self._joint_vertical_chain = None
@@ -564,6 +687,10 @@ class FrozenTargetExecutorNode(Node):
         self._axis_received_at: float | None = None
         self._latest_joints: list[float] | None = None
         self._joints_received_at: float | None = None
+        sample_buffer_size = max(30, self._initial_sample_count * 4)
+        self._target_samples = deque(maxlen=sample_buffer_size)
+        self._port_z_samples = deque(maxlen=sample_buffer_size)
+        self._axis_samples = deque(maxlen=sample_buffer_size)
         self._aligned_frozen_xy = None
         self._aligned_observation_transform = None
         self._aligned_port_z: float | None = None
@@ -571,8 +698,10 @@ class FrozenTargetExecutorNode(Node):
         self._aligned_hardware_xy = None
         self._aligned_hardware_observation_transform = None
         self._aligned_hardware_final_target_z: float | None = None
+        self._aligned_hardware_yaw_deg: float | None = None
         self._alignment_ready_for_descent = False
         self._insertion_ready = False
+        self._final_insertion_ready = False
         self._executing = False
         self._lock = threading.Lock()
 
@@ -647,10 +776,14 @@ class FrozenTargetExecutorNode(Node):
             '실행='
             f'{mode}, commands=execute_once/yaw_only_once/'
             'descend_joint_z_once/descend_joint_z_to_guard/'
-            'insert_step_once, '
+            'insert_final_z_once/execute_full_sequence/'
+            'execute_full_sequence_with_final_z/insert_step_once, '
             f'p_control={self._proportional_control}, '
             'hardware_pose_max_age='
             f'{self._hardware_pose_maximum_age:.1f}s, '
+            f'initial_samples={self._initial_sample_count}, '
+            f'initial_aggregation={self._initial_aggregation_method}, '
+            f'sample_window={self._initial_sample_window:.1f}s, '
             f'xy_kp={self._robot_xy_kp:.2f}, '
             f'roll_pitch_kp={self._roll_pitch_kp:.2f}, '
             f'mode={self._cartesian_mode}, '
@@ -664,6 +797,11 @@ class FrozenTargetExecutorNode(Node):
             f'pbvs_target_z={self._use_pbvs_target_z}, '
             f'lock_z={self._lock_z}, '
             f'lock_roll_pitch={self._lock_roll_pitch}, '
+            f'fixed_rp={self._use_fixed_roll_pitch_target}, '
+            'fixed_rp_target='
+            f'[{self._fixed_roll_target:+.1f}, '
+            f'{self._fixed_pitch_target:+.1f}]deg, '
+            f'pitch_correction_gain={self._pitch_correction_gain:.2f}, '
             f'roll_pitch_recovery={self._enable_roll_pitch_recovery}, '
             'roll_pitch_recovery_cycles='
             f'{self._roll_pitch_recovery_max_cycles}, '
@@ -705,6 +843,15 @@ class FrozenTargetExecutorNode(Node):
             f'{self._joint_vertical_max_z_step * 1000.0:.1f}mm, '
             'joint_vertical_max_joint_step='
             f'{math.degrees(self._joint_vertical_max_joint_step):.1f}deg, '
+            f'z_backend={self._vertical_z_control_backend}, '
+            f'z_cartesian_mode={self._vertical_z_cartesian_mode}, '
+            f'z_cartesian_speed={self._vertical_z_cartesian_speed}, '
+            f'final_insert={self._enable_final_insertion_z}, '
+            'final_insert_distance='
+            f'{self._final_insertion_relative_distance * 1000.0:.1f}mm, '
+            f'post_recovery_z={self._enable_post_recovery_final_z}, '
+            'post_recovery_z_distance='
+            f'{self._post_recovery_final_z_distance * 1000.0:.1f}mm, '
             f'initial_yaw={self._enable_initial_yaw}'
         )
 
@@ -715,6 +862,28 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError(
                 'hardware_cartesian_pose_maximum_age_seconds는 '
                 '0.5~5초여야 합니다'
+            )
+        if not 1 <= self._initial_sample_count <= 30:
+            raise ValueError('initial_observation_sample_count는 1~30이어야 합니다')
+        if self._initial_aggregation_method not in ('mean', 'median'):
+            raise ValueError(
+                'initial_observation_aggregation_method는 mean 또는 median이어야 합니다'
+            )
+        if not 0.1 <= self._initial_sample_window <= 5.0:
+            raise ValueError(
+                'initial_observation_sample_window_seconds는 0.1~5초여야 합니다'
+            )
+        if not 0.0005 <= self._initial_maximum_xy_spread <= 0.050:
+            raise ValueError(
+                'initial_observation_maximum_xy_spread_m 범위가 잘못됐습니다'
+            )
+        if not 0.0005 <= self._initial_maximum_z_spread <= 0.050:
+            raise ValueError(
+                'initial_observation_maximum_z_spread_m 범위가 잘못됐습니다'
+            )
+        if not 0.1 <= self._initial_maximum_yaw_spread <= 45.0:
+            raise ValueError(
+                'initial_observation_maximum_yaw_spread_deg 범위가 잘못됐습니다'
             )
         if not 0.0 < self._minimum_xy_step <= 0.020:
             raise ValueError('minimum_xy_step_m은 0~0.02m여야 합니다')
@@ -757,6 +926,12 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError('minimum/maximum_target_z_m 범위가 잘못됐습니다')
         if not 0.5 <= self._roll_pitch_tolerance <= 15.0:
             raise ValueError('roll_pitch_tolerance_deg는 0.5~15도여야 합니다')
+        if not -180.0 <= self._fixed_roll_target <= 180.0:
+            raise ValueError('fixed_roll_target_deg는 -180~180도여야 합니다')
+        if not -89.0 <= self._fixed_pitch_target <= 89.0:
+            raise ValueError('fixed_pitch_target_deg는 -89~89도여야 합니다')
+        if not 0.1 <= self._pitch_correction_gain <= 2.0:
+            raise ValueError('pitch_correction_gain은 0.1~2.0이어야 합니다')
         if not 0 <= self._roll_pitch_recovery_max_cycles <= 3:
             raise ValueError('roll_pitch_recovery_max_cycles는 0~3이어야 합니다')
         if not 0.0 < self._roll_pitch_kp <= 1.0:
@@ -771,6 +946,14 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError('final_z_descent_speed는 1~100이어야 합니다')
         if self._final_z_descent_cartesian_mode not in (0, 1):
             raise ValueError('final_z_descent_cartesian_mode는 0 또는 1이어야 합니다')
+        if not 1 <= self._vertical_z_cartesian_speed <= 100:
+            raise ValueError('vertical_z_cartesian_speed는 1~100이어야 합니다')
+        if self._vertical_z_cartesian_mode not in (0, 1):
+            raise ValueError('vertical_z_cartesian_mode는 0 또는 1이어야 합니다')
+        if self._vertical_z_control_backend not in ('joint', 'cartesian'):
+            raise ValueError(
+                'vertical_z_control_backend는 joint 또는 cartesian이어야 합니다'
+            )
         if not (
             0.00025
             <= self._final_z_descent_minimum_progress
@@ -987,15 +1170,53 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError(
                 'joint_vertical_roll_pitch_tolerance_deg는 1~15도여야 합니다'
             )
+        if not 0.001 <= self._final_insertion_relative_distance <= 0.030:
+            raise ValueError(
+                'final_insertion_relative_distance_m은 1~30mm여야 합니다'
+            )
+        if not (
+            self._joint_vertical_minimum_progress
+            <= self._final_insertion_tolerance
+            <= 0.005
+        ):
+            raise ValueError(
+                'final_insertion_tolerance_m은 관절 최소 진행량 이상 '
+                '5mm 이하여야 합니다'
+            )
+        if not (
+            self._final_insertion_relative_distance
+            <= self._final_insertion_hard_maximum_total_descent
+            <= 0.030
+        ):
+            raise ValueError(
+                'final_insertion_hard_maximum_total_descent_m은 최종 삽입 '
+                '거리 이상 30mm 이하여야 합니다'
+            )
+        if not 1 <= self._post_insertion_roll_pitch_speed <= 100:
+            raise ValueError('post_insertion_roll_pitch_speed는 1~100이어야 합니다')
+        if not 0.001 <= self._post_recovery_final_z_distance <= 0.010:
+            raise ValueError(
+                'post_recovery_final_z_distance_m은 1~10mm여야 합니다'
+            )
 
     def _publish(self, text: str) -> None:
         self._status.publish(String(data=text))
         self.get_logger().info(text)
 
     def _target_callback(self, message: PoseStamped) -> None:
+        received_at = time.monotonic()
         with self._lock:
             self._latest_target = message
-            self._target_received_at = time.monotonic()
+            self._target_received_at = received_at
+            self._target_samples.append(
+                (
+                    received_at,
+                    message.header.frame_id,
+                    float(message.pose.position.x),
+                    float(message.pose.position.y),
+                    float(message.pose.position.z),
+                )
+            )
 
     def _hardware_pose_callback(self, message: PoseStamped) -> None:
         if message.header.frame_id == self._base_frame:
@@ -1005,9 +1226,13 @@ class FrozenTargetExecutorNode(Node):
 
     def _port_pose_callback(self, message: PoseStamped) -> None:
         if message.header.frame_id == self._base_frame:
+            received_at = time.monotonic()
             with self._lock:
                 self._latest_port_pose = message
-                self._port_received_at = time.monotonic()
+                self._port_received_at = received_at
+                self._port_z_samples.append(
+                    (received_at, float(message.pose.position.z))
+                )
 
     def _observation_callback(self, message: PoseStamped) -> None:
         if message.header.frame_id == self._base_frame:
@@ -1017,9 +1242,11 @@ class FrozenTargetExecutorNode(Node):
     def _axis_callback(self, message: Float64) -> None:
         value = float(message.data)
         if math.isfinite(value):
+            received_at = time.monotonic()
             with self._lock:
                 self._latest_axis = value
-                self._axis_received_at = time.monotonic()
+                self._axis_received_at = received_at
+                self._axis_samples.append((received_at, value))
 
     def _joint_callback(self, message: JointState) -> None:
         values = dict(zip(message.name, message.position))
@@ -1037,6 +1264,136 @@ class FrozenTargetExecutorNode(Node):
         if not 0.0 <= age <= self._maximum_age:
             raise ValueError(f'{label} 입력이 오래됐습니다: age={age:.3f}s')
 
+    def _averaged_initial_perception(self):
+        """최근 PBVS/포트/Yaw 표본을 검증하고 평균 관측을 반환한다."""
+        now = time.monotonic()
+        cutoff = now - self._initial_sample_window
+        with self._lock:
+            latest_target = deepcopy(self._latest_target)
+            latest_port = deepcopy(self._latest_port_pose)
+            target_samples = [
+                sample for sample in self._target_samples if sample[0] >= cutoff
+            ]
+            port_samples = [
+                sample for sample in self._port_z_samples if sample[0] >= cutoff
+            ]
+            axis_samples = [
+                sample for sample in self._axis_samples if sample[0] >= cutoff
+            ]
+
+        required = self._initial_sample_count
+        required_inputs = (
+            ('PBVS target', target_samples),
+            ('keypoint Yaw', axis_samples),
+        )
+        for label, samples in required_inputs:
+            if len(samples) < required:
+                raise ValueError(
+                    f'초기 {label} 평균 표본이 부족합니다: '
+                    f'{len(samples)}/{required}, '
+                    f'window={self._initial_sample_window:.1f}s'
+                )
+        if self._final_z_p_use_port_target and len(port_samples) < required:
+            raise ValueError(
+                '초기 port_pose 평균 표본이 부족합니다: '
+                f'{len(port_samples)}/{required}, '
+                f'window={self._initial_sample_window:.1f}s'
+            )
+        if latest_target is None:
+            raise ValueError('초기 PBVS target 입력이 없습니다')
+        if self._final_z_p_use_port_target and latest_port is None:
+            raise ValueError('초기 port_pose_base 입력이 없습니다')
+
+        target_samples = target_samples[-required:]
+        axis_samples = axis_samples[-required:]
+        target_frames = {sample[1] for sample in target_samples}
+        if target_frames != {self._base_frame}:
+            raise ValueError(
+                f'PBVS target 표본 frame이 {self._base_frame}와 다릅니다: '
+                f'{sorted(target_frames)}'
+            )
+        target_xyz = np.asarray(
+            [sample[2:5] for sample in target_samples], dtype=np.float64
+        )
+        if not np.all(np.isfinite(target_xyz)):
+            raise ValueError('초기 PBVS target 표본에 유한하지 않은 값이 있습니다')
+        if self._initial_aggregation_method == 'median':
+            center_target_xyz = np.median(target_xyz, axis=0)
+        else:
+            center_target_xyz = np.mean(target_xyz, axis=0)
+        xy_spread = float(
+            np.max(
+                np.linalg.norm(
+                    target_xyz[:, :2] - center_target_xyz[:2], axis=1
+                )
+            )
+        )
+        target_z_spread = float(
+            np.max(np.abs(target_xyz[:, 2] - center_target_xyz[2]))
+        )
+        if xy_spread > self._initial_maximum_xy_spread:
+            raise ValueError(
+                '초기 PBVS XY 관측 편차가 큽니다: '
+                f'spread={xy_spread * 1000.0:.1f}mm, '
+                f'limit={self._initial_maximum_xy_spread * 1000.0:.1f}mm'
+            )
+        if target_z_spread > self._initial_maximum_z_spread:
+            raise ValueError(
+                '초기 PBVS target Z 관측 편차가 큽니다: '
+                f'spread={target_z_spread * 1000.0:.1f}mm, '
+                f'limit={self._initial_maximum_z_spread * 1000.0:.1f}mm'
+            )
+
+        axis_values = [sample[1] for sample in axis_samples]
+        if self._initial_aggregation_method == 'median':
+            center_axis = circular_median_degrees(axis_values)
+        else:
+            center_axis = circular_mean_degrees(axis_values)
+        yaw_spread = maximum_angular_deviation_degrees(
+            axis_values, center_axis
+        )
+        if yaw_spread > self._initial_maximum_yaw_spread:
+            raise ValueError(
+                '초기 keypoint Yaw 관측 편차가 큽니다: '
+                f'spread={yaw_spread:.2f}deg, '
+                f'limit={self._initial_maximum_yaw_spread:.2f}deg'
+            )
+
+        latest_target.pose.position.x = float(center_target_xyz[0])
+        latest_target.pose.position.y = float(center_target_xyz[1])
+        latest_target.pose.position.z = float(center_target_xyz[2])
+        port_z_spread = 0.0
+        if self._final_z_p_use_port_target:
+            port_samples = port_samples[-required:]
+            port_z_values = np.asarray(
+                [sample[1] for sample in port_samples], dtype=np.float64
+            )
+            if not np.all(np.isfinite(port_z_values)):
+                raise ValueError('초기 port Z 표본에 유한하지 않은 값이 있습니다')
+            if self._initial_aggregation_method == 'median':
+                center_port_z = float(np.median(port_z_values))
+            else:
+                center_port_z = float(np.mean(port_z_values))
+            port_z_spread = float(
+                np.max(np.abs(port_z_values - center_port_z))
+            )
+            if port_z_spread > self._initial_maximum_z_spread:
+                raise ValueError(
+                    '초기 port Z 관측 편차가 큽니다: '
+                    f'spread={port_z_spread * 1000.0:.1f}mm, '
+                    f'limit={self._initial_maximum_z_spread * 1000.0:.1f}mm'
+                )
+            latest_port.pose.position.z = center_port_z
+
+        summary = (
+            f'samples={required}, aggregation={self._initial_aggregation_method}, '
+            f'xy_spread={xy_spread * 1000.0:.1f}mm, '
+            f'target_z_spread={target_z_spread * 1000.0:.1f}mm, '
+            f'port_z_spread={port_z_spread * 1000.0:.1f}mm, '
+            f'yaw_spread={yaw_spread:.2f}deg'
+        )
+        return latest_target, latest_port, float(center_axis), summary
+
     def _command_callback(self, message: String) -> None:
         command = message.data.strip().lower()
         if command not in (
@@ -1045,11 +1402,15 @@ class FrozenTargetExecutorNode(Node):
             'descend_joint_z_once',
             'descend_joint_z_to_guard',
             'insert_step_once',
+            'insert_final_z_once',
+            'execute_full_sequence',
+            'execute_full_sequence_with_final_z',
         ):
             self._publish(
                 'REJECTED: 허용된 명령은 execute_once, yaw_only_once, '
-                'descend_joint_z_once, '
-                'descend_joint_z_to_guard, insert_step_once입니다'
+                'descend_joint_z_once, descend_joint_z_to_guard, '
+                'insert_final_z_once, execute_full_sequence, '
+                'execute_full_sequence_with_final_z, insert_step_once입니다'
             )
             return
         with self._lock:
@@ -1068,6 +1429,12 @@ class FrozenTargetExecutorNode(Node):
                 self._execute_descend_joint_z_to_guard()
             elif command == 'insert_step_once':
                 self._execute_insert_step_once()
+            elif command == 'insert_final_z_once':
+                self._execute_final_insertion_z()
+            elif command == 'execute_full_sequence':
+                self._execute_full_sequence()
+            elif command == 'execute_full_sequence_with_final_z':
+                self._execute_full_sequence(include_final_insertion=True)
             else:
                 self._execute_once()
         except Exception as error:
@@ -1093,6 +1460,19 @@ class FrozenTargetExecutorNode(Node):
             'EXECUTED: yaw_only_once 완료. 새 영상각을 직접 확인하세요'
         )
 
+    def _roll_pitch_reference(self, transform):
+        """선택에 따라 관측 R/P 또는 고정 R/P를 갖는 기준 pose를 반환한다."""
+        reference = np.asarray(transform, dtype=np.float64).copy()
+        if not self._use_fixed_roll_pitch_target:
+            return reference
+        _, _, yaw = rotation_to_rpy_degrees(reference[:3, :3])
+        reference[:3, :3] = rpy_degrees_to_rotation(
+            self._fixed_roll_target,
+            self._fixed_pitch_target,
+            yaw,
+        )
+        return reference
+
     def _execute_once(self) -> None:
         self._alignment_ready_for_descent = False
         self._insertion_ready = False
@@ -1103,18 +1483,16 @@ class FrozenTargetExecutorNode(Node):
         self._aligned_hardware_xy = None
         self._aligned_hardware_observation_transform = None
         self._aligned_hardware_final_target_z = None
+        self._aligned_hardware_yaw_deg = None
+        self._final_insertion_ready = False
         with self._lock:
-            initial_target = self._latest_target
-            target_received_at = self._target_received_at
-            port_pose = self._latest_port_pose
-            port_received_at = self._port_received_at
-            observation = self._observation_reference
-            initial_axis = self._latest_axis
-            axis_received_at = self._axis_received_at
-        self._fresh(target_received_at, '초기 PBVS target')
-        self._fresh(axis_received_at, '초기 keypoint angle')
-        if self._final_z_p_use_port_target:
-            self._fresh(port_received_at, '초기 port_pose_base')
+            observation = deepcopy(self._observation_reference)
+        (
+            initial_target,
+            port_pose,
+            initial_axis,
+            sample_summary,
+        ) = self._averaged_initial_perception()
         if (
             initial_target is None
             or observation is None
@@ -1155,10 +1533,14 @@ class FrozenTargetExecutorNode(Node):
                 f'허용범위 {self._final_z_descent_minimum_z * 1000.0:.1f}~'
                 f'{self._maximum_target_z * 1000.0:.1f}mm 밖입니다'
             )
-        hardware_observation_transform = self._current_hardware_transform()
+        hardware_observation_transform = self._roll_pitch_reference(
+            self._current_hardware_transform()
+        )
 
         initial_target_transform = pose_to_transform(initial_target.pose)
-        observation_transform = pose_to_transform(observation.pose)
+        observation_transform = self._roll_pitch_reference(
+            pose_to_transform(observation.pose)
+        )
         current = self._current_flange()
         frozen_target = current.copy()
         frozen_target[:2, 3] = initial_target_transform[:2, 3]
@@ -1196,8 +1578,18 @@ class FrozenTargetExecutorNode(Node):
             '초기 관측 목표 고정: '
             f'xy=[{frozen_xy[0]:+.6f}, {frozen_xy[1]:+.6f}]m, '
             f'z={frozen_target[2, 3]:.6f}m({z_source}), '
-            f'keypoint_axis={initial_axis:+.3f}deg. '
+            f'keypoint_axis={initial_axis:+.3f}deg, '
+            f'{sample_summary}. '
             '이후 카메라 관측은 제어에 사용하지 않습니다'
+        )
+        reference_rpy = rotation_to_rpy_degrees(
+            observation_transform[:3, :3]
+        )
+        self._publish(
+            'Roll/Pitch 기준 고정: '
+            f'source={"fixed_yaml" if self._use_fixed_roll_pitch_target else "initial_observation"}, '
+            f'target_rp=[{reference_rpy[0]:+.2f}, '
+            f'{reference_rpy[1]:+.2f}]deg'
         )
         self._publish(
             '최종 삽입 Z 고정: '
@@ -1273,6 +1665,9 @@ class FrozenTargetExecutorNode(Node):
         )
         self._aligned_hardware_final_target_z = (
             float(hardware_aligned[2, 3]) - remaining_descent
+        )
+        self._aligned_hardware_yaw_deg = float(
+            rotation_to_rpy_degrees(hardware_aligned[:3, :3])[2]
         )
         self._alignment_ready_for_descent = True
         hardware_observation_rpy = rotation_to_rpy_degrees(
@@ -1765,11 +2160,44 @@ class FrozenTargetExecutorNode(Node):
         after = self._current_hardware_transform()
         return before, after, predicted_task
 
+    def _execute_vertical_z_step(self, dz: float, label: str):
+        """선택한 backend로 상대 Z 하강 한 단계를 실행하고 실제 pose를 읽는다."""
+        distance = float(dz)
+        if not math.isfinite(distance) or distance <= 0.0:
+            raise ValueError(f'{label}: Z 하강량은 양의 유한값이어야 합니다')
+        if self._vertical_z_control_backend == 'joint':
+            task_error = np.zeros(6, dtype=np.float64)
+            task_error[2] = -distance
+            return self._execute_joint_task_step(task_error, label)
+
+        before = self._current_hardware_transform()
+        target = before.copy()
+        target[2, 3] = float(before[2, 3]) - distance
+        self._send_cartesian_transform(
+            target,
+            f'{label} send_coords Z-only',
+            lock_z=False,
+            lock_roll_pitch=False,
+            speed=self._vertical_z_cartesian_speed,
+            mode=self._vertical_z_cartesian_mode,
+        )
+        time.sleep(self._settle)
+        after = self._current_hardware_transform()
+        predicted_task = np.zeros(6, dtype=np.float64)
+        predicted_task[2] = -distance
+        return before, after, predicted_task
+
     def _execute_descend_joint_z_once(self) -> None:
         """Z→측정→XY P보정→측정→초기 R/P P보정→측정 1회."""
-        if not self._enable_joint_vertical_descent:
+        if (
+            self._vertical_z_control_backend == 'joint'
+            and not self._enable_joint_vertical_descent
+        ):
             raise ValueError('enable_joint_vertical_descent=false')
-        if self._joint_vertical_chain is None:
+        if (
+            self._vertical_z_control_backend == 'joint'
+            and self._joint_vertical_chain is None
+        ):
             raise ValueError('관절 Jacobian URDF 체인이 준비되지 않았습니다')
         if (
             not self._alignment_ready_for_descent
@@ -1793,18 +2221,16 @@ class FrozenTargetExecutorNode(Node):
                 f'remaining={remaining_z * 1000.0:.1f}mm'
             )
 
-        # Z 단계는 XY/R/P를 목표로 동시에 끌어당기지 않는다. 6D task의
-        # 나머지를 0으로 두어 현재 값을 1차적으로 유지하면서 Z만 내린다.
-        task_error = np.zeros(6, dtype=np.float64)
-        task_error[2] = -dz
         self._alignment_ready_for_descent = False
         self._publish(
-            f'{self._warning_delay:.1f}초 후 관절 순차 P제어 1/3 Z 하강: '
+            '순차 P제어 1/3 Z 하강 준비: '
             f'remaining={remaining_z * 1000.0:.1f}mm, '
-            f'dz_command=-{dz * 1000.0:.1f}mm'
+            f'dz_command=-{dz * 1000.0:.1f}mm, '
+            f'backend={self._vertical_z_control_backend}'
         )
-        time.sleep(self._warning_delay)
-        _, after_z, _ = self._execute_joint_task_step(task_error, 'Z 1/3')
+        if self._vertical_z_control_backend == 'joint':
+            time.sleep(self._warning_delay)
+        _, after_z, _ = self._execute_vertical_z_step(dz, 'Z 1/3')
         actual_descent = current_z - float(after_z[2, 3])
         overshoot = actual_descent - dz
         xy_error = xy_residual_m(
@@ -1815,7 +2241,8 @@ class FrozenTargetExecutorNode(Node):
             self._aligned_hardware_observation_transform,
         )
         self._publish(
-            '관절 순차 P제어 1/3 Z 측정: '
+            '순차 P제어 1/3 Z 측정: '
+            f'backend={self._vertical_z_control_backend}, '
             f'command={dz * 1000.0:.1f}mm, '
             f'actual={actual_descent * 1000.0:.1f}mm, '
             f'overshoot={overshoot * 1000.0:+.1f}mm, '
@@ -1935,6 +2362,7 @@ class FrozenTargetExecutorNode(Node):
                     after_xy,
                     self._aligned_hardware_observation_transform,
                     self._joint_vertical_orientation_kp,
+                    self._pitch_correction_gain,
                 )
             )
             target_rpy = rotation_to_rpy_degrees(rp_target[:3, :3])
@@ -1946,6 +2374,7 @@ class FrozenTargetExecutorNode(Node):
                 f'roll={rp_before[0]:.2f}deg, '
                 f'pitch={rp_before[1]:.2f}deg, '
                 f'kp={self._joint_vertical_orientation_kp:.2f}, '
+                f'pitch_gain={self._pitch_correction_gain:.2f}, '
                 'initial_target_rp='
                 f'[{initial_rpy[0]:+.2f}, {initial_rpy[1]:+.2f}]deg, '
                 'command_target_rp='
@@ -2030,11 +2459,12 @@ class FrozenTargetExecutorNode(Node):
         if final_remaining_z <= self._joint_vertical_final_z_guard:
             self._alignment_ready_for_descent = False
             self._insertion_ready = True
+            self._final_insertion_ready = True
             self._publish(
                 'EXECUTED: 혼합 P제어로 포트 기반 최종 Z 안전 여유 '
                 '구간까지 도달했습니다: '
                 f'remaining={final_remaining_z * 1000.0:.1f}mm. '
-                '다음 관절 Z 사이클은 차단하며 마지막 삽입은 별도 '
+                '다음 Z 사이클은 차단하며 마지막 삽입은 별도 '
                 '저속/접촉 감시 단계가 필요합니다'
             )
         else:
@@ -2058,7 +2488,8 @@ class FrozenTargetExecutorNode(Node):
             start_z - self._aligned_hardware_final_target_z
         )
         self._publish(
-            '관절 Z+Cartesian XY/RP 자동 반복 시작: '
+            'Z+Cartesian XY/RP 자동 반복 시작: '
+            f'z_backend={self._vertical_z_control_backend}, '
             f'remaining={start_remaining * 1000.0:.1f}mm, '
             f'guard={self._joint_vertical_final_z_guard * 1000.0:.1f}mm, '
             f'max_cycles={self._joint_vertical_max_cycles}. '
@@ -2095,13 +2526,313 @@ class FrozenTargetExecutorNode(Node):
             )
         self._alignment_ready_for_descent = False
         self._insertion_ready = True
+        self._final_insertion_ready = True
         self._publish(
             'EXECUTED: 자동 혼합 P제어가 포트 기반 최종 Z 안전 여유에 '
             '도달했습니다: '
             f'cycles={completed}, start_remaining='
             f'{start_remaining * 1000.0:.1f}mm, '
             f'final_remaining={final_remaining * 1000.0:.1f}mm. '
-            '마지막 삽입은 insert_step_once 승인으로만 실행합니다'
+            'insert_step_once 또는 insert_final_z_once 승인 대기'
+        )
+
+    def _execute_final_insertion_z(self) -> None:
+        """guard 자세에서 선택한 Z backend로 상대 하강한다."""
+        if not self._enable_final_insertion_z:
+            raise ValueError('enable_final_insertion_z=false')
+        if (
+            self._vertical_z_control_backend == 'joint'
+            and self._joint_vertical_chain is None
+        ):
+            raise ValueError('관절 Jacobian URDF 체인이 준비되지 않았습니다')
+        if (
+            not self._final_insertion_ready
+            or self._aligned_hardware_final_target_z is None
+            or self._aligned_hardware_xy is None
+            or self._aligned_hardware_observation_transform is None
+        ):
+            raise ValueError(
+                '성공한 descend_joint_z_to_guard 결과가 먼저 필요합니다'
+            )
+
+        self._final_insertion_ready = False
+        start = self._current_hardware_transform()
+        start_z = float(start[2, 3])
+        # 상대 10mm 목표가 configured port 삽입 목표보다 낮으면 포트 기반
+        # 최종 Z에서 자른다. guard 결합 이동으로 남은 거리가 10mm보다
+        # 작아진 경우 추가 과삽입 목표를 만들지 않는다.
+        target_z = final_insertion_target_z_m(
+            start_z,
+            self._final_insertion_relative_distance,
+            self._aligned_hardware_final_target_z,
+        )
+        commanded_total = start_z - target_z
+        if commanded_total <= self._final_insertion_tolerance:
+            self._publish(
+                'EXECUTED: guard 도달 자세가 최종 삽입 Z 허용범위 안이라 '
+                '추가 하강을 생략합니다: '
+                f'remaining={commanded_total * 1000.0:.1f}mm'
+            )
+            self._execute_post_insertion_roll_pitch_recovery()
+            self._execute_post_recovery_final_z()
+            return
+
+        self._publish(
+            f'{self._warning_delay:.1f}초 후 최종 Z-only 단발 삽입: '
+            f'relative_request={self._final_insertion_relative_distance * 1000.0:.1f}mm, '
+            f'actual_command={commanded_total * 1000.0:.1f}mm, '
+            f'start_z={start_z * 1000.0:.1f}mm, '
+            f'target_z={target_z * 1000.0:.1f}mm. '
+            'XY/Roll/Pitch 보정 없이 Z 명령을 한 번만 전송합니다. '
+            f'backend={self._vertical_z_control_backend}'
+        )
+        if self._vertical_z_control_backend == 'joint':
+            time.sleep(self._warning_delay)
+        _, final, predicted_task = self._execute_vertical_z_step(
+            commanded_total,
+            '최종 Z-only 단발 삽입',
+        )
+        final_descent = start_z - float(final[2, 3])
+        final_remaining = float(final[2, 3] - target_z)
+        target_overshoot = max(0.0, -final_remaining)
+        xy_error = xy_residual_m(final[:2, 3], self._aligned_hardware_xy)
+        roll_error, pitch_error = self._roll_pitch_errors(
+            final,
+            self._aligned_hardware_observation_transform,
+        )
+        if final_descent < self._joint_vertical_minimum_progress:
+            raise RuntimeError('최종 Z-only 단발 삽입 실제 진행량이 부족합니다')
+        if final_descent > self._final_insertion_hard_maximum_total_descent:
+            raise RuntimeError(
+                '최종 Z-only 단발 삽입 실제 하강량이 하드 한계를 '
+                '초과했습니다: '
+                f'actual={final_descent * 1000.0:.1f}mm, '
+                'limit='
+                f'{self._final_insertion_hard_maximum_total_descent * 1000.0:.1f}mm'
+            )
+        if target_overshoot > self._joint_vertical_maximum_overshoot:
+            raise RuntimeError(
+                '최종 Z-only 단발 삽입 목표를 과도하게 지나갔습니다: '
+                f'overshoot={target_overshoot * 1000.0:.1f}mm'
+            )
+        self._publish(
+            'EXECUTED: guard 이후 최종 Z-only 단발 삽입 완료: '
+            f'predicted_dz={predicted_task[2] * 1000.0:+.1f}mm, '
+            f'actual_dz={-final_descent * 1000.0:+.1f}mm, '
+            f'target_error={final_remaining * 1000.0:+.1f}mm, '
+            f'within_tolerance={abs(final_remaining) <= self._final_insertion_tolerance}, '
+            f'xy={xy_error * 1000.0:.1f}mm, '
+            f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg'
+        )
+        self._execute_post_insertion_roll_pitch_recovery()
+        self._execute_post_recovery_final_z()
+
+    def _execute_post_insertion_roll_pitch_recovery(self) -> None:
+        """최종 삽입 뒤 actual XYZ/Yaw에서 초기 관측 R/P를 한 번 적용한다."""
+        if not self._enable_post_insertion_roll_pitch_recovery:
+            return
+        if self._aligned_hardware_observation_transform is None:
+            raise RuntimeError('삽입 후 Roll/Pitch 복구용 초기 관측 기준이 없습니다')
+        before = self._current_hardware_transform()
+        before_z = float(before[2, 3])
+        before_roll, before_pitch = self._roll_pitch_errors(
+            before,
+            self._aligned_hardware_observation_transform,
+        )
+        target = apply_proportional_observation_roll_pitch_with_current_yaw(
+            before,
+            self._aligned_hardware_observation_transform,
+            1.0,
+            self._pitch_correction_gain,
+        )
+        target_rpy = rotation_to_rpy_degrees(target[:3, :3])
+        self._publish(
+            '삽입 후 초기 Roll/Pitch 무제한 복구 시작: '
+            f'before_roll={before_roll:.2f}deg, '
+            f'before_pitch={before_pitch:.2f}deg, '
+            f'pitch_gain={self._pitch_correction_gain:.2f}, '
+            'target_rp='
+            f'[{target_rpy[0]:+.2f}, {target_rpy[1]:+.2f}]deg, '
+            f'speed={self._post_insertion_roll_pitch_speed}. '
+            'actual X/Y/Z와 Yaw를 목표에 유지하지만 결합 Z 하강은 '
+            '제한하거나 실패 처리하지 않습니다'
+        )
+        self._send_cartesian_transform(
+            target,
+            '삽입 후 초기 Roll/Pitch 복구',
+            lock_z=False,
+            lock_roll_pitch=False,
+            speed=self._post_insertion_roll_pitch_speed,
+        )
+        time.sleep(self._settle)
+        after = self._current_hardware_transform()
+        coupled_descent = before_z - float(after[2, 3])
+        xy_error = xy_residual_m(after[:2, 3], self._aligned_hardware_xy)
+        roll_error, pitch_error = self._roll_pitch_errors(
+            after,
+            self._aligned_hardware_observation_transform,
+        )
+        final_z_error = float(
+            after[2, 3] - self._aligned_hardware_final_target_z
+        )
+        self._publish(
+            'EXECUTED: 삽입 후 초기 Roll/Pitch 복구 완료: '
+            f'coupled_dz={-coupled_descent * 1000.0:+.1f}mm, '
+            f'final_z_error={final_z_error * 1000.0:+.1f}mm, '
+            f'xy={xy_error * 1000.0:.1f}mm, '
+            f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg. '
+            '추가 Z 하강 제한은 적용하지 않았습니다'
+        )
+
+    def _execute_post_recovery_final_z(self) -> None:
+        """삽입 후 R/P 복구가 끝난 자세에서 상대 Z를 한 번 더 내린다."""
+        if not self._enable_post_recovery_final_z:
+            return
+        if (
+            self._vertical_z_control_backend == 'joint'
+            and self._joint_vertical_chain is None
+        ):
+            raise ValueError('관절 Jacobian URDF 체인이 준비되지 않았습니다')
+        if (
+            self._aligned_hardware_xy is None
+            or self._aligned_hardware_observation_transform is None
+            or self._aligned_hardware_final_target_z is None
+        ):
+            raise RuntimeError('삽입 후 추가 Z 하강용 정렬 기준이 없습니다')
+
+        start = self._current_hardware_transform()
+        start_z = float(start[2, 3])
+        target_z = start_z - self._post_recovery_final_z_distance
+        if target_z < self._final_z_descent_minimum_z:
+            raise RuntimeError(
+                '삽입 후 추가 Z 목표가 절대 하한보다 낮습니다: '
+                f'target_z={target_z * 1000.0:.1f}mm, '
+                f'minimum_z={self._final_z_descent_minimum_z * 1000.0:.1f}mm'
+            )
+
+        self._publish(
+            f'{self._warning_delay:.1f}초 후 R/P 복구 뒤 최종 Z-only 하강: '
+            f'relative_request={self._post_recovery_final_z_distance * 1000.0:.1f}mm, '
+            f'start_z={start_z * 1000.0:.1f}mm, '
+            f'target_z={target_z * 1000.0:.1f}mm. '
+            'XY/Roll/Pitch 추가 보정 없이 Z 명령을 한 번만 전송합니다. '
+            f'backend={self._vertical_z_control_backend}'
+        )
+        if self._vertical_z_control_backend == 'joint':
+            time.sleep(self._warning_delay)
+        _, final, predicted_task = self._execute_vertical_z_step(
+            self._post_recovery_final_z_distance,
+            'R/P 복구 뒤 최종 Z-only 하강',
+        )
+        actual_descent = start_z - float(final[2, 3])
+        xy_error = xy_residual_m(final[:2, 3], self._aligned_hardware_xy)
+        roll_error, pitch_error = self._roll_pitch_errors(
+            final,
+            self._aligned_hardware_observation_transform,
+        )
+        if actual_descent < self._joint_vertical_minimum_progress:
+            raise RuntimeError('R/P 복구 뒤 최종 Z-only 실제 진행량이 부족합니다')
+        if actual_descent > self._final_insertion_hard_maximum_total_descent:
+            raise RuntimeError(
+                'R/P 복구 뒤 최종 Z-only 실제 하강량이 하드 한계를 '
+                '초과했습니다: '
+                f'actual={actual_descent * 1000.0:.1f}mm, '
+                'limit='
+                f'{self._final_insertion_hard_maximum_total_descent * 1000.0:.1f}mm'
+            )
+        self._publish(
+            'EXECUTED: R/P 복구 뒤 최종 Z-only 하강 완료: '
+            f'command={self._post_recovery_final_z_distance * 1000.0:.1f}mm, '
+            f'predicted_dz={predicted_task[2] * 1000.0:+.1f}mm, '
+            f'actual_dz={-actual_descent * 1000.0:+.1f}mm, '
+            f'xy={xy_error * 1000.0:.1f}mm, '
+            f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg'
+        )
+
+    def _execute_full_sequence(
+        self,
+        *,
+        include_final_insertion: bool = False,
+    ) -> None:
+        """초기 정렬부터 Z guard와 선택적 최종 Z까지 한 번에 실행한다."""
+        self._publish(
+            '통합 실행 시작: 초기 PBVS 고정목표 정렬 → XY/Roll/Pitch/Yaw '
+            '결합 보정 → Z+Cartesian XY/RP 자동 반복 → 최종 오차 측정. '
+            f'z_backend={self._vertical_z_control_backend}'
+        )
+        try:
+            self._execute_once()
+        except Exception as error:
+            raise RuntimeError(
+                f'통합 실행 초기 정렬 단계 실패: {error}'
+            ) from error
+        self._publish(
+            '통합 실행 초기 정렬 완료: Z 안전 여유까지 자동 하강을 시작합니다'
+        )
+        try:
+            self._execute_descend_joint_z_to_guard()
+        except Exception as error:
+            raise RuntimeError(
+                f'통합 실행 Z 자동 하강 단계 실패: {error}'
+            ) from error
+        if include_final_insertion:
+            self._publish(
+                '통합 실행 guard 도달 완료: 최종 상대 Z 삽입을 시작합니다'
+            )
+            try:
+                self._execute_final_insertion_z()
+            except Exception as error:
+                raise RuntimeError(
+                    f'통합 실행 최종 Z 삽입 단계 실패: {error}'
+                ) from error
+        self._publish_final_error_report()
+        self._publish(
+            'EXECUTED: '
+            f'{"execute_full_sequence_with_final_z" if include_final_insertion else "execute_full_sequence"} '
+            '완료. 초기 정렬부터 Z 이동과 최종 오차 측정을 마쳤습니다'
+        )
+
+    def _publish_final_error_report(self) -> None:
+        """통합 실행 종료 시 제조사 실제 자세와 저장 목표의 오차를 발행한다."""
+        if (
+            self._aligned_hardware_xy is None
+            or self._aligned_hardware_observation_transform is None
+            or self._aligned_hardware_final_target_z is None
+            or self._aligned_hardware_yaw_deg is None
+        ):
+            raise RuntimeError('최종 오차 계산용 정렬 기준이 없습니다')
+        actual = self._current_hardware_transform()
+        error_x = float(actual[0, 3] - self._aligned_hardware_xy[0])
+        error_y = float(actual[1, 3] - self._aligned_hardware_xy[1])
+        error_xy = math.hypot(error_x, error_y)
+        remaining_z = float(
+            actual[2, 3] - self._aligned_hardware_final_target_z
+        )
+        guard_error = float(
+            remaining_z - self._joint_vertical_final_z_guard
+        )
+        roll_error, pitch_error = self._roll_pitch_errors(
+            actual,
+            self._aligned_hardware_observation_transform,
+        )
+        actual_rpy = rotation_to_rpy_degrees(actual[:3, :3])
+        yaw_error = float(
+            (actual_rpy[2] - self._aligned_hardware_yaw_deg + 180.0)
+            % 360.0
+            - 180.0
+        )
+        self._publish(
+            'FINAL_ERROR_REPORT: actual_xyz=['
+            f'{actual[0, 3] * 1000.0:+.1f}, '
+            f'{actual[1, 3] * 1000.0:+.1f}, '
+            f'{actual[2, 3] * 1000.0:+.1f}]mm, '
+            'error_xy=['
+            f'{error_x * 1000.0:+.1f}, {error_y * 1000.0:+.1f}]mm, '
+            f'xy_norm={error_xy * 1000.0:.1f}mm, '
+            f'z_remaining={remaining_z * 1000.0:+.1f}mm, '
+            f'z_guard_error={guard_error * 1000.0:+.1f}mm, '
+            f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg, '
+            f'yaw_drift={yaw_error:+.2f}deg'
         )
 
     def _execute_insert_step_once(self) -> None:
@@ -2376,6 +3107,7 @@ class FrozenTargetExecutorNode(Node):
                 )
             cycle += 1
             current = self._current_flange()
+            hardware_current = self._current_hardware_transform()
             if self._proportional_control:
                 step_xy, distance = proportional_xy_target(
                     current[:2, 3],
@@ -2388,30 +3120,23 @@ class FrozenTargetExecutorNode(Node):
                 step_xy, distance = limited_xy_target(
                     current[:2, 3], frozen_xy, self._refine_maximum_step
                 )
-            correction_target = current.copy()
+            # frozen X/Y는 PBVS와 flange TF가 표현하는 g_base 절대 목표를
+            # 그대로 사용한다. Z/R/P/Yaw는 TF endpoint를 복사하지 않고
+            # 제조사 get_coords의 최신 실제 자세를 사용해, 큰 coarse 뒤
+            # 실제로 내려간 Z에서 다시 높은 TF Z를 요구하지 않는다.
+            correction_target = hardware_current.copy()
             correction_target[:2, 3] = step_xy
-            # Coarse에서 실제 도달한 Z를 유지한다. 저장 pre-approach Z를
-            # XY 미세 보정마다 다시 요구하면 남은 Z 차이 때문에 bridge가
-            # 이 명령을 Z-only 복구로 오분류해 완료를 기다릴 수 있다.
-            correction_target[2, 3] = current[2, 3]
-            correction_target[:3, :3] = (
-                apply_observation_roll_pitch_with_current_yaw(
-                    current,
-                    observation_transform,
-                )[:3, :3]
-            )
             self._publish(
                 f'{phase} {cycle}/{self._refine_max_cycles}: '
-                f'to_frozen_target={distance * 1000.0:.1f}mm'
+                f'to_frozen_target={distance * 1000.0:.1f}mm, '
+                'endpoint_z_rpy=manufacturer_actual'
             )
             previous_residual = residual
             self._send_cartesian_transform(
                 correction_target,
                 f'{phase}_{cycle}',
-                # bridge의 하드웨어 시작 Z로 목표를 덮어쓴다. bridge에서
-                # ignore_z_tracking_error=true이므로 경로 Z 고정 실패 검사는
-                # 활성화되지 않는다.
-                lock_z=True,
+                lock_z=False,
+                lock_roll_pitch=False,
             )
             time.sleep(self._settle)
             self._recover_roll_pitch(
@@ -2734,19 +3459,23 @@ class FrozenTargetExecutorNode(Node):
                         current,
                         observation_transform,
                         self._roll_pitch_kp,
+                        self._pitch_correction_gain,
                     )[:3, :3]
                 )
             else:
                 recovery_target[:3, :3] = (
-                    apply_observation_roll_pitch_with_current_yaw(
+                    apply_proportional_observation_roll_pitch_with_current_yaw(
                         current,
                         observation_transform,
+                        1.0,
+                        self._pitch_correction_gain,
                     )[:3, :3]
                 )
             attempt = cycle + 1
             self._publish(
                 f'{context} Roll/Pitch 허용오차 초과: '
                 f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg. '
+                f'pitch_gain={self._pitch_correction_gain:.2f}. '
                 f'자세 복구 {attempt}/'
                 f'{self._roll_pitch_recovery_max_cycles} 후 XY를 재계산합니다'
             )

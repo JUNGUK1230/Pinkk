@@ -2,12 +2,54 @@ import numpy as np
 import pytest
 
 from pinkk_usb_insertion.control.frozen_target import (
+    circular_mean_degrees,
+    circular_median_degrees,
+    final_insertion_target_z_m,
     limited_xy_target,
+    maximum_angular_deviation_degrees,
     port_based_flange_target_z,
     proportional_xy_target,
     proportional_z_descent_m,
     xy_residual_m,
 )
+
+
+def test_circular_mean_degrees_handles_wrap_boundary() -> None:
+    mean = circular_mean_degrees((179.0, -179.0, 178.0, -178.0))
+    assert abs(abs(mean) - 180.0) < 1e-6
+
+
+def test_circular_median_degrees_rejects_angle_outlier() -> None:
+    median = circular_median_degrees((6.8, 7.0, 7.1, 6.9, 40.0))
+    assert median == pytest.approx(7.0)
+
+
+def test_circular_median_degrees_handles_wrap_boundary() -> None:
+    median = circular_median_degrees((179.0, -179.0, 178.0, -178.0, 177.0))
+    assert median == pytest.approx(179.0)
+
+
+def test_maximum_angular_deviation_uses_shortest_wrap() -> None:
+    assert maximum_angular_deviation_degrees((179.0, -179.0), 180.0) == pytest.approx(
+        1.0
+    )
+
+
+def test_final_insertion_target_uses_relative_10mm() -> None:
+    assert final_insertion_target_z_m(0.170, 0.010, 0.154) == pytest.approx(
+        0.160
+    )
+
+
+def test_final_insertion_target_clamps_at_configured_port_target() -> None:
+    assert final_insertion_target_z_m(0.160, 0.010, 0.154) == pytest.approx(
+        0.154
+    )
+
+
+def test_final_insertion_target_rejects_target_above_guard() -> None:
+    with pytest.raises(ValueError):
+        final_insertion_target_z_m(0.150, 0.010, 0.154)
 
 
 def test_port_based_flange_target_z_uses_tcp_and_insertion_depth() -> None:
