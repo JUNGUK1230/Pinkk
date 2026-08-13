@@ -21,10 +21,13 @@
 - 저장한 영상각으로 Joint6 Yaw 정렬
 - 초기 관측 Roll/Pitch와 XY 결합 재확인
 - 포트 기반 최종 flange Z의 15mm 위까지 혼합 stop-and-go 하강
-- 마지막 15mm와 실제 접촉·삽입은 자동 실행하지 않음
+- guard 도달 후 XY/Roll/Pitch를 보정하지 않고 Z만 상대 10mm 추가 하강
+- 마지막 Z 이동 후 제조사 actual XYZ/Yaw에서 초기 관측 Roll/Pitch 전체값을
+  한 번 적용하며, 이 단계의 추가 Z 결합 이동은 제한하지 않음
 
-힘/토크 또는 접촉 센서가 없으므로 포트 내부까지 자동 삽입하는 기능으로
-간주하면 안 된다.
+마지막 Z-only 단계에도 힘/토크 또는 접촉 감지가 없다. 실기에서 명령보다
+큰 Z 이동이 관측됐으므로 비상 정지 수단을 준비하고 낮은 위치에 장애물이
+없는 조건에서 시험한다.
 
 ## 좌표와 최종 Z
 
@@ -35,8 +38,9 @@ target_flange_z
 = frozen_port_z + final_tcp_offset_z_m - final_port_insertion_depth_m
 ```
 
-현재 실측값은 flange에서 USB-A 끝단까지 120mm이며 삽입 깊이는 10mm다.
-USB-A와 flange의 X/Y 방향은 동일하고 X/Y 편심은 0으로 가정한다.
+현재 YAML 시험값은 완전히 닫힌 그리퍼에서 flange부터 USB 끝까지 120mm,
+삽입 깊이 10mm다. USB-A와 flange의 X/Y 방향은 동일하고 X/Y 편심은
+0으로 가정한다.
 
 ```text
 target_flange_z = frozen_port_z + 110mm
@@ -52,7 +56,9 @@ target_flange_z = frozen_port_z + 110mm
 1. fresh PBVS target, port pose, observation reference와 keypoint angle을 저장한다.
 2. 포트 Z보다 `absolute_pre_approach_height_m`만큼 높은 Z와 PBVS XY로
    `send_coords()` coarse 이동한다.
-3. 초기 관측 Roll/Pitch를 복구하고 저장 XY 오차를 stop-and-go로 줄인다.
+3. Z/Roll/Pitch 경로 lock 없이 이동한 뒤 초기 관측 Roll/Pitch를 복구한다.
+   XY refine은 저장한 frozen 절대 X/Y와 제조사 actual Z/RPY를 결합해,
+   큰 coarse 뒤 실제로 내려간 Z에서 높은 TF Z를 다시 요구하지 않는다.
 4. 저장한 영상각으로 Joint6 Yaw를 `send_angles()`로 보정한다.
 5. Yaw 뒤 XY와 초기 Roll/Pitch를 다시 맞춘다.
 6. 제조사 좌표의 정렬 완료 XY, 초기 Roll/Pitch, 포트 기반 최종 Z를 저장한다.
@@ -86,12 +92,30 @@ URDF Jacobian 관절 Z 하강(send_angles)
 - XY/Roll-Pitch 보정 중 Z 결합 이동 5mm 초과는 경고로 기록한다.
 - 한 사이클 총하강 30mm 초과 또는 목표 Z 아래로 이동하면 중단한다.
 - 목표 Z까지 15mm 이내에서도 Roll/Pitch가 5도를 넘으면 Cartesian
-  자세 보정은 수행한다. 다음 Z 사이클은 차단한다.
+  자세 보정은 수행하고 다음 Z 사이클은 차단한다.
 - 15mm guard 이후에는 `insert_step_once`를 한 번씩 승인해 0.5mm씩
   삽입한다. 힘/접촉 센서가 없으므로 자동 반복하지 않는다.
+- 기존 통합 시험 흐름에서는 guard 이후 `insert_final_z_once`로 설정된
+  상대 Z를 한 번에 실행할 수도 있지만, 접촉 감지가 없으므로 실기에서는
+  `insert_step_once` 방식이 더 안전하다.
 
 3mm 명령에 실제 약 9.5mm, Cartesian 자세 복구 중 약 11.9mm의 Z 결합
 이동이 관측됐기 때문에 guard를 임의로 0으로 낮추면 안 된다.
+
+### 4. `insert_final_z_once`: Z-only 10mm 추가 하강
+
+guard에 도달한 실제 자세를 시작점으로 Z만 상대 10mm 내린다. 관절
+Jacobian에 Z 오차만 입력하며 이 단계에서는 XY와 Roll/Pitch 명령을 만들지
+않는다. 각 이동 뒤 XY/Roll/Pitch는 상태 로그에만 기록한다.
+
+- Z −10mm task error를 계산해 관절 목표를 한 번만 전송한다.
+- 이동 후 실제 Z와 XY/Roll/Pitch를 한 번 측정하며 추가 보정하지 않는다.
+- 한 번의 실제 하강 15mm를 하드 한계로 둔다.
+- 포트 기반 최종 flange Z보다 아래를 목표로 만들지는 않는다.
+
+Z-only 명령 뒤에는 초기 관측 Roll/Pitch를 한 번 적용한다. 이 후속 자세
+복구는 X/Y/Z/Yaw 목표를 보정 직전 제조사 actual 값으로 만들지만, 실기의
+축 결합으로 발생하는 추가 Z 하강은 제한하거나 실패 조건으로 사용하지 않는다.
 
 ## 실행 순서
 
@@ -151,7 +175,43 @@ ros2 topic pub --once \
   "{data: descend_joint_z_to_guard}"
 ```
 
+guard 도달 후 XY/Roll/Pitch 보정 없이 Z만 10mm 내리려면:
+
+```bash
+ros2 topic pub --once \
+  /robot_arm/frozen_target/command \
+  std_msgs/msg/String \
+  "{data: insert_final_z_once}"
+```
+
 자동 명령 실행 중에는 다른 이동 명령을 보내지 않는다.
+
+### 전체 과정을 한 명령으로 실행
+
+초기 포트 관측이 안정적이고 로봇이 초기 관측 자세에서 정지했으면 다음
+스크립트 하나로 초기 정렬부터 Z 안전 여유와 마지막 Z-only 10mm 하강까지
+실행할 수 있다.
+
+```bash
+ROS_DOMAIN_ID=36 ./scripts/execute_frozen_target_full_sequence.sh
+```
+
+내부 순서는 다음과 같다.
+
+```text
+execute_once 전체 정렬
+→ descend_joint_z_to_guard 자동 반복
+→ insert_final_z_once (XY/Roll/Pitch 보정 없음)
+→ 초기 관측 Roll/Pitch 복구
+→ Z-only 3mm 추가 하강
+→ 제조사 실제 좌표 최종 측정
+→ X/Y/XY/Z/Roll/Pitch/Yaw 오차 보고
+```
+
+완료 시 `FINAL_ERROR_REPORT`와
+`EXECUTED: execute_full_sequence_with_final_z 완료`가 순서대로 발행된다.
+중간 단계가 실패하면 다음 단계로 진행하지 않는다. 안전 여유까지만 실행하려면
+`execute_full_sequence`를 직접 발행한다.
 
 ## 정상 판정 로그
 
@@ -195,8 +255,18 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 
 | 파라미터 | 현재값 | 의미 |
 |---|---:|---|
-| `absolute_pre_approach_height_m` | 0.15 | 포트 위 초기 coarse 높이 |
-| `final_tcp_offset_z_m` | 0.120 | flange에서 USB-A 끝단까지 실측 거리 |
+| `initial_observation_sample_count` | 5 | 초기 목표 집계에 사용할 최근 관측 수 |
+| `initial_observation_aggregation_method` | median | XY/Z/Yaw 이상값에 강한 중앙값 집계 |
+| `vertical_z_control_backend` | joint | 통합 Z 단계에 Jacobian/send_angles 사용 |
+| `vertical_z_cartesian_mode` | 1 | 통합 Z 단계의 send_coords mode |
+| `absolute_pre_approach_height_m` | 0.18 | 자세 결합 하강을 고려한 포트 위 초기 coarse 높이 |
+| `robot_xy_tracking_tolerance_m` | 0.005 | 초기 XY/Roll/Pitch 결합 정렬의 로봇좌표 XY 허용오차 |
+| `cartesian_mode` | 1 | XY/Roll-Pitch용 제조사 직선 Cartesian 모드 |
+| `use_fixed_roll_pitch_target` | true | 초기 실측 대신 고정 R/P 기준 사용 |
+| `fixed_roll_target_deg` | -180.0 | 전체 제어 Roll 목표 |
+| `fixed_pitch_target_deg` | 0.0 | 전체 제어 Pitch 목표 |
+| `pitch_correction_gain` | 1.70 | Pitch 오차에만 적용하는 보정 배율 |
+| `final_tcp_offset_z_m` | 0.120 | 닫힌 그리퍼의 flange에서 USB 끝까지 거리 |
 | `final_port_insertion_depth_m` | 0.010 | 목표 삽입 깊이 |
 | `enable_final_insertion` | false | 최종 단발 삽입 안전 스위치 |
 | `final_insertion_step_m` | 0.0005 | 승인 1회당 삽입 명령량 |
@@ -207,9 +277,13 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 | `joint_vertical_roll_pitch_tolerance_deg` | 5.0 | 다음 사이클 자세 허용오차 |
 | `joint_vertical_final_z_guard_m` | 0.015 | 자동 하강 종료 안전 여유 |
 | `joint_vertical_max_cycles` | 8 | 한 자동 명령의 반복 상한 |
+| `final_insertion_relative_distance_m` | 0.010 | guard 이후 Z-only 상대 하강 거리 |
+| `final_insertion_hard_maximum_total_descent_m` | 0.015 | 마지막 단발 실제 하강 하드 한계 |
+| `enable_post_recovery_final_z` | true | 삽입 후 R/P 복구 뒤 추가 Z 하강 사용 |
+| `post_recovery_final_z_distance_m` | 0.003 | R/P 복구 뒤 Z-only 추가 하강 거리 |
 
-YAML만 수정하면 노트북 코드를 다시 빌드할 필요는 없지만 실행 중인 launch를
-재시작해야 한다. Python/launch/setup.py/package.xml을 수정하면 노트북 패키지를
-다시 빌드한다.
+이 작업공간에서는 YAML data file이 install에 복사될 수 있으므로 YAML만
+수정해도 노트북 패키지를 재빌드하고 launch를 재시작한다. Python/launch/
+setup.py/package.xml 수정도 동일하게 재빌드한다.
 
 상세 문제 원인과 해결 이력은 `docs/TROUBLESHOOTING_KO.md`를 참고한다.

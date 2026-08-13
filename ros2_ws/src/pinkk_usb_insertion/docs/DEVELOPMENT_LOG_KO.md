@@ -256,3 +256,98 @@ Z까지 남은 거리를 다음 P 사이클 입력으로 사용한다. 단일 Z 
 
 상세 원인과 해결 근거는 `TROUBLESHOOTING_KO.md`, 현재 실행 절차와 YAML
 파라미터는 `FROZEN_TARGET_TEST_KO.md`에 분리했다.
+
+## 2026-08-10: 다른 포트 각도 XY 시험과 경로 제약 완화
+
+### 시험 목적
+
+기존에 시험한 포트 자세와 다른 각도에서도 초기 SolvePnP/PBVS 절대 XY로
+이동하고, frozen-target의 flange 좌표 오차 보정이 같은 수준으로 수렴하는지
+확인했다.
+
+### 관측 결과
+
+- 큰 coarse 이동은 초기 XY 오차를 약 73mm에서 7~9mm까지 줄였다. 따라서
+  PBVS 목표 방향과 base XY 변환 자체는 대체로 맞았다.
+- mode 1 coarse 잔여오차 약 8.7mm, mode 0 비교 시험 약 6.9mm가 관측됐다.
+  mode 0이 조금 나았지만 최종 5mm 기준을 안정적으로 만족하지 못해 mode만의
+  문제로 판단하지 않았다.
+- Roll/Pitch 복구 뒤 여러 각도에서 XY가 약 4.5~5mm 수준에 반복 정지했다.
+  하드웨어 반복오차 근처의 추가 refine이 XY보다 Z 여유를 더 소모했다.
+- 잔여오차 18.9mm에서 P gain 0.7이 적용된 약 13.2mm mode 1 refine 목표는
+  전혀 움직이지 않고 `error=32: 역기구학 해 없음`으로 종료됐다.
+
+### 적용한 변경
+
+- frozen-target 로봇좌표 XY 통과 기준을 4mm에서 5mm로 완화했다.
+- 모든 이동 전 경고 대기를 3초에서 1.5초로 줄였다.
+- mode 0을 비교한 뒤 최종 시험 설정은 mode 1로 되돌렸다.
+- coarse와 XY refine의 경로 감시 설정을 `lock_z=false`,
+  `lock_roll_pitch=false`로 변경했다.
+- XY refine은 현재 Z와 현재 자세를 복사하고 X/Y만 바꾸도록 분리했다.
+  이동 정지 후 기존 Roll/Pitch 복구를 실행하고 실제 XY를 다시 측정한다.
+
+현재 초기 정렬 순서는 다음과 같다.
+
+```text
+PBVS coarse (mode 1, path lock 없음)
+→ 정지 후 초기 Roll/Pitch 확인/복구
+→ frozen XY refine (현재 Z/RPY 유지 목표, path lock 없음)
+→ 정지 후 Roll/Pitch 확인/복구
+→ 실제 XY 재측정
+→ Joint6 Yaw
+→ 최종 XY/Roll/Pitch 결합 확인
+```
+
+### 검증
+
+- `pinkk_usb_insertion` 패키지 재빌드 완료
+- configuration/frozen-target 단위 테스트 12개 통과
+- 설치 YAML에서 `warning_delay_seconds=1.5`,
+  `cartesian_mode=1`, `lock_z=false`, `lock_roll_pitch=false` 확인
+
+### 보류 및 미적용
+
+- TCP XYZ를 삽입 pose로 역산하는 절차는 검토했지만 이번 작업에서는 측정하거나
+  제어에 적용하지 않았다. 현재 코드는 기존 scalar TCP Z 시험값 120mm만 쓴다.
+- 최종 Z guard 15mm는 제거하지 않았다. 실측에서 3~5mm Z 명령이 실제
+  9~19.5mm 이동했으므로 포트 내부 10mm 자동 삽입은 현재 범위 밖이다.
+- 다음 XY 개선 후보인 제조사 실제 `cartesian_pose_actual` 기반 refine 시작
+  자세와 8mm 이하 waypoint 분할은 비교 후 되돌려 현재 적용하지 않았다.
+
+## 2026-08-11: guard 이후 최종 Z-only 10mm 단계
+
+- 기존 `execute_full_sequence`는 15mm guard에서 끝나는 안전 시험으로 유지했다.
+- `insert_final_z_once`는 guard 도달 자세에서 XY/Roll/Pitch 보정 없이 Z만
+  상대 10mm 하강한다.
+- `execute_full_sequence_with_final_z`는 초기 정렬, guard 접근, 마지막 Z-only
+  하강과 최종 오차 보고를 한 명령으로 실행한다.
+- 마지막 단계는 Z −10mm task error로 관절 목표를 한 번만 전송하고 실제
+  자세를 한 번 측정한다. XY/Roll/Pitch 추가 보정은 하지 않으며 실제 하강
+  15mm를 하드 한계로 사용한다.
+- 단위 테스트 15개와 노트북 패키지 빌드를 통과했다.
+
+## 2026-08-13: 초기 5장 평균과 Z-R/P-Z 마무리 시험
+
+- frozen-target 실행기의 최근 PBVS target, port Z, keypoint Yaw를 각각 5장
+  모아 초기 고정 목표를 계산한다.
+- 기본 집계 방식을 median으로 변경했다. XY/Z는 성분별 중앙값, Yaw는
+  ±180도 경계를 풀어낸 원형 중앙값을 사용한다. YAML에서 mean 비교도 가능하다.
+- 평균에서 벗어난 최대 편차가 XY 8mm, Z 15mm, Yaw 8도를 넘으면 불안정한
+  관측으로 보고 이동 전에 거부한다.
+- 반복 이동 전 경고 대기는 1.5초에서 0.5초, 이동 후 측정 안정화 대기는
+  0.8초에서 0.5초로 줄였다. 브리지의 실제 정지 확인은 유지한다.
+- 최종 순서를 `Z-only 삽입 → 초기 Roll/Pitch 복구 → Z-only 3mm 추가 하강`
+  으로 확장했다. 추가 3mm는 한 번의 관절 Jacobian 명령으로 실행한다.
+- 비교 시험을 위해 `vertical_z_control_backend=cartesian`을 추가했다. 이
+  설정에서는 통합 실행의 guard 하강, 최종 10mm 및 R/P 뒤 3mm를 모두
+  제조사 `send_coords(mode=1)`로 실행하고 최종 실제 오차를 보고한다.
+- 다음 비교 시험은 같은 통합 흐름에서 backend만 `joint`로 되돌려 Jacobian
+  관절 증분과 제조사 `send_angles` 결과를 비교한다.
+- 이 비교에서는 coarse/XY/Roll-Pitch용 `cartesian_mode`도 0으로 둔다.
+  따라서 Z는 send_angles, 나머지 Cartesian 보정은 send_coords mode 0이다.
+- 고정 자세 비교에서는 `cartesian_mode=1`, Z backend는 `joint`로 복귀하고,
+  초기 실측 R/P 대신 전체 제어 기준을 Roll -180도, Pitch 0도로 고정한다.
+- Pitch 보정 미달을 비교하기 위해 Roll gain은 유지하고 Pitch 오차에만 1.20
+  배율을 적용한다. 최초 coarse 목표는 정확한 고정 R/P이며, 반복 R/P 복구와
+  Z 사이클 및 삽입 후 복구 명령에만 이 배율을 적용한다.

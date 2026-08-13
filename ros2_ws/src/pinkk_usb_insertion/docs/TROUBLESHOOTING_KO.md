@@ -475,10 +475,16 @@ orientation_residual=4.648deg
 
 ### 해결
 
-bridge의 coarse 시험 허용값을 위치 5mm, 자세 5도로 완화하고 진행 로그에
+bridge의 coarse 시험 허용값을 위치 5mm, 자세 6도로 완화하고 진행 로그에
 실제 좌표를 포함했다. frozen 실행기는 coarse 부분 도달과 자세 복구 timeout을
 받아 실제 pose를 다시 검사한다. 최종 삽입 정확도와 이 coarse 허용값은 별도
 프로파일로 분리해야 한다.
+
+추가로 Z-only 판정이 목표 Yaw만 확인하고 전체 자세 변화량을 확인하지 않아,
+TF/get_coords 사이에 작은 Z 차이가 있는 Roll/Pitch 복구 명령을 Z-only로
+오인할 수 있었다. 이 경우 자세 오차가 허용범위 안이어도 일반 완료 조건을
+건너뛰었다. 현재는 목표 전체 회전량도 검사하여 큰 Roll/Pitch 목표는 일반
+자세 이동으로 감시하고, 상위 frozen 실행기가 최종 5도 기준을 다시 확인한다.
 
 ## 11. Z 3~5mm 명령이 실제 9~19mm 이동
 
@@ -503,6 +509,16 @@ bridge의 coarse 시험 허용값을 위치 5mm, 자세 5도로 완화하고 진
 이 조치는 오차를 측정 기반으로 흡수하지만 마지막 15mm를 안전하게 해결하지
 않는다. 정확한 삽입에는 더 나은 관절 서보 인터페이스, 컴플라이언스 또는
 힘/접촉 감지가 필요하다.
+
+현재 시험용으로 guard 도달 후 상대 10mm를 내리는 명시적 Z-only 단계를
+추가했다. 이 단계는 관절 Jacobian에 Z 오차만 입력하고 XY/Roll/Pitch 보정은
+하지 않는다. 실측 오차는 기록만 하며, 누적 실제 하강 15mm를 넘으면 중단한다.
+이 제한도 이동 후 판정이므로 힘/접촉 감지를 대신하지는 못한다.
+
+후속 시험에서는 Z-only 명령 뒤 초기 관측 Roll/Pitch 전체값을 한 번 적용한다.
+해당 자세 복구 중 발생하는 추가 Z 결합 하강은 사용자 시험 요구에 따라 제한
+또는 실패 조건으로 사용하지 않고 측정값만 기록한다. 이전 실측에서 같은 자세
+복구가 Z를 12.6mm 추가 하강시켰으므로 접촉력은 소프트웨어가 보호하지 못한다.
 
 ## 12. Z 하강 후 Roll/Pitch 악화
 
@@ -533,9 +549,11 @@ Cartesian Roll/Pitch 복구는 예를 들어 Roll 9.13→3.65도, Pitch
 ## 13. YAML 수정이 적용되지 않음
 
 소스의 `config/hybrid_runtime.yaml`을 수정해도 이미 실행 중인 노드는 값을
-다시 읽지 않는다. launch를 재시작해야 한다.
+다시 읽지 않는다. 또한 이 작업공간에서는 config data file이 install에
+복사돼 소스와 설치본이 달라질 수 있으므로 패키지를 재빌드한 뒤 launch를
+재시작하는 절차를 기본으로 한다.
 
-- YAML만 수정: 빌드 불필요, launch 재시작 필요
+- YAML 수정: 노트북 패키지 재빌드 후 launch 재시작
 - Python/launch/setup.py/package.xml 수정: 노트북 패키지 재빌드 필요
 - robot bridge Python/YAML 수정: 로봇 PC pull, robot build, bridge 재시작 필요
 
@@ -559,6 +577,10 @@ bash scripts/calibration/robot_build_pinkk.sh
 ros2 param get /pinkk_frozen_target_executor_node joint_vertical_z_step_m
 ros2 param get /pinkk_frozen_target_executor_node joint_vertical_final_z_guard_m
 ```
+
+2026-08-10에는 소스 YAML의 `warning_delay_seconds`가 1.5초였지만 install
+YAML이 3초로 남아 있어 실행 로그가 계속 `3.0초 후 ...`로 출력됐다.
+재빌드 후 install YAML과 실행 파라미터를 모두 확인해 해결했다.
 
 ## 14. ROS domain 전환
 
@@ -599,3 +621,110 @@ ros2 action list
 
 추가로 로봇 PC bridge의 목표 좌표, 실제 진행 로그, 최종 error code와
 노트북 상태 토픽의 한 사이클 전체를 함께 기록한다.
+
+## 17. coarse 부분 도달 7~9mm는 계산 실패가 아님
+
+### 증상
+
+```text
+WARNING: coarse 부분 도달을 수용 ... xy_residual=8.8mm, limit=30.0mm
+coarse 후 로봇좌표 XY 잔여오차=8.7mm, improvement=+64.4mm
+```
+
+### 해석
+
+`maximum_partial_coarse_xy_residual_m=30mm`는 최종 성공 기준이 아니라,
+큰 이동이 timeout으로 끝나도 다음 refine을 시도할 수 있는 부분 도달 기준이다.
+최종 frozen XY 통과 기준은 5mm다. 위 예에서는 초기 오차가 약 73mm였고
+64mm 이상 감소했으므로 PBVS 방향 계산은 맞았지만 제조사 제어가 마지막
+7~9mm를 남긴 상태다.
+
+## 18. mode 0/1 비교로 XY 문제가 해결되지 않음
+
+다른 포트 각도에서 mode 1은 coarse 후 약 8.7mm, mode 0은 약 6.9mm가
+남았다. mode 0이 약간 개선됐지만 둘 다 5mm 기준 밖이므로 보간 mode가
+유일한 원인은 아니다. 최종 설정은 직선 이동 비교를 계속하기 위해 mode 1로
+복귀했다.
+
+다음 항목을 함께 봐야 한다.
+
+- 전체 XYZ/RPY endpoint의 제조사 IK 도달성
+- TF flange pose와 제조사 `get_coords()` pose 차이
+- XY 이동과 초기 Roll/Pitch endpoint의 결합
+- 3~5mm 수준의 관절 반복오차와 백래시
+
+## 19. XY refine의 Z/Roll-Pitch 경로 제약
+
+### 기존 상태
+
+```text
+coarse: lock_z=false, lock_roll_pitch=true
+robot_xy_refine: lock_z=true, lock_roll_pitch=true
+```
+
+이 값은 2026-08-06 frozen-target 혼합 하강 경로를 추가할 때 들어왔다.
+`lock_z=true`는 coarse 도달 Z를 유지하고 기존 pre-approach Z를 다시 요구하지
+않기 위한 것이었고, `lock_roll_pitch=true`는 XY 이동 중 기울어짐을 막기
+위한 것이었다. 그러나 다른 각도에서는 XY와 자세를 동시에 만족시키는 제약이
+도달성을 낮출 가능성이 확인됐다.
+
+### 2026-08-10 변경
+
+```text
+coarse/refine path: lock_z=false, lock_roll_pitch=false
+refine endpoint: 현재 Z와 현재 RPY를 복사하고 X/Y만 변경
+이동 후: 초기 Roll/Pitch 검사/복구 후 실제 XY 재측정
+```
+
+경로 감시를 해제해도 `send_coords()`에는 XYZ/RPY 여섯 좌표가 모두 전달된다.
+따라서 `lock=false`는 IK가 필요 없다는 뜻이 아니며 endpoint 또는 mode 1
+중간 경로에 해가 없으면 여전히 error 32가 발생한다.
+
+## 20. 큰 XY refine이 즉시 error 32로 무동작
+
+### 증상
+
+```text
+robot_xy_refine 1/3: to_frozen_target=18.9mm
+... mode=1, lock_z=False, lock_roll_pitch=False
+Cartesian 명령 후 로봇 무동작 ... error=32: 역기구학 해 없음
+```
+
+### 원인 판단
+
+`to_frozen_target`은 남은 전체 거리다. 기본 P gain 0.7이 적용돼 이 사례의
+실제 XY endpoint 이동은 약 13.2mm다. 약 X=247mm, Z=220mm에서 현재
+전체 RPY를 포함한 mode 1 경로 해를 제조사 제어기가 찾지 못해 시작부터
+움직이지 않았다. 이전 6.9~8.7mm refine보다 큰 이동이므로 같은 위치에서
+전에 움직였다는 사실과 모순되지 않는다.
+
+### 다음 개선 후보
+
+- refine 시작 pose를 TF가 아니라 제조사 `/robot_arm/cartesian_pose_actual`로
+  구성해 `send_coords()` 좌표계와 일치시킨다.
+- 1회 refine 상한을 20mm에서 약 8mm로 낮춰 큰 잔여오차를 waypoint로
+  나눈다.
+- 각 waypoint 정지 후 실제 XY와 error code를 확인한다.
+
+이 후보들은 비교 시험 후 되돌렸으며 현재 제어에는 적용하지 않는다.
+
+### 2026-08-11 actual Z/RPY endpoint 적용
+
+동일 정지 자세에서 TF와 제조사 actual의 XY 차이는 약 0.5mm 이내였지만 Z는
+약 3.6mm 차이 났고, 실패한 refine에서는 목표 Z보다 실제 Z가 약 9.5mm
+낮았다. 따라서 상대 ΔXY/8mm waypoint는 사용하지 않고, frozen 절대 X/Y는
+유지하면서 refine endpoint의 Z/R/P/Yaw만 최신 제조사 actual pose로 구성한다.
+이동 후 초기 Roll/Pitch 복구와 TF XY 재측정은 기존대로 수행한다.
+
+## 21. TCP 측정과 최종 10mm 자동 삽입 보류
+
+삽입 상태의 포트 base pose와 실제 flange `get_coords()` pose로
+`T_flange_tcp = inverse(T_base_flange) × T_base_tip`을 계산하는 절차를
+검토했다. 그러나 이번 시험에서는 TCP XYZ를 측정하거나 코드에 적용하지
+않았다. 현재 제어는 scalar `final_tcp_offset_z_m=0.120`만 사용한다.
+
+최종 Z guard를 제거하는 변경도 적용하지 않았다. 기존 실측에서 3mm 관절
+Z 명령이 약 9.5~11.8mm, 5mm Cartesian 명령이 약 18~19.5mm 이동했다.
+접촉/힘 감지 없이 포트 입구 아래 10mm를 자동 목표로 쓰면 소프트웨어가
+초과 이동을 사후에만 발견하므로 손상 위험이 있다. 현재 자동 경로는 최종
+목표 15mm 위에서 계속 종료한다.
