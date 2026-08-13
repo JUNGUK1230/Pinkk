@@ -112,29 +112,32 @@ def is_z_dominant_recovery_motion(
     planned_xy_distance_m: float,
     planned_z_m: float,
     planned_yaw_deg: float,
+    planned_orientation_change_deg: float,
     position_tolerance_m: float,
     orientation_tolerance_deg: float,
     minimum_z_motion_m: float = 0.005,
 ) -> bool:
-    """TF/get_coords 미세 차이를 허용해 의도된 Z-only 복구를 식별한다."""
-    xy, z, yaw, xy_tolerance, yaw_tolerance, minimum_z = _finite(
+    """Roll/Pitch 이동과 혼동하지 않고 의도된 Z-only 복구를 식별한다."""
+    xy, z, yaw, rotation, xy_tolerance, angle_tolerance, minimum_z = _finite(
         (
             planned_xy_distance_m,
             planned_z_m,
             planned_yaw_deg,
+            planned_orientation_change_deg,
             position_tolerance_m,
             orientation_tolerance_deg,
             minimum_z_motion_m,
         ),
-        6,
+        7,
         'Z-only 판정값',
     )
-    if xy_tolerance < 0.0 or yaw_tolerance < 0.0 or minimum_z <= 0.0:
+    if xy_tolerance < 0.0 or angle_tolerance < 0.0 or minimum_z <= 0.0:
         raise ValueError('Z-only 판정 허용값은 유효한 양수여야 합니다')
     return (
         abs(z) >= minimum_z
         and abs(xy) <= xy_tolerance
-        and abs(yaw) <= yaw_tolerance
+        and abs(yaw) <= angle_tolerance
+        and abs(rotation) <= angle_tolerance
     )
 
 

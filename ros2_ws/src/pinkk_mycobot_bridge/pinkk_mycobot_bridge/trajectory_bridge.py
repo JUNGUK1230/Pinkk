@@ -917,6 +917,7 @@ class MyCobotTrajectoryBridge(Node):
                 planned_distance,
                 planned_z_m,
                 planned_yaw_deg,
+                rotation,
                 self._cartesian_position_tolerance,
                 self._cartesian_orientation_tolerance,
                 self._cartesian_free_z_minimum_motion,

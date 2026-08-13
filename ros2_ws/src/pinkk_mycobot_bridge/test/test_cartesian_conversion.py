@@ -86,6 +86,7 @@ def test_z_recovery_allows_small_tf_and_hardware_pose_difference() -> None:
         planned_xy_distance_m=0.0012,
         planned_z_m=0.030,
         planned_yaw_deg=0.4,
+        planned_orientation_change_deg=0.5,
         position_tolerance_m=0.003,
         orientation_tolerance_deg=3.0,
     )
@@ -96,6 +97,7 @@ def test_z_recovery_rejects_meaningful_xy_motion() -> None:
         planned_xy_distance_m=0.006,
         planned_z_m=0.030,
         planned_yaw_deg=0.4,
+        planned_orientation_change_deg=0.5,
         position_tolerance_m=0.003,
         orientation_tolerance_deg=3.0,
     )
@@ -106,6 +108,7 @@ def test_z_recovery_requires_meaningful_z_motion() -> None:
         planned_xy_distance_m=0.001,
         planned_z_m=0.003,
         planned_yaw_deg=0.4,
+        planned_orientation_change_deg=0.5,
         position_tolerance_m=0.003,
         orientation_tolerance_deg=3.0,
     )
@@ -116,7 +119,21 @@ def test_z_recovery_accepts_partial_final_step_with_lower_threshold() -> None:
         planned_xy_distance_m=0.001,
         planned_z_m=0.002,
         planned_yaw_deg=0.4,
+        planned_orientation_change_deg=0.5,
         position_tolerance_m=0.003,
         orientation_tolerance_deg=3.0,
+        minimum_z_motion_m=0.001,
+    )
+
+
+def test_z_recovery_rejects_roll_pitch_correction() -> None:
+    """작은 TF Z 차이가 있어도 큰 R/P 명령을 Z-only로 오인하지 않는다."""
+    assert not is_z_dominant_recovery_motion(
+        planned_xy_distance_m=0.001,
+        planned_z_m=0.004,
+        planned_yaw_deg=0.2,
+        planned_orientation_change_deg=8.0,
+        position_tolerance_m=0.005,
+        orientation_tolerance_deg=6.0,
         minimum_z_motion_m=0.001,
     )
