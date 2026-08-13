@@ -9,10 +9,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("camera", default_value="0"),
         DeclareLaunchArgument(
             "intrinsics_path",
-            default_value=(
-                "/home/jetcobot/Pinkk-robot-arm/src/robot_arm/robot_camera/"
-                "camera_calibration/results/intrinsics.npz"
-            ),
+            default_value="",
         ),
         DeclareLaunchArgument("show_preview", default_value="true"),
     ]

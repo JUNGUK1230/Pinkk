@@ -30,13 +30,13 @@ pinkk_mycobot_bridge
 로봇 PC와 노트북 모두 다음 값을 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=36
+export ROS_DOMAIN_ID=38
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 ```
 
-스크립트의 기본 Domain은 36입니다.
+스크립트의 Domain은 38로 고정되어 있습니다.
 
 ## 3. 로봇 PC 실행
 
@@ -156,7 +156,7 @@ bash scripts/calibration/laptop_build_pinkk.sh
 ### `/joint_states`가 보이지 않음
 
 1. 로봇 PC bridge가 살아 있는지 확인합니다.
-2. 두 PC의 Domain 36과 RMW를 맞춥니다.
+2. 두 PC의 Domain 38과 RMW를 맞춥니다.
 3. 오래된 ROS daemon을 종료한 뒤 다시 확인합니다.
 
 ```bash

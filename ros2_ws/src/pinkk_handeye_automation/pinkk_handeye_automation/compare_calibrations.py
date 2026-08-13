@@ -237,6 +237,7 @@ class CalibrationComparator(Node):
         self.declare_parameter("settle_seconds", 1.5)
         self.declare_parameter("detection_timeout_seconds", 8.0)
         self.declare_parameter("max_tf_age_seconds", 0.4)
+        self.declare_parameter("tf_sync_delay_seconds", 0.2)
         self.declare_parameter("motion_seconds", 4.0)
         self.declare_parameter("motion_retry_count", 2)
         self.declare_parameter("measurement_count", 10)
@@ -267,6 +268,9 @@ class CalibrationComparator(Node):
             self.get_parameter("detection_timeout_seconds").value
         )
         self.max_tf_age = float(self.get_parameter("max_tf_age_seconds").value)
+        self.tf_sync_delay = float(
+            self.get_parameter("tf_sync_delay_seconds").value
+        )
         self.motion_seconds = float(self.get_parameter("motion_seconds").value)
         self.motion_retry_count = int(self.get_parameter("motion_retry_count").value)
         self.measurement_count = int(self.get_parameter("measurement_count").value)
@@ -284,6 +288,11 @@ class CalibrationComparator(Node):
             )
         if self.measurement_count < 1:
             raise ValueError("measurement_count는 1 이상이어야 합니다")
+        if not 0.0 < self.tf_sync_delay < self.max_tf_age:
+            raise ValueError(
+                "tf_sync_delay_seconds는 0보다 크고 "
+                "max_tf_age_seconds보다 작아야 합니다"
+            )
         if not self.old_path.is_file() or not self.new_path.is_file():
             raise FileNotFoundError(
                 f"calibration 파일을 확인하세요: old={self.old_path}, new={self.new_path}"
@@ -293,6 +302,7 @@ class CalibrationComparator(Node):
 
         self._state_lock = threading.Lock()
         self._latest_joints: list[float] | None = None
+        self._last_tf_rejection_log = 0.0
         self.create_subscription(JointState, "/joint_states", self._joint_callback, 10)
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0), node=self)
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
@@ -441,17 +451,30 @@ class CalibrationComparator(Node):
     def _raw_transform_pair(
         self,
     ) -> tuple[np.ndarray, np.ndarray, int] | None:
+        # The camera TF is published faster than the robot TF. Looking up the
+        # robot chain at the newest camera stamp therefore frequently asks TF2
+        # to extrapolate into the future. Query both chains at the same,
+        # slightly delayed time so that both samples are already buffered.
+        sample_time = self.get_clock().now() - Duration(
+            seconds=self.tf_sync_delay
+        )
         try:
             camera_board = self._tf_buffer.lookup_transform(
-                CAMERA_FRAME, BOARD_FRAME, Time()
+                CAMERA_FRAME, BOARD_FRAME, sample_time
             )
-            stamp = Time.from_msg(camera_board.header.stamp)
-            # 카메라 검출 시각의 로봇 자세를 사용해 두 센서 값을 시간 정렬한다.
             base_flange = self._tf_buffer.lookup_transform(
-                BASE_FRAME, EFFECTOR_FRAME, stamp
+                BASE_FRAME, EFFECTOR_FRAME, sample_time
             )
-        except TransformException:
+        except TransformException as error:
+            now = time.monotonic()
+            if now - self._last_tf_rejection_log >= 2.0:
+                self._last_tf_rejection_log = now
+                self.get_logger().warning(
+                    "동일 시각 TF 조회 실패 "
+                    f"(delay={self.tf_sync_delay:.3f}s): {error}"
+                )
             return None
+        stamp = Time.from_msg(camera_board.header.stamp)
         age = abs((self.get_clock().now() - stamp).nanoseconds * 1e-9)
         camera_values = (
             camera_board.transform.translation.x,
@@ -467,6 +490,14 @@ class CalibrationComparator(Node):
             or camera_board.transform.translation.z <= 0.0
             or not all(math.isfinite(value) for value in camera_values)
         ):
+            now = time.monotonic()
+            if now - self._last_tf_rejection_log >= 2.0:
+                self._last_tf_rejection_log = now
+                self.get_logger().warning(
+                    "TF 측정값 거부: "
+                    f"age={age:.3f}s/{self.max_tf_age:.3f}s, "
+                    f"board_z={camera_board.transform.translation.z:.4f}m"
+                )
             return None
         return (
             transform_message_to_matrix(base_flange.transform),

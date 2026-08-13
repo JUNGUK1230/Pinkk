@@ -20,7 +20,7 @@ port_model:
 pose_estimation:
   input_mode: yolo_topic
   target_class_name: usb_port
-  target_detection_id: ''
+  target_detection_id: ""
   minimum_object_confidence: 0.70
   minimum_keypoint_confidence: 0.60
   minimum_depth_m: 0.05

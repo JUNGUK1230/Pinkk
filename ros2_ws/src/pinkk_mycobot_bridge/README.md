@@ -10,7 +10,7 @@ MoveIt의 `FollowJointTrajectory` 목표를 로봇에 전달하는 구성입니�
 노트북과 로봇 PC에서 동일한 ROS 네트워크 설정을 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=36
+export ROS_DOMAIN_ID=38
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ```
@@ -154,6 +154,12 @@ send_angles 호출 소요시간과 응답
 ros2 launch pinkk_mycobot_bridge real_execution.launch.py
 ```
 
+기본 설정은 bridge 시작 3초 후 그리퍼에 `value=0`, `speed=20`을 한 번
+보내 완전 닫힘 상태로 고정합니다. PyMyCobot 기준으로 `0`은 완전
+닫힘, `100`은 완전 열림입니다. 경고 대기 중 손과 물체를 치워야 하며,
+이 명령은 이동 중 반복하지 않습니다. 자동 고정이 필요 없으면
+`gripper_initialize_on_startup: false`로 끈니다.
+
 이 구현은 중간 trajectory point를 시간에 맞춰 재생하지 않고 마지막 관절 자세만
 전달합니다. 캘리브레이션용 자세 이동에는 사용할 수 있지만, MoveIt이 계획한
 장애물 회피 경로를 실제 로봇이 그대로 따라가는 실행기는 아닙니다.
@@ -172,10 +178,12 @@ ROS의 meter/quaternion은 로봇의 mm/[rx, ry, rz] degree로 변환하며, Han
 - 이동량과 회전량이 각각 10.5 mm, 2.1도 제한 이내인가?
 - 요청한 speed와 mode가 유효한가?
 
-PBVS는 `lock_z=true`, `lock_roll_pitch=true`로 요청합니다. 실행 중 10 Hz로
-`get_coords()`를 읽어 시작 Z에서 2 mm, 시작 Roll/Pitch에서 3도 이상 벗어나면
-`stop()` 후 action을 실패 처리합니다. 최종 허용오차는 위치 0.5 mm, 자세 1도이며
-15초 안에 도달하지 못해도 정지합니다. 이 감시는 명령 후 이탈을 감지하는
+PBVS는 `lock_z=true`, `lock_roll_pitch=true`로 요청합니다. 실행 중
+`get_coords()`를 읽어 요청한 Z/Roll/Pitch lock과 목표 도달을 감시합니다.
+현재 coarse/pre-approach 설정은 위치 5 mm, bridge 자세 6도로 action을
+종료한 뒤, 상위 frozen-target 실행기가 실제 자세를 5도 기준으로
+다시 판정합니다. 실제 삽입 전에는 별도 프로파일에서 이 허용값을
+줄여야 합니다. 이 감시는 명령 후 이탈을 감지하는
 소프트웨어 보호이며, 펌웨어 수준의 실시간 안전 제어를 대신하지 않습니다.
 
 Cartesian action도 같은 serial 객체를 사용합니다. joint trajectory action과

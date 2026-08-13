@@ -40,8 +40,10 @@ cd ~/Pinkk-robot-arm
 ./scripts/run_robot_bridge.sh
 ```
 
-이 명령은 통합 trajectory bridge를 시작하고 2초 뒤 초기 관측 자세로
-한 번 복귀한다. bridge는 이후 세션 동안 계속 실행된다.
+이 명령은 통합 trajectory bridge를 시작하고 2초 뒤 초기 관측 자세
+복귀 노드를 시작합니다. 현재 bridge 설정은 3초 경고 후 그리퍼를
+`value=0`, `speed=20`으로 한 번 닫아 고정하며, bridge는 이후 세션
+동안 계속 실행됩니다.
 
 노트북:
 

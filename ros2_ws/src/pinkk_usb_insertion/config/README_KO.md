@@ -61,6 +61,9 @@ bash scripts/calibration/laptop_handeye_data.sh activate RUN
 스위치를 관리합니다.
 
 `pose_estimation`에는 YOLO 검출 선택 기준도 포함합니다.
+현재 SolvePnP 포트 모델은 YOLO keypoint 라벨링 순서
+`LEFT_TOP → RIGHT_TOP → RIGHT_BOTTOM → LEFT_BOTTOM`을 사용하며,
+실측 외곽 크기는 장축 18 mm × 단축 10 mm입니다.
 
 ```yaml
 target_class_name: usb_port

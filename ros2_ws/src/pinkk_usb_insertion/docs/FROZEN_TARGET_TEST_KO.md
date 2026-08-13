@@ -35,13 +35,15 @@ target_flange_z
 = frozen_port_z + final_tcp_offset_z_m - final_port_insertion_depth_m
 ```
 
-현재 YAML 시험값은 flange에서 USB 끝까지 100mm, 삽입 깊이 10mm다.
+현재 실측값은 flange에서 USB-A 끝단까지 120mm이며 삽입 깊이는 10mm다.
+USB-A와 flange의 X/Y 방향은 동일하고 X/Y 편심은 0으로 가정한다.
 
 ```text
-target_flange_z = frozen_port_z + 90mm
+target_flange_z = frozen_port_z + 110mm
 ```
 
-실제 충전기를 장착한 뒤 반드시 `final_tcp_offset_z_m`을 다시 측정해야 한다.
+충전기를 다시 장착하거나 고정 위치가 변하면 `final_tcp_offset_z_m`을
+다시 측정해야 한다.
 
 ## 전체 제어 순서
 
@@ -83,9 +85,10 @@ URDF Jacobian 관절 Z 하강(send_angles)
 
 - XY/Roll-Pitch 보정 중 Z 결합 이동 5mm 초과는 경고로 기록한다.
 - 한 사이클 총하강 30mm 초과 또는 목표 Z 아래로 이동하면 중단한다.
-- 목표 Z까지 15mm 이내인 마지막 사이클에서도 초기 Roll/Pitch를 확인하고
-  필요하면 보정한 뒤, 다음 Z 사이클만 차단한다.
-- 15mm guard 이후 마지막 삽입은 이 명령의 범위가 아니다.
+- 목표 Z까지 15mm 이내에서도 Roll/Pitch가 5도를 넘으면 Cartesian
+  자세 보정은 수행한다. 다음 Z 사이클은 차단한다.
+- 15mm guard 이후에는 `insert_step_once`를 한 번씩 승인해 0.5mm씩
+  삽입한다. 힘/접촉 센서가 없으므로 자동 반복하지 않는다.
 
 3mm 명령에 실제 약 9.5mm, Cartesian 자세 복구 중 약 11.9mm의 Z 결합
 이동이 관측됐기 때문에 guard를 임의로 0으로 낮추면 안 된다.
@@ -172,6 +175,17 @@ EXECUTED: ... 다음 descend_joint_z_once 승인 대기
 EXECUTED: 자동 혼합 P제어가 포트 기반 최종 Z 안전 여유에 도달했습니다
 ```
 
+TCP 측정값과 정렬을 확인한 뒤 YAML의 `enable_final_insertion`을
+`true`로 바꾸고 launch를 재시작한다. 단발 삽입 명령은 다음과 같다.
+
+```bash
+ros2 topic pub --once /robot_arm/frozen_target/command \
+  std_msgs/msg/String "{data: insert_step_once}"
+```
+
+각 명령 후 실제 USB 접촉·변형과 status의 `actual`, `remaining`, `xy`,
+`roll`, `pitch`를 직접 확인한 뒤만 다음 0.5mm를 승인한다.
+
 `REJECTED`가 나오면 바로 재전송하지 말고 로봇 PC bridge 로그와 상태 토픽의
 마지막 한 사이클 전체를 확인한다.
 
@@ -182,8 +196,10 @@ EXECUTED: 자동 혼합 P제어가 포트 기반 최종 Z 안전 여유에 도�
 | 파라미터 | 현재값 | 의미 |
 |---|---:|---|
 | `absolute_pre_approach_height_m` | 0.15 | 포트 위 초기 coarse 높이 |
-| `final_tcp_offset_z_m` | 0.100 | flange에서 USB 끝까지 거리 |
+| `final_tcp_offset_z_m` | 0.120 | flange에서 USB-A 끝단까지 실측 거리 |
 | `final_port_insertion_depth_m` | 0.010 | 목표 삽입 깊이 |
+| `enable_final_insertion` | false | 최종 단발 삽입 안전 스위치 |
+| `final_insertion_step_m` | 0.0005 | 승인 1회당 삽입 명령량 |
 | `joint_vertical_z_kp` | 0.40 | 남은 Z 오차 비율 |
 | `joint_vertical_z_step_m` | 0.003 | 관절 Z 1회 명령 상한 |
 | `joint_vertical_max_joint_step_deg` | 2.0 | 관절별 계산 증분 상한 |

@@ -154,6 +154,6 @@ JSON은 다음 값을 기록합니다.
 - 로봇 PC ChArUco TF
 - 노트북 MoveIt/RViz
 - 자동 수집 시에만 Easy Handeye2 서버
-- Domain 36과 동일한 Fast DDS 설정
+- Domain 38과 동일한 Fast DDS 설정
 
 비교 중에는 Easy Handeye2 서버와 Hand-eye static TF publisher를 종료합니다.

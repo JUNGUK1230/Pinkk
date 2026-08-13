@@ -134,8 +134,15 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('final_z_p_max_xy_step_m', 0.005)
         self.declare_parameter('final_z_p_xy_deadband_m', 0.004)
         self.declare_parameter('final_z_p_use_port_target', True)
-        self.declare_parameter('final_tcp_offset_z_m', 0.100)
+        self.declare_parameter('final_tcp_offset_z_m', 0.120)
         self.declare_parameter('final_port_insertion_depth_m', 0.010)
+        # 힘 센서가 없는 마지막 구간은 자동 반복하지 않고 명시적인 단발
+        # 승인으로만 이동한다.
+        self.declare_parameter('enable_final_insertion', False)
+        self.declare_parameter('final_insertion_step_m', 0.0005)
+        self.declare_parameter('final_insertion_speed', 1)
+        self.declare_parameter('final_insertion_maximum_actual_step_m', 0.002)
+        self.declare_parameter('final_insertion_target_tolerance_m', 0.0005)
         self.declare_parameter('final_z_p_target_z_m', 0.190)
         self.declare_parameter('final_z_p_max_cycles', 12)
         self.declare_parameter('enable_initial_yaw', True)
@@ -174,7 +181,9 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter(
             'joint_vertical_hard_maximum_descent_m', 0.015
         )
-        self.declare_parameter('joint_vertical_xy_correction_deadband_m', 0.003)
+        self.declare_parameter(
+            'joint_vertical_xy_correction_deadband_m', 0.003
+        )
         self.declare_parameter(
             'joint_vertical_roll_pitch_correction_deadband_deg', 5.0
         )
@@ -361,6 +370,25 @@ class FrozenTargetExecutorNode(Node):
         self._final_port_insertion_depth = float(
             self.get_parameter('final_port_insertion_depth_m').value
         )
+        self._enable_final_insertion = bool(
+            self.get_parameter('enable_final_insertion').value
+        )
+        self._final_insertion_step = float(
+            self.get_parameter('final_insertion_step_m').value
+        )
+        self._final_insertion_speed = int(
+            self.get_parameter('final_insertion_speed').value
+        )
+        self._final_insertion_maximum_actual_step = float(
+            self.get_parameter(
+                'final_insertion_maximum_actual_step_m'
+            ).value
+        )
+        self._final_insertion_target_tolerance = float(
+            self.get_parameter(
+                'final_insertion_target_tolerance_m'
+            ).value
+        )
         self._final_z_p_target_z = float(
             self.get_parameter('final_z_p_target_z_m').value
         )
@@ -544,6 +572,7 @@ class FrozenTargetExecutorNode(Node):
         self._aligned_hardware_observation_transform = None
         self._aligned_hardware_final_target_z: float | None = None
         self._alignment_ready_for_descent = False
+        self._insertion_ready = False
         self._executing = False
         self._lock = threading.Lock()
 
@@ -617,7 +646,8 @@ class FrozenTargetExecutorNode(Node):
             '초기 관측 고정목표 실행기: '
             '실행='
             f'{mode}, commands=execute_once/yaw_only_once/'
-            'descend_joint_z_once/descend_joint_z_to_guard, '
+            'descend_joint_z_once/descend_joint_z_to_guard/'
+            'insert_step_once, '
             f'p_control={self._proportional_control}, '
             'hardware_pose_max_age='
             f'{self._hardware_pose_maximum_age:.1f}s, '
@@ -640,6 +670,10 @@ class FrozenTargetExecutorNode(Node):
             'coupled_validation_cycles='
             f'{self._final_coupled_validation_max_cycles}, '
             f'final_z_descent={self._enable_final_z_descent}, '
+            f'final_insertion={self._enable_final_insertion}, '
+            'insertion_depth='
+            f'{self._final_port_insertion_depth * 1000.0:.1f}mm, '
+            f'insertion_step={self._final_insertion_step * 1000.0:.1f}mm, '
             f'z_step={self._final_z_descent_step * 1000.0:.1f}mm, '
             f'z_speed={self._final_z_descent_speed}, '
             f'z_mode={self._final_z_descent_cartesian_mode}, '
@@ -802,6 +836,23 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError(
                 '삽입 깊이는 flange-to-tip TCP Z보다 클 수 없습니다'
             )
+        if not 0.0001 <= self._final_insertion_step <= 0.001:
+            raise ValueError('final_insertion_step_m은 0.1~1.0mm여야 합니다')
+        if not 1 <= self._final_insertion_speed <= 10:
+            raise ValueError('final_insertion_speed는 1~10이어야 합니다')
+        if not (
+            self._final_insertion_step
+            <= self._final_insertion_maximum_actual_step
+            <= 0.003
+        ):
+            raise ValueError(
+                'final_insertion_maximum_actual_step_m은 명령 step 이상, '
+                '3mm 이하여야 합니다'
+            )
+        if not 0.0001 <= self._final_insertion_target_tolerance <= 0.001:
+            raise ValueError(
+                'final_insertion_target_tolerance_m은 0.1~1.0mm여야 합니다'
+            )
         if not (
             self._final_z_descent_minimum_z
             <= self._final_z_p_target_z
@@ -906,7 +957,11 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError(
                 'joint_vertical_minimum_tilt_improvement_deg는 0~5도여야 합니다'
             )
-        if not 0.0005 <= self._joint_vertical_maximum_correction_z_drift <= 0.020:
+        if not (
+            0.0005
+            <= self._joint_vertical_maximum_correction_z_drift
+            <= 0.020
+        ):
             raise ValueError(
                 'joint_vertical_maximum_correction_z_drift_m 범위가 '
                 '잘못됐습니다'
@@ -989,11 +1044,12 @@ class FrozenTargetExecutorNode(Node):
             'yaw_only_once',
             'descend_joint_z_once',
             'descend_joint_z_to_guard',
+            'insert_step_once',
         ):
             self._publish(
                 'REJECTED: 허용된 명령은 execute_once, yaw_only_once, '
                 'descend_joint_z_once, '
-                'descend_joint_z_to_guard입니다'
+                'descend_joint_z_to_guard, insert_step_once입니다'
             )
             return
         with self._lock:
@@ -1010,6 +1066,8 @@ class FrozenTargetExecutorNode(Node):
                 self._execute_descend_joint_z_once()
             elif command == 'descend_joint_z_to_guard':
                 self._execute_descend_joint_z_to_guard()
+            elif command == 'insert_step_once':
+                self._execute_insert_step_once()
             else:
                 self._execute_once()
         except Exception as error:
@@ -1037,6 +1095,7 @@ class FrozenTargetExecutorNode(Node):
 
     def _execute_once(self) -> None:
         self._alignment_ready_for_descent = False
+        self._insertion_ready = False
         self._aligned_frozen_xy = None
         self._aligned_observation_transform = None
         self._aligned_port_z = None
@@ -1789,7 +1848,10 @@ class FrozenTargetExecutorNode(Node):
                 '이번 XY/Roll/Pitch 측정·보정은 계속합니다: '
                 f'overshoot={overshoot * 1000.0:.1f}mm'
             )
-        if max(roll_error, pitch_error) > self._joint_vertical_roll_pitch_hard_limit:
+        if (
+            max(roll_error, pitch_error)
+            > self._joint_vertical_roll_pitch_hard_limit
+        ):
             raise RuntimeError(
                 'Z 하강 직후 초기 Roll/Pitch 하드 한계 초과: '
                 f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg, '
@@ -1944,7 +2006,8 @@ class FrozenTargetExecutorNode(Node):
                 '초과했습니다: '
                 f'total={total_descent * 1000.0:.1f}mm, '
                 'limit='
-                f'{self._joint_vertical_hard_maximum_cycle_descent * 1000.0:.1f}mm'
+                '%.1fmm'
+                % (self._joint_vertical_hard_maximum_cycle_descent * 1000.0)
             )
         if final_xy > self._joint_vertical_xy_tolerance:
             raise RuntimeError(
@@ -1966,6 +2029,7 @@ class FrozenTargetExecutorNode(Node):
             )
         if final_remaining_z <= self._joint_vertical_final_z_guard:
             self._alignment_ready_for_descent = False
+            self._insertion_ready = True
             self._publish(
                 'EXECUTED: 혼합 P제어로 포트 기반 최종 Z 안전 여유 '
                 '구간까지 도달했습니다: '
@@ -2030,14 +2094,134 @@ class FrozenTargetExecutorNode(Node):
                 f'remaining={final_remaining * 1000.0:.1f}mm'
             )
         self._alignment_ready_for_descent = False
+        self._insertion_ready = True
         self._publish(
             'EXECUTED: 자동 혼합 P제어가 포트 기반 최종 Z 안전 여유에 '
             '도달했습니다: '
             f'cycles={completed}, start_remaining='
             f'{start_remaining * 1000.0:.1f}mm, '
             f'final_remaining={final_remaining * 1000.0:.1f}mm. '
-            '마지막 삽입 구간은 자동 실행하지 않습니다'
+            '마지막 삽입은 insert_step_once 승인으로만 실행합니다'
         )
+
+    def _execute_insert_step_once(self) -> None:
+        """10mm 최종 목표를 향해 최대 0.5mm 단발 삽입한다."""
+        if not self._enable_final_insertion:
+            raise ValueError('enable_final_insertion=false')
+        if (
+            not self._insertion_ready
+            or self._aligned_hardware_xy is None
+            or self._aligned_hardware_observation_transform is None
+            or self._aligned_hardware_final_target_z is None
+        ):
+            raise ValueError(
+                'descend_joint_z_to_guard로 안전 여유에 도달한 '
+                '정렬 결과가 먼저 필요합니다'
+            )
+
+        current = self._current_hardware_transform()
+        current_z = float(current[2, 3])
+        remaining = current_z - self._aligned_hardware_final_target_z
+        if remaining > self._joint_vertical_final_z_guard:
+            self._insertion_ready = False
+            raise RuntimeError(
+                '삽입 시작 위치가 Z guard 밖입니다: '
+                f'remaining={remaining * 1000.0:.1f}mm'
+            )
+        if remaining <= self._final_insertion_target_tolerance:
+            self._insertion_ready = False
+            self._publish(
+                'EXECUTED: 10mm 삽입 목표에 이미 도달했습니다: '
+                f'remaining={remaining * 1000.0:.2f}mm'
+            )
+            return
+
+        xy_error = xy_residual_m(current[:2, 3], self._aligned_hardware_xy)
+        roll_error, pitch_error = self._roll_pitch_errors(
+            current,
+            self._aligned_hardware_observation_transform,
+        )
+        if xy_error > self._joint_vertical_xy_tolerance:
+            raise RuntimeError(
+                f'삽입 전 XY 허용오차 초과: {xy_error * 1000.0:.1f}mm'
+            )
+        if (
+            max(roll_error, pitch_error)
+            > self._joint_vertical_roll_pitch_tolerance
+        ):
+            raise RuntimeError(
+                '삽입 전 Roll/Pitch 허용오차 초과: '
+                f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg'
+            )
+
+        command_step = min(self._final_insertion_step, remaining)
+        target = current.copy()
+        target[2, 3] = current_z - command_step
+        self._publish(
+            '단발 삽입 승인 실행: '
+            f'command={command_step * 1000.0:.2f}mm, '
+            f'remaining={remaining * 1000.0:.2f}mm, '
+            'force/contact sensing은 없습니다'
+        )
+        self._send_cartesian_transform(
+            target,
+            'USB 10mm 단발 삽입',
+            lock_z=False,
+            lock_roll_pitch=True,
+            speed=self._final_insertion_speed,
+            mode=self._final_z_descent_cartesian_mode,
+        )
+        time.sleep(self._settle)
+        actual = self._current_hardware_transform()
+        actual_step = current_z - float(actual[2, 3])
+        final_remaining = float(
+            actual[2, 3] - self._aligned_hardware_final_target_z
+        )
+        final_xy = xy_residual_m(actual[:2, 3], self._aligned_hardware_xy)
+        final_roll, final_pitch = self._roll_pitch_errors(
+            actual,
+            self._aligned_hardware_observation_transform,
+        )
+        self._publish(
+            '단발 삽입 실측: '
+            f'command={command_step * 1000.0:.2f}mm, '
+            f'actual={actual_step * 1000.0:.2f}mm, '
+            f'remaining={final_remaining * 1000.0:.2f}mm, '
+            f'xy={final_xy * 1000.0:.2f}mm, '
+            f'roll={final_roll:.2f}deg, pitch={final_pitch:.2f}deg'
+        )
+        if actual_step <= 0.0:
+            self._insertion_ready = False
+            raise RuntimeError('삽입 명령 후 실제 하강이 확인되지 않았습니다')
+        if actual_step > self._final_insertion_maximum_actual_step:
+            self._insertion_ready = False
+            raise RuntimeError(
+                '단발 삽입 실제 이동량이 하드 한계를 초과했습니다: '
+                f'actual={actual_step * 1000.0:.2f}mm'
+            )
+        if final_remaining < -self._final_insertion_target_tolerance:
+            self._insertion_ready = False
+            raise RuntimeError(
+                '10mm 삽입 목표를 초과했습니다: '
+                f'overshoot={-final_remaining * 1000.0:.2f}mm'
+            )
+        if (
+            final_xy > self._joint_vertical_xy_tolerance
+            or max(final_roll, final_pitch)
+            > self._joint_vertical_roll_pitch_tolerance
+        ):
+            self._insertion_ready = False
+            raise RuntimeError('삽입 후 XY 또는 Roll/Pitch 허용오차 초과')
+
+        reached = final_remaining <= self._final_insertion_target_tolerance
+        self._insertion_ready = not reached
+        if reached:
+            self._publish('EXECUTED: USB 10mm 삽입 목표 도달')
+        else:
+            self._publish(
+                'EXECUTED: 단발 삽입 완료. 상태를 직접 '
+                '확인한 뒤 insert_step_once를 다시 승인하세요'
+            )
 
     def _execute_descend_z_p_to_target(self) -> None:
         """YAML의 목표 Z까지 안전검사를 거쳐 P제어 하강을 반복한다."""

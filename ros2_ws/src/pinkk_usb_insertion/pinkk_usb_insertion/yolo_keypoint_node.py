@@ -24,7 +24,7 @@ class YoloKeypointNode(Node):
     def __init__(self) -> None:
         """Pose 모델과 ROS 입출력 토픽을 준비한다."""
         super().__init__('pinkk_yolo_keypoint_node')
-        self.declare_parameter('model_path', '/home/juwon/Desktop/usb_01.pt')
+        self.declare_parameter('model_path', '~/Downloads/usb_01.pt')
         self.declare_parameter('image_size', 640)
         self.declare_parameter('confidence_threshold', 0.25)
         self.declare_parameter('visibility_threshold', 0.01)

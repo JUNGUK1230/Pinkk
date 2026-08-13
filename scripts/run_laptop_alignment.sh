@@ -14,10 +14,10 @@ source_environment() {
 }
 
 source_environment /opt/ros/jazzy/setup.bash
-source_environment /home/juwon/mycobot_moveit_ws/install/setup.bash
-source_environment /home/juwon/Desktop/Pinkk-robot-arm/ros2_ws/install/setup.bash
+source_environment "${HOME}/mycobot_moveit_ws/install/setup.bash"
+source_environment "${REPO_ROOT}/ros2_ws/install/setup.bash"
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-36}"
+export ROS_DOMAIN_ID=38
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 

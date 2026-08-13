@@ -520,8 +520,9 @@ bridge의 coarse 시험 허용값을 위치 5mm, 자세 5도로 완화하고 진
 
 - 관절 Jacobian은 Z에만 사용한다.
 - XY와 Roll/Pitch는 기존 정렬에서 검증된 `send_coords()`를 사용한다.
-- Roll/Pitch 5도 이하는 불필요한 보정을 생략한다. 마지막 안전 여유 도달
-  사이클에서도 5도를 넘으면 초기 관측 Roll/Pitch로 보정한 뒤 최종 측정한다.
+- Roll/Pitch 5도 이하는 불필요한 보정을 생략한다.
+- 최종 Z guard 안에서도 5도를 넘는 자세 오차는 생략하지 않고
+  Cartesian Roll/Pitch로 복구한다.
 - 보정 후 XY, Roll/Pitch, 절대 Z를 다시 측정한다.
 
 Cartesian Roll/Pitch 복구는 예를 들어 Roll 9.13→3.65도, Pitch
@@ -561,7 +562,7 @@ ros2 param get /pinkk_frozen_target_executor_node joint_vertical_final_z_guard_m
 
 ## 14. ROS domain 전환
 
-스크립트는 이미 설정된 `ROS_DOMAIN_ID`를 우선하고 없으면 36을 사용한다.
+스크립트는 `ROS_DOMAIN_ID=38`로 고정해 사용한다.
 
 ```bash
 ROS_DOMAIN_ID=38 ./scripts/run_laptop_frozen_target_test.sh

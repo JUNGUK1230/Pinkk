@@ -13,8 +13,8 @@ pinkk_usb_camera_node:
 # /robot_arm/perception/usb_port/debug_image를 발행한다.
 pinkk_yolo_keypoint_node:
   ros__parameters:
-    # 현재 노트북의 모델 절대경로. 다른 PC에서는 실제 pt 파일 경로로 수정한다.
-    model_path: /home/juwon/Desktop/usb_02.pt
+    # 사용자 홈 기준 모델 경로.
+    model_path: ~/Downloads/usb_02.pt
     image_size: 640
     # 낮추면 검출은 늘지만 오검출도 증가한다.
     confidence_threshold: 0.25
@@ -236,10 +236,20 @@ pinkk_frozen_target_executor_node:
     # 최종 flange Z를 자동 계산한다:
     # target_flange_z = port_z + tcp_offset_z - insertion_depth
     final_z_p_use_port_target: true
-    # [m] flange에서 수직 아래 USB 충전기 끝까지의 실측 거리: 100mm.
-    final_tcp_offset_z_m: 0.100
+    # [m] flange에서 수직 아래 USB-A 끝단까지의 실측 거리: 120mm.
+    # X/Y 편심은 0이고 USB 축은 flange 축과 평행하다고 가정한다.
+    final_tcp_offset_z_m: 0.120
     # [m] USB 끝이 포트 입구 평면보다 안쪽으로 들어갈 목표 깊이: 10mm.
     final_port_insertion_depth_m: 0.010
+    # 힘/접촉 센서가 없으므로 최종 삽입은 기본 차단한다. TCP와 정렬을
+    # 실측 확인한 뒤 true로 바꾸고 insert_step_once만 사용한다.
+    enable_final_insertion: true
+    # 한 번 승인할 때 0.5mm만 명령하고 실제 이동을 다시 측정한다.
+    final_insertion_step_m: 0.0005
+    final_insertion_speed: 1
+    # 0.5mm 명령에 실제 2mm를 넘게 이동하면 후속 삽입을 차단한다.
+    final_insertion_maximum_actual_step_m: 0.002
+    final_insertion_target_tolerance_m: 0.0005
     # [m] final_z_p_use_port_target=false일 때만 쓰는 수동 fallback Z.
     final_z_p_target_z_m: 0.190
     # true이면 XY 수렴 후 초기 관측 keypoint angle로 Joint6 Yaw를 보정한다.
@@ -323,8 +333,7 @@ pinkk_frozen_target_executor_node:
 pinkk_return_to_observe:
   ros__parameters:
     # [deg] joint1~joint6 초기 관측 자세.
-    observation_joint_degrees:
-      [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
+    observation_joint_degrees: [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
     # [s] 초기 관측 자세 이동 목표 시간.
     motion_seconds: 20.0
     warning_delay_seconds: 3.0

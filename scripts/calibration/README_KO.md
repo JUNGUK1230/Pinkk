@@ -18,7 +18,7 @@
 |---|---|
 | 최종 통합 브랜치 | `robot_arm_1828` |
 | ROS 2 | Jazzy |
-| ROS domain | `36` |
+| ROS domain | `38` |
 | RMW | `rmw_fastrtps_cpp` |
 | 로봇 PC 계정 | `jetcobot@raspi` |
 | 로봇 serial | `/dev/ttyUSB0`, `1000000 baud` |
@@ -29,11 +29,11 @@
 | ChArUco 유효 기준 | 코너 25개 이상, 재투영 오차 0.7 px 이하 |
 | 자동 관측 자세 | 최대 30개 |
 
-스크립트 기본 domain이 36이므로 일반적으로 별도 `export`가 필요하지 않습니다.
+스크립트는 domain 38과 Fast DDS를 고정하므로 일반적으로 별도 `export`가 필요하지 않습니다.
 직접 ROS 명령을 실행할 때는 두 PC에서 다음 값을 동일하게 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=36
+export ROS_DOMAIN_ID=38
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
@@ -117,7 +117,7 @@ ros2 pkg prefix pinkk_usb_insertion
 - `/dev/ttyUSB0`는 bridge 한 프로세스만 엽니다.
 - `/dev/video0`은 ChArUco 노드 한 프로세스만 엽니다.
 - Flask 카메라, USB 수동 검출, Hand-eye static TF는 종료합니다.
-- 두 PC 모두 Domain 36인지 확인합니다.
+- 두 PC 모두 Domain 38인지 확인합니다.
 
 점유 프로세스 확인:
 
@@ -396,7 +396,7 @@ git check-ignore -v \
 ### `/joint_states`를 받지 못함
 
 - 로봇 PC bridge가 켜져 있는지 확인합니다.
-- bridge와 MoveIt을 모두 Domain 36으로 다시 시작합니다.
+- bridge와 MoveIt을 모두 Domain 38로 다시 시작합니다.
 - 두 PC에서 `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`를 맞춥니다.
 
 ```bash

@@ -85,7 +85,8 @@ def create_charuco_detector() -> tuple[Any, Any]:
 class CharucoTfPublisher(Node):
     def __init__(self) -> None:
         super().__init__("pinkk_charuco_tf_publisher")
-        self.declare_parameter("camera", 0)
+        # 문자열로 선언해 "0" 같은 index와 /dev/v4l/by-id 경로를 모두 받는다.
+        self.declare_parameter("camera", "0")
         self.declare_parameter("intrinsics_path", "")
         self.declare_parameter("camera_frame", "camera_optical_frame")
         self.declare_parameter("target_frame", "charuco_board")
@@ -137,7 +138,27 @@ class CharucoTfPublisher(Node):
             return
 
         corners, ids, _, _ = self._detector.detectBoard(frame)
-        count = 0 if ids is None else int(len(ids))
+        # OpenCV 5 may return ChArUco arrays as (N, 2)/(N,) while its drawing
+        # API still requires the traditional (N, 1, 2)/(N, 1) layout.
+        # Normalize once and use the same arrays for pose estimation and preview.
+        if corners is not None:
+            corners = np.ascontiguousarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+        if ids is not None:
+            ids = np.ascontiguousarray(ids, dtype=np.int32).reshape(-1, 1)
+        corner_count = 0 if corners is None else int(corners.shape[0])
+        id_count = 0 if ids is None else int(ids.shape[0])
+        consistent_detection = (
+            corner_count == id_count
+            and corner_count > 0
+            and bool(np.isfinite(corners).all())
+        )
+        count = id_count if consistent_detection else 0
+        if not consistent_detection:
+            self.get_logger().warning(
+                "ChArUco corner/ID 개수가 달라 현재 프레임을 건너뜁니다: "
+                f"corners={corner_count}, ids={id_count}",
+                throttle_duration_sec=2.0,
+            )
         detected = False
         error = float("inf")
         if count >= self._min_corners:
@@ -166,8 +187,14 @@ class CharucoTfPublisher(Node):
             self._last_detection_state = detected
 
         if self._show_preview:
-            if corners is not None and ids is not None:
-                cv2.aruco.drawDetectedCornersCharuco(frame, corners, ids)
+            if consistent_detection and count > 0:
+                try:
+                    cv2.aruco.drawDetectedCornersCharuco(frame, corners, ids)
+                except cv2.error as error_drawing:
+                    self.get_logger().warning(
+                        f"ChArUco 미리보기 corner 그리기 실패: {error_drawing}",
+                        throttle_duration_sec=2.0,
+                    )
             color = (0, 255, 0) if detected else (0, 0, 255)
             error_text = f"{error:.3f}px" if math.isfinite(error) else "--"
             cv2.putText(

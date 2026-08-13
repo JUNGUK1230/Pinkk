@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 SHOW_PREVIEW="${1:-false}"
+CAMERA="${2:-0}"
+INTRINSICS_PATH="${3:-${REPO_ROOT}/src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz}"
 
 source_required "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 source_required "${HOME}/venv/mycobot/bin/activate"
@@ -19,6 +21,13 @@ if [[ -d "${PYMYCOBOT_SITE}" ]]; then
 fi
 setup_ros_network
 
-echo "ChArUco TF 시작: preview=${SHOW_PREVIEW}"
+if [[ ! -f "${INTRINSICS_PATH}" ]]; then
+    echo "카메라 내부 보정 파일이 없습니다: ${INTRINSICS_PATH}" >&2
+    exit 1
+fi
+
+echo "ChArUco TF 시작: preview=${SHOW_PREVIEW}, camera=${CAMERA}, intrinsics=${INTRINSICS_PATH}"
 exec ros2 launch pinkk_mycobot_bridge charuco_tf_bridge.launch.py \
-    show_preview:="${SHOW_PREVIEW}"
+    show_preview:="${SHOW_PREVIEW}" \
+    camera:="${CAMERA}" \
+    intrinsics_path:="${INTRINSICS_PATH}"
