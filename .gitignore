@@ -11,6 +11,10 @@ log/
 *.onnx
 *.engine
 
+# PyTorch checkpoints are ZIP archives. Ignore accidental manual extraction
+# beside the model file (for example models/best/data/*).
+src/central_control/models/best/
+
 # Camera BEV recordings and extracted CVAT datasets are generated locally.
 src/central_control/camera_tools/first_map/bev_recordings/
 src/central_control/camera_tools/first_map/bev_dataset/

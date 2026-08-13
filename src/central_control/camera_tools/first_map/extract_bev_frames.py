@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--count",
         type=int,
-        default=1500,
+        default=100,
         help="Maximum number of frames to extract (default: 1500).",
     )
     parser.add_argument(
