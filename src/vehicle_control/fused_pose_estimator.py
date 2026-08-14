@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 import math
 from pathlib import Path
 import time
@@ -34,6 +35,31 @@ from .heading_fusion import (
     normalize_angle,
     quaternion_yaw_xyzw,
 )
+
+
+def odom_delta_to_map(
+    anchor_xy: tuple[float, float],
+    current_xy: tuple[float, float],
+    anchor_odom_yaw_rad: float,
+    anchor_map_yaw_rad: float,
+) -> tuple[float, float]:
+    """Odom 이동량을 차량 기준으로 분해해 시계방향 lidar_map에 옮긴다."""
+    delta_x = current_xy[0] - anchor_xy[0]
+    delta_y = current_xy[1] - anchor_xy[1]
+    forward = (
+        math.cos(anchor_odom_yaw_rad) * delta_x
+        + math.sin(anchor_odom_yaw_rad) * delta_y
+    )
+    left = (
+        -math.sin(anchor_odom_yaw_rad) * delta_x
+        + math.cos(anchor_odom_yaw_rad) * delta_y
+    )
+    return (
+        forward * math.cos(anchor_map_yaw_rad)
+        + left * math.sin(anchor_map_yaw_rad),
+        forward * math.sin(anchor_map_yaw_rad)
+        - left * math.cos(anchor_map_yaw_rad),
+    )
 
 
 class FusedPoseEstimator(Node):
@@ -118,6 +144,18 @@ class FusedPoseEstimator(Node):
         self._motion_command_min_speed_mps = self._positive(
             "motion_command_min_speed_mps"
         )
+        self._odom_position_prediction_enabled = bool(
+            self.get_parameter("odom_position_prediction_enabled").value
+        )
+        self._camera_filter_delay_sec = self._nonnegative(
+            "camera_filter_delay_sec"
+        )
+        self._odom_anchor_tolerance_sec = self._positive(
+            "odom_anchor_tolerance_sec"
+        )
+        self._maximum_odom_position_prediction_m = self._positive(
+            "maximum_odom_position_prediction_m"
+        )
 
         sensor_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -184,6 +222,13 @@ class FusedPoseEstimator(Node):
         self._timer = self.create_timer(1.0 / publish_rate, self._publish_tick)
 
         self._position_m: tuple[float, float] | None = None
+        self._camera_measurement_stamp_ns: int | None = None
+        self._camera_position_anchor_m: tuple[float, float] | None = None
+        self._camera_odom_anchor: tuple[float, float, float] | None = None
+        self._odom_position_m: tuple[float, float] | None = None
+        self._odom_history: deque[tuple[float, float, float, float]] = deque(
+            maxlen=200
+        )
         self._camera_yaw_rad: float | None = None
         self._imu_yaw_rad: float | None = None
         self._odom_yaw_rad: float | None = None
@@ -203,6 +248,7 @@ class FusedPoseEstimator(Node):
         self._last_motion_heading_monotonic: float | None = None
         self._last_match: HeadingMatch | None = None
         self._last_status: str | None = None
+        self._last_position_prediction_log_monotonic = 0.0
         self.get_logger().info(
             (
                 "Fused pose: camera x/y + IMU relative yaw + LiDAR map absolute yaw"
@@ -216,6 +262,12 @@ class FusedPoseEstimator(Node):
                 )
             )
         )
+        if self._odom_position_prediction_enabled:
+            self.get_logger().info(
+                "Odom position latency compensation enabled: "
+                f"filter_delay={self._camera_filter_delay_sec:.3f}s, "
+                f"maximum_shift={self._maximum_odom_position_prediction_m:.3f}m"
+            )
 
     def _declare_parameters(self) -> None:
         defaults = {
@@ -269,6 +321,10 @@ class FusedPoseEstimator(Node):
             "motion_heading_max_step_deg": 6.0,
             "motion_command_timeout_sec": 0.60,
             "motion_command_min_speed_mps": 0.01,
+            "odom_position_prediction_enabled": False,
+            "camera_filter_delay_sec": 0.0,
+            "odom_anchor_tolerance_sec": 0.15,
+            "maximum_odom_position_prediction_m": 0.06,
             "camera_pose_timeout_sec": 1.0,
             "imu_timeout_sec": 0.3,
             "odom_timeout_sec": 0.5,
@@ -299,6 +355,11 @@ class FusedPoseEstimator(Node):
         if not math.isfinite(x_m) or not math.isfinite(y_m):
             self._log_status("CAMERA_POSITION_INVALID")
             return
+        stamp_ns = (
+            int(message.header.stamp.sec) * 1_000_000_000
+            + int(message.header.stamp.nanosec)
+        )
+        self._camera_measurement_stamp_ns = stamp_ns if stamp_ns > 0 else None
         try:
             camera_yaw = quaternion_yaw_xyzw(
                 float(message.pose.orientation.x),
@@ -338,6 +399,7 @@ class FusedPoseEstimator(Node):
                 self._position_m[0] + alpha * (x_m - self._position_m[0]),
                 self._position_m[1] + alpha * (y_m - self._position_m[1]),
             )
+        self._update_camera_odom_anchor(message)
         self._update_motion_heading()
         self._camera_yaw_rad = camera_yaw
         if self._require_odom and self._odom_yaw_rad is not None:
@@ -440,7 +502,87 @@ class FusedPoseEstimator(Node):
         except ValueError:
             self._log_status("ODOM_ORIENTATION_INVALID")
             return
-        self._last_odom_monotonic = time.monotonic()
+        odom_x = float(message.pose.pose.position.x)
+        odom_y = float(message.pose.pose.position.y)
+        if not math.isfinite(odom_x) or not math.isfinite(odom_y):
+            self._log_status("ODOM_POSITION_INVALID")
+            return
+        received_at = time.monotonic()
+        self._odom_position_m = (odom_x, odom_y)
+        self._odom_history.append(
+            (received_at, odom_x, odom_y, self._odom_yaw_rad)
+        )
+        self._last_odom_monotonic = received_at
+
+    def _update_camera_odom_anchor(self, message: PoseStamped) -> None:
+        if (
+            not bool(
+                self.get_parameter("odom_position_prediction_enabled").value
+            )
+            or self._position_m is None
+            or not self._odom_history
+        ):
+            self._camera_position_anchor_m = None
+            self._camera_odom_anchor = None
+            return
+        now_monotonic = time.monotonic()
+        now_ros_ns = self.get_clock().now().nanoseconds
+        stamp_ns = (
+            int(message.header.stamp.sec) * 1_000_000_000
+            + int(message.header.stamp.nanosec)
+        )
+        age_sec = (
+            (now_ros_ns - stamp_ns) / 1_000_000_000.0
+            if stamp_ns > 0
+            else 0.0
+        )
+        if not math.isfinite(age_sec) or not 0.0 <= age_sec <= 2.0:
+            age_sec = 0.0
+        target_monotonic = (
+            now_monotonic - age_sec - self._camera_filter_delay_sec
+        )
+        sample = min(
+            self._odom_history,
+            key=lambda value: abs(value[0] - target_monotonic),
+        )
+        if abs(sample[0] - target_monotonic) > self._odom_anchor_tolerance_sec:
+            self._camera_position_anchor_m = None
+            self._camera_odom_anchor = None
+            return
+        self._camera_position_anchor_m = self._position_m
+        self._camera_odom_anchor = (sample[1], sample[2], sample[3])
+
+    def _current_position(self) -> tuple[tuple[float, float], bool]:
+        if self._position_m is None:
+            raise RuntimeError("camera position is unavailable")
+        if (
+            not bool(
+                self.get_parameter("odom_position_prediction_enabled").value
+            )
+            or self._camera_position_anchor_m is None
+            or self._camera_odom_anchor is None
+            or self._odom_position_m is None
+        ):
+            return self._position_m, False
+        anchor_map_yaw = self._odom_heading_for(self._camera_odom_anchor[2])
+        if anchor_map_yaw is None:
+            return self._position_m, False
+        delta = odom_delta_to_map(
+            self._camera_odom_anchor[:2],
+            self._odom_position_m,
+            self._camera_odom_anchor[2],
+            anchor_map_yaw,
+        )
+        distance = math.hypot(delta[0], delta[1])
+        if distance > self._maximum_odom_position_prediction_m:
+            return self._position_m, False
+        return (
+            (
+                self._camera_position_anchor_m[0] + delta[0],
+                self._camera_position_anchor_m[1] + delta[1],
+            ),
+            True,
+        )
 
     def _trajectory_callback(self, message: Float64MultiArray) -> None:
         """고정 경로의 첫 yaw를 LiDAR 전역 정합의 초기 방향 힌트로 사용한다."""
@@ -485,8 +627,13 @@ class FusedPoseEstimator(Node):
             or self._map_origin_yaw_rad is None
         ):
             return None
+        return self._odom_heading_for(self._odom_yaw_rad)
+
+    def _odom_heading_for(self, odom_yaw_rad: float) -> float | None:
+        if self._odom_origin_yaw_rad is None or self._map_origin_yaw_rad is None:
+            return None
         odom_delta = (
-            self._odom_yaw_rad - self._odom_origin_yaw_rad + math.pi
+            odom_yaw_rad - self._odom_origin_yaw_rad + math.pi
         ) % (2.0 * math.pi) - math.pi
         return (
             self._map_origin_yaw_rad
@@ -673,10 +820,31 @@ class FusedPoseEstimator(Node):
             return
 
         message = PoseStamped()
-        message.header.stamp = self.get_clock().now().to_msg()
+        (center_x, center_y), position_predicted = self._current_position()
+        if (
+            position_predicted
+            and now - self._last_position_prediction_log_monotonic >= 2.0
+        ):
+            assert self._position_m is not None
+            shift_cm = 100.0 * math.hypot(
+                center_x - self._position_m[0],
+                center_y - self._position_m[1],
+            )
+            self.get_logger().info(
+                f"Odom position compensation: shift={shift_cm:.2f}cm"
+            )
+            self._last_position_prediction_log_monotonic = now
+        if position_predicted or self._camera_measurement_stamp_ns is None:
+            message.header.stamp = self.get_clock().now().to_msg()
+        else:
+            message.header.stamp.sec = (
+                self._camera_measurement_stamp_ns // 1_000_000_000
+            )
+            message.header.stamp.nanosec = (
+                self._camera_measurement_stamp_ns % 1_000_000_000
+            )
         message.header.frame_id = "lidar_map"
         # 위치·경로·MPC를 모두 동일한 차량 중심 기준으로 유지한다.
-        center_x, center_y = self._position_m
         message.pose.position.x = center_x
         message.pose.position.y = center_y
         message.pose.orientation.z = math.sin(heading / 2.0)

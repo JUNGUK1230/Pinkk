@@ -18,6 +18,7 @@ from vehicle_control.heading_fusion import (  # noqa: E402
     angle_difference,
     motion_heading,
 )
+from vehicle_control.fused_pose_estimator import odom_delta_to_map  # noqa: E402
 
 
 def main() -> int:
@@ -113,6 +114,23 @@ def main() -> int:
     reverse_motion = motion_heading((0.02, 0.02), (0.0, 0.0), -1, 0.015)
     assert reverse_motion is not None
     assert abs(angle_difference(reverse_motion, math.radians(45.0))) < 1e-8
+
+    # ROS odom의 전진/좌측 이동량을 시계방향 image-map 축으로 옮긴다.
+    # map에서 차량이 아래(+90도)를 볼 때 전진은 +y, 차량 좌측은 +x다.
+    forward_delta = odom_delta_to_map(
+        (0.0, 0.0),
+        (0.10, 0.0),
+        0.0,
+        math.pi / 2.0,
+    )
+    left_delta = odom_delta_to_map(
+        (0.0, 0.0),
+        (0.0, 0.10),
+        0.0,
+        math.pi / 2.0,
+    )
+    assert np.allclose(forward_delta, (0.0, 0.10), atol=1e-9)
+    assert np.allclose(left_delta, (0.10, 0.0), atol=1e-9)
 
     print("IMU + LiDAR map heading fusion test passed")
     print(f"Recovered global heading: {math.degrees(match.yaw_rad):.2f} deg")

@@ -84,12 +84,26 @@ class DirectRosPublisher:
         if self.lidar_resolution_cm <= 0.0:
             raise ValueError("lidar_resolution_cm must be positive")
 
-    def publish_pose(self, vehicle: object) -> None:
+    def publish_pose(
+        self,
+        vehicle: object,
+        measurement_age_sec: float = 0.0,
+    ) -> None:
         """카메라 차체 중심 x/y와 측정 장축 yaw를 `lidar_map`으로 발행한다."""
         center_lidar_px = getattr(vehicle, "center_lidar_px")
-        stamp = self._node.get_clock().now().to_msg()
+        age_sec = float(measurement_age_sec)
+        if not math.isfinite(age_sec) or age_sec < 0.0:
+            age_sec = 0.0
+        now_stamp = self._node.get_clock().now().to_msg()
+        stamp_ns = max(
+            0,
+            int(now_stamp.sec) * 1_000_000_000
+            + int(now_stamp.nanosec)
+            - round(age_sec * 1_000_000_000),
+        )
         message = self._PoseStamped()
-        message.header.stamp = stamp
+        message.header.stamp.sec = stamp_ns // 1_000_000_000
+        message.header.stamp.nanosec = stamp_ns % 1_000_000_000
         message.header.frame_id = "lidar_map"
         message.pose.position.x = (
             float(center_lidar_px[0]) * self.lidar_resolution_cm / 100.0

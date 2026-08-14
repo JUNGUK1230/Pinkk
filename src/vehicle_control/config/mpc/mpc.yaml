@@ -53,7 +53,7 @@ pinkk_mpc_path_follower:
 
     # [Hz] MPC 계산 및 cmd_vel 발행 주기다. 10Hz로 올려 새 pose와 횡오차를
     # 더 자주 제어 명령에 반영한다.
-    control_frequency_hz: 8.0
+    control_frequency_hz: 10.0
     # [m] 차동구동 회전 중심(rear axle)에서 제어점인 차량 중심까지의 거리다.
     # pose와 고정 경로는 차량 중심 기준이며 운동모델이 이 offset을 반영한다.
     control_point_offset_m: 0.04
@@ -77,7 +77,7 @@ pinkk_mpc_path_follower:
     solver_ftol: 0.0000005
 
     # [m/s] 전진 경로에서 따라가려는 기준 속도다.
-    # max_forward_speed_mps보다 클 수 없다.
+    # max_forward_speed_mps보다 클 수 없다. 
     forward_speed_mps: 0.05
     # [m/s] 후진 경로에서 따라가려는 속도의 절댓값이다.
     # 좁은 주차 구간에서는 카메라 pose 갱신 사이 이동량을 줄여 정밀도를
@@ -99,9 +99,9 @@ pinkk_mpc_path_follower:
     max_curvature_1pm: 8.3333333333
     # [1/(m·s)] 시간당 곡률 명령 변화 한계다. 낮추면 조향이 부드럽지만
     # 코너 반응이 늦고, 높이면 빠르지만 좌우 진동 가능성이 커진다.
-    # 14이면 10Hz에서 주기당 곡률을 최대 1.4 1/m 바꿀 수 있다.
-    # 빠른 복귀 성능은 유지하면서 반대 조향으로 튀는 현상을 줄인다.
-    max_curvature_rate_1pmps: 14.0
+    # 15이면 10Hz에서 주기당 곡률을 최대 1.5 1/m 바꿀 수 있다.
+    # 곡선 진입 조향 지연을 조금 줄이되 급격한 반대 조향은 억제한다.
+    max_curvature_rate_1pmps: 15.0
     # [rad/s] 최종 ROS 각속도의 절댓값 한계다.
     # angular speed = linear speed × curvature 관계에도 이 제한이 적용된다.
     # 실차 소프트웨어 한계 0.40rad/s. 곡률 한계와 함께 적용되므로
@@ -218,7 +218,7 @@ pinkk_mpc_path_follower:
     curve_feedforward_preview_points: 14
     # 현재 MPC 조향과 위 미래 곡률 평균을 섞는 비율이다. 작은 곡선은
     # 약하게 유지하고 큰 곡선이 가까워질수록 선행 조향이 커진다.
-    curve_feedforward_gain: 0.35
+    curve_feedforward_gain: 0.42
     # [1/m] 이보다 작은 경로 곡률은 지도·resampling의 미세 흔들림으로
     # 보고 0으로 만든다. 0.5는 반경 2m보다 완만한 곡선을 무시한다.
     curve_feedforward_deadband_1pm: 0.5

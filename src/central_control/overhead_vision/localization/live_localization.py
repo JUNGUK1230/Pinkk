@@ -1204,7 +1204,13 @@ def main() -> int:
                 )
             if ros_publisher is not None and scene.vehicle is not None:
                 if scene.vehicle.planning_ready:
-                    ros_publisher.publish_pose(scene.vehicle)
+                    ros_publisher.publish_pose(
+                        scene.vehicle,
+                        measurement_age_sec=max(
+                            0.0,
+                            time.monotonic() - captured_at,
+                        ),
+                    )
                 ros_publisher.spin_once()
             if write_runtime_files and frame_index % output_every == 0:
                 try:
