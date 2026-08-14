@@ -267,12 +267,14 @@ class MpcPathFollower(Node):
             "max_forward_speed_mps": 0.08,
             "max_reverse_speed_mps": 0.03,
             "max_acceleration_mps2": 0.12,
+            "forward_max_acceleration_mps2": 0.12,
             "max_curvature_1pm": 1.0 / 0.12,
             "max_curvature_rate_1pmps": 10.0,
             "max_angular_speed_radps": 0.40,
             "straight_curvature_threshold_1pm": 0.35,
             "straight_max_curvature_1pm": 3.0,
             "cross_track_feedback_gain_1pm2": 15.0,
+            "forward_cross_track_gain_scale": 1.0,
             "heading_feedback_gain_1pmprad": 4.0,
             "heading_feedback_deadband_deg": 2.0,
             "reverse_cross_track_deadband_m": 0.006,
@@ -366,6 +368,9 @@ class MpcPathFollower(Node):
             max_acceleration_mps2=self._positive_parameter(
                 "max_acceleration_mps2", overrides
             ),
+            forward_max_acceleration_mps2=self._positive_parameter(
+                "forward_max_acceleration_mps2", overrides
+            ),
             max_curvature_1pm=self._positive_parameter(
                 "max_curvature_1pm", overrides
             ),
@@ -383,6 +388,9 @@ class MpcPathFollower(Node):
             ),
             cross_track_feedback_gain_1pm2=self._nonnegative_parameter(
                 "cross_track_feedback_gain_1pm2", overrides
+            ),
+            forward_cross_track_gain_scale=self._positive_parameter(
+                "forward_cross_track_gain_scale", overrides
             ),
             heading_feedback_gain_1pmprad=self._nonnegative_parameter(
                 "heading_feedback_gain_1pmprad", overrides

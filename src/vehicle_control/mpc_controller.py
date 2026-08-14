@@ -45,12 +45,14 @@ class MpcLimits:
     max_forward_speed_mps: float = 0.08
     max_reverse_speed_mps: float = 0.03
     max_acceleration_mps2: float = 0.12
+    forward_max_acceleration_mps2: float = 0.12
     max_curvature_1pm: float = 1.0 / 0.12
     max_curvature_rate_1pmps: float = 10.0
     max_angular_speed_radps: float = 0.40
     straight_curvature_threshold_1pm: float = 0.35
     straight_max_curvature_1pm: float = 3.0
     cross_track_feedback_gain_1pm2: float = 15.0
+    forward_cross_track_gain_scale: float = 1.0
     heading_feedback_gain_1pmprad: float = 4.0
     heading_feedback_deadband_rad: float = math.radians(2.0)
     cross_track_deadband_m: float = 0.003
@@ -98,6 +100,7 @@ class MpcLimits:
             self.max_forward_speed_mps,
             self.max_reverse_speed_mps,
             self.max_acceleration_mps2,
+            self.forward_max_acceleration_mps2,
             self.wheel_radius_m,
             self.wheel_separation_m,
             self.max_wheel_angular_speed_radps,
@@ -110,6 +113,7 @@ class MpcLimits:
             self.reverse_cross_track_deadband_m,
             self.reverse_cross_track_gain_scale,
             self.reverse_heading_gain_scale,
+            self.forward_cross_track_gain_scale,
             self.cross_track_slowdown_start_m,
             self.cross_track_slowdown_full_m,
             self.minimum_tracking_speed_scale,
@@ -542,7 +546,7 @@ class DifferentialDriveMpc:
         )
         initial = self._initial_guess(direction, references)
         bounds = self._bounds(direction, curvature_limit)
-        rate_constraint = self._rate_constraint()
+        rate_constraint = self._rate_constraint(direction)
         angular_constraint = NonlinearConstraint(
             self._angular_speed_margin,
             0.0,
@@ -706,12 +710,24 @@ class DifferentialDriveMpc:
             ),
             cross_track_error,
         )
+        # 긴 전진 직선에서는 휠 편차로 누적되는 횡오차를 일찍 닫는다.
+        # 주차 전환점과 곡선까지 같은 gain을 쓰면 cusp 진입 자세가 오히려
+        # 틀어질 수 있으므로 직선 곡률 제한이 활성화된 동안에만 강화한다.
+        forward_cross_track_scale = 1.0
+        if (
+            direction > 0
+            and curvature_limit
+            <= self.limits.straight_max_curvature_1pm + 1e-9
+        ):
+            forward_cross_track_scale = (
+                self.limits.forward_cross_track_gain_scale
+            )
         feedback = (
             -self.limits.cross_track_feedback_gain_1pm2
             * (
                 self.limits.reverse_cross_track_gain_scale
                 if direction < 0
-                else 1.0
+                else forward_cross_track_scale
             )
             * effective_cross_track_error
         )
@@ -781,7 +797,15 @@ class DifferentialDriveMpc:
             # 회복하기 전에 차체가 벽 쪽으로 더 이동한다. 횡오차 복귀용
             # 최소 속도로 감속하면서 최대 곡률을 유지한다. 장애물 정지는
             # follower가 이 명령을 발행하기 전에 기존대로 적용한다.
-            speed_delta = (
+            acceleration_delta = (
+                (
+                    self.limits.forward_max_acceleration_mps2
+                    if direction > 0
+                    else self.limits.max_acceleration_mps2
+                )
+                * self.limits.dt_sec
+            )
+            deceleration_delta = (
                 self.limits.max_acceleration_mps2 * self.limits.dt_sec
             )
             nominal_speed = (
@@ -796,12 +820,12 @@ class DifferentialDriveMpc:
             if current_speed_magnitude > target_recovery_speed:
                 recovery_speed_magnitude = max(
                     target_recovery_speed,
-                    current_speed_magnitude - speed_delta,
+                    current_speed_magnitude - deceleration_delta,
                 )
             else:
                 recovery_speed_magnitude = min(
                     target_recovery_speed,
-                    current_speed_magnitude + speed_delta,
+                    current_speed_magnitude + acceleration_delta,
                 )
             speed = math.copysign(recovery_speed_magnitude, direction)
             recovery_scale = min(
@@ -1048,7 +1072,15 @@ class DifferentialDriveMpc:
                 (speed, self.last_curvature_1pm),
                 (self.limits.horizon_steps, 1),
             )
-        speed_delta = self.limits.max_acceleration_mps2 * self.limits.dt_sec
+        acceleration_limit = (
+            self.limits.forward_max_acceleration_mps2
+            if direction > 0
+            else self.limits.max_acceleration_mps2
+        )
+        acceleration_delta = acceleration_limit * self.limits.dt_sec
+        deceleration_delta = (
+            self.limits.max_acceleration_mps2 * self.limits.dt_sec
+        )
         curvature_delta = (
             self.limits.max_curvature_rate_1pmps * self.limits.dt_sec
         )
@@ -1057,8 +1089,8 @@ class DifferentialDriveMpc:
         for index, (_, reference_curvature) in enumerate(references):
             controls[index, 0] = np.clip(
                 controls[index, 0],
-                previous_speed - speed_delta,
-                previous_speed + speed_delta,
+                previous_speed - deceleration_delta,
+                previous_speed + acceleration_delta,
             )
             controls[index, 1] = np.clip(
                 reference_curvature,
@@ -1125,12 +1157,20 @@ class DifferentialDriveMpc:
         )
         return Bounds(lower, upper)
 
-    def _rate_constraint(self) -> LinearConstraint:
+    def _rate_constraint(self, direction: int) -> LinearConstraint:
         horizon = self.limits.horizon_steps
         matrix = np.zeros((2 * horizon, 2 * horizon), dtype=np.float64)
         lower = np.empty(2 * horizon, dtype=np.float64)
         upper = np.empty(2 * horizon, dtype=np.float64)
-        speed_delta = self.limits.max_acceleration_mps2 * self.limits.dt_sec
+        acceleration_limit = (
+            self.limits.forward_max_acceleration_mps2
+            if direction > 0
+            else self.limits.max_acceleration_mps2
+        )
+        acceleration_delta = acceleration_limit * self.limits.dt_sec
+        deceleration_delta = (
+            self.limits.max_acceleration_mps2 * self.limits.dt_sec
+        )
         curvature_delta = (
             self.limits.max_curvature_rate_1pmps * self.limits.dt_sec
         )
@@ -1140,14 +1180,19 @@ class DifferentialDriveMpc:
             matrix[speed_row, 2 * step] = 1.0
             matrix[curvature_row, 2 * step + 1] = 1.0
             if step == 0:
-                lower[speed_row] = self.last_speed_mps - speed_delta
-                upper[speed_row] = self.last_speed_mps + speed_delta
+                lower[speed_row] = (
+                    self.last_speed_mps - deceleration_delta
+                )
+                upper[speed_row] = (
+                    self.last_speed_mps + acceleration_delta
+                )
                 lower[curvature_row] = self.last_curvature_1pm - curvature_delta
                 upper[curvature_row] = self.last_curvature_1pm + curvature_delta
             else:
                 matrix[speed_row, 2 * (step - 1)] = -1.0
                 matrix[curvature_row, 2 * (step - 1) + 1] = -1.0
-                lower[speed_row], upper[speed_row] = -speed_delta, speed_delta
+                lower[speed_row] = -deceleration_delta
+                upper[speed_row] = acceleration_delta
                 lower[curvature_row], upper[curvature_row] = (
                     -curvature_delta,
                     curvature_delta,

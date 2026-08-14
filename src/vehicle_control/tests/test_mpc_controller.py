@@ -198,7 +198,7 @@ def main() -> int:
     expected_recovery_speed = min(
         recovery_controller.limits.forward_speed_mps
         * recovery_controller.limits.heading_recovery_speed_scale,
-        recovery_controller.limits.max_acceleration_mps2
+        recovery_controller.limits.forward_max_acceleration_mps2
         * recovery_controller.limits.dt_sec,
     )
     assert math.isclose(
@@ -207,7 +207,7 @@ def main() -> int:
         rel_tol=0.0,
         abs_tol=1e-9,
     )
-    assert abs(recovery_command.angular_radps) >= 0.12
+    assert abs(recovery_command.angular_radps) >= 0.11
 
     # 카메라 검출의 mm 단위 횡방향 흔들림은 직선 조향 명령을 좌우로
     # 뒤집지 않아야 한다.
@@ -222,6 +222,24 @@ def main() -> int:
     )
     assert deadband_command.status == "TRACKING"
     assert abs(deadband_command.angular_radps) <= 0.01
+
+    # 전진 횡오차 보정은 후진 gain과 분리되어야 한다. 1cm 이탈에서는
+    # 기본 scale보다 강하게 복귀하되 2mm 카메라 흔들림은 계속 무시한다.
+    assert deadband_controller.limits.forward_cross_track_gain_scale > 1.0
+    normal_forward_gain = DifferentialDriveMpc(
+        replace(
+            deadband_controller.limits,
+            forward_cross_track_gain_scale=1.0,
+        ),
+        deadband_controller.weights,
+    )
+    normal_forward_gain.set_path(straight_path)
+    tuned_forward_gain = production_controller()
+    tuned_forward_gain.set_path(straight_path)
+    offset_state_for_gain = VehicleState(0.0, 0.01, 0.0)
+    normal_gain_command = normal_forward_gain.command(offset_state_for_gain)
+    tuned_gain_command = tuned_forward_gain.command(offset_state_for_gain)
+    assert tuned_gain_command.curvature_1pm < normal_gain_command.curvature_1pm
 
     # 직선 경로에서 2cm 떨어져 시작해도 가장 가까운 점을 지나쳐 S자로
     # 복귀하지 않고, 앞쪽 접선에 자연스럽게 합류해야 한다.

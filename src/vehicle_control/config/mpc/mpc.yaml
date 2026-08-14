@@ -47,13 +47,13 @@ pinkk_mpc_path_follower:
     rear_scan_center_deg: 0.0
     # [m] 전진 중 전방 sector 최소 거리가 이 값 이하이면 즉시 정지한다.
     # 너무 크게 하면 벽 가까운 정상 경로에서도 일찍 멈춘다.
-    front_stop_distance_m: 0.10
+    front_stop_distance_m: 0.01
     # [m] 후진 중 후방 sector 최소 거리가 이 값 이하이면 즉시 정지한다.
-    rear_stop_distance_m: 0.10
+    rear_stop_distance_m: 0.01
 
     # [Hz] MPC 계산 및 cmd_vel 발행 주기다. 10Hz로 올려 새 pose와 횡오차를
     # 더 자주 제어 명령에 반영한다.
-    control_frequency_hz: 10.0
+    control_frequency_hz: 8.0
     # [m] 차동구동 회전 중심(rear axle)에서 제어점인 차량 중심까지의 거리다.
     # pose와 고정 경로는 차량 중심 기준이며 운동모델이 이 offset을 반영한다.
     control_point_offset_m: 0.04
@@ -67,9 +67,9 @@ pinkk_mpc_path_follower:
     # [s] MPC 내부 차량 모델의 한 예측 step 시간이다.
     # 10Hz 실차 제어 주기와 동일하게 맞춘다.
     dt_sec: 0.10
-    # 9 step을 최적화해 기존 8 step보다 촘촘하게 계산하되, 한 계산이
+    # 8 step을 최적화해 기존 8 step보다 촘촘하게 계산하되, 한 계산이
     # 100ms 제어 주기를 넘겨 조향 반응을 늦추지 않게 한다.
-    horizon_steps: 9
+    horizon_steps: 8
     # SLSQP 최적화가 한 제어 주기에서 수행할 최대 반복 횟수다.
     # 늘리면 수렴 가능성은 높아지지만 계산 시간이 길어진다.
     solver_max_iterations: 70
@@ -89,8 +89,11 @@ pinkk_mpc_path_follower:
     # 기준 속도보다 약간만 높여 오차 복귀 중 과속하지 않게 한다.
     max_reverse_speed_mps: 0.028
     # [m/s²] 연속 제어 step 사이 선속도 변화 한계다.
-    # 작게 하면 출발·감속이 부드럽지만 반응이 느리고, 크게 하면 급격해진다.
+    # 후진에 적용하는 가감속 한계다. 기존 후진 동작을 유지한다.
     max_acceleration_mps2: 0.2
+    # [m/s²] 전진 증속에만 적용하는 한계다. 기존 0.20보다 조금 낮춰
+    # 출발과 속도 복귀를 완만하게 한다. 전진 감속과 후진은 위 0.20을 유지한다.
+    forward_max_acceleration_mps2: 0.16
     # [1/m] DD 실차 최소 회전반경 0.12m의 역수다.
     # 8.333을 넘기면 등가 조향각 약 30도를 초과하므로 허용하지 않는다.
     max_curvature_1pm: 8.3333333333
@@ -110,18 +113,22 @@ pinkk_mpc_path_follower:
     # [1/m] 직선으로 판정된 구간에서 허용할 최대 보정 곡률이다.
     # 3.5는 약 28.6cm 반경이다. 직선에서는 급격한 좌우 조향을 막고,
     # 아래 lookahead가 곡선을 감지하면 전체 곡률 한계를 사용한다.
-    straight_max_curvature_1pm: 3.5
+    straight_max_curvature_1pm: 3.0
     # [1/m²] 현재 및 예측 횡오차에 추가하는 안정화 곡률 gain이다.
     # 50이면 합성 횡오차가 1cm일 때 보정 곡률 0.50 1/m를 추가한다.
     # 직선부터 누적되는 실차 좌우 휠 편차를 초기에 제거하기 위한 값이다.
     cross_track_feedback_gain_1pm2: 50.0
+    # 긴 전진 직선에서만 위 횡오차 gain에 곱하는 값이다. 주차 곡선과 후진은
+    # 건드리지 않고 직선의 실제 위치 오차 복귀만 빠르게 하도록 2배로 적용한다.
+    forward_cross_track_gain_scale: 2.0
     # [1/(m·rad)] 경로 접선 yaw와 차량 yaw 차이를 곡률에 반영한다.
     # 위치만 맞추고 선을 넘어가지 않도록 합류하면서 차체를 경로와 나란히 한다.
     heading_feedback_gain_1pmprad: 4.0
     # [deg] 이보다 작은 헤딩 오차는 카메라/heading 흔들림으로 보고 추가
     # 복귀 조향에 사용하지 않는다.
     heading_feedback_deadband_deg: 2.0
-    # [m] 6mm 이내 횡오차는 고 gain 추가 복귀 조향에 사용하지 않는다.
+    # [m] 전진 중 4mm 이내 횡오차는 카메라 흔들림으로 무시한다.
+    # 기존 6mm보다 일찍 실제 이탈을 보정하되 mm 단위 노이즈에는 반응하지 않는다.
     # MPC의 부드러운 기본 곡률은 유지해 deadband 경계에서 튀지 않게 한다.
     cross_track_deadband_m: 0.006
     # 후진 주차에서만 전진보다 강한 위치·헤딩 보정을 적용한다.
@@ -197,7 +204,7 @@ pinkk_mpc_path_follower:
     steering_preview_weight: 0.15
     # 경로 이탈 시 자연스럽게 합류하기 위해 최대 몇 점 앞의 경로 접선을
     # 볼지 정한다. 0.5cm 간격 12점은 약 6cm이며 정상 추종에는 적용되지 않는다.
-    steering_rejoin_preview_points: 12
+    steering_rejoin_preview_points: 14
     # [m] 이 횡오차에서 위 최대 rejoin preview를 모두 사용한다.
     steering_rejoin_full_error_m: 0.03
     # 최대 이탈에서도 현재 횡오차를 65% 유지한다. 앞쪽 예측 오차가 현재
