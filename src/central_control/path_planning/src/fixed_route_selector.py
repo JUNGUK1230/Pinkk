@@ -90,7 +90,7 @@ class FixedRouteSelector:
             detected_location=detected_location,
             join_index=0,
             join_distance_cm=join_distance,
-            # 실시간 pose는 `/pinkk/vehicle_pose`로 별도 전달된다. 검출 pose를
+            # 실시간 pose는 차량별 `localization_pose`로 별도 전달된다. 검출 pose를
             # 고정 CSV 앞에 삽입하면 측정 오차 때문에 첫 두 점 사이에 가짜
             # 급회전이 생기므로 원본 경로를 그대로 보낸다.
             points=tuple(points),

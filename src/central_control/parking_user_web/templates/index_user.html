@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PINKY_01 Parking</title>
+<title>PINKY Parking</title>
 <style>
 :root{
   --bg:#f2f5f8;
@@ -46,6 +46,9 @@ button{font:inherit}
   border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.8);
   color:var(--muted);font-size:12px
 }
+.vehicle-switch{display:flex;gap:6px;margin-left:auto;margin-right:10px}
+.vehicle-switch a{padding:8px 11px;border:1px solid var(--line);border-radius:999px;background:white;color:var(--muted);font-size:12px;font-weight:800;text-decoration:none}
+.vehicle-switch a.active{border-color:var(--primary);background:#edf4ff;color:var(--primary)}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(22,166,106,.10)}
 .layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:20px}
 .card{
@@ -108,8 +111,6 @@ button{font:inherit}
   min-height:58px;border:none;border-radius:15px;color:white;
   cursor:pointer;font-weight:900;transition:.18s
 }
-.action-btn.emergency{grid-column:1/-1;background:#e34c59;color:white}
-.action-btn.emergency:hover{background:#c93644}
 .action-btn:hover{transform:translateY(-1px)}
 .action-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .entry{background:linear-gradient(145deg,var(--primary),#5088ff)}
@@ -155,10 +156,14 @@ button{font:inherit}
     <div class="brand">
       <div class="brand-mark">P</div>
       <div>
-        <h1>PINKY_01 Parking</h1>
+        <h1 id="pageTitle">PINKY Parking</h1>
         <p>Smart Valet & Charging Service</p>
       </div>
     </div>
+    <nav class="vehicle-switch" aria-label="차량 선택">
+      <a href="?robot=1" data-robot="1">PINKY_01</a>
+      <a href="?robot=2" data-robot="2">PINKY_02</a>
+    </nav>
     <div class="service"><span class="dot"></span><span id="serviceText">서비스 연결 중</span></div>
   </header>
 
@@ -222,7 +227,6 @@ button{font:inherit}
         <div class="actions">
           <button class="action-btn entry" id="entryButton" onclick="requestParking('entry')">입차 요청</button>
           <button class="action-btn exit" id="exitButton" onclick="requestParking('exit')">내 차 호출</button>
-          <button class="action-btn emergency" id="emergencyButton" onclick="requestEmergencyStop()">긴급 정지</button>
         </div>
       </section>
 
@@ -247,6 +251,12 @@ button{font:inherit}
 
 <script>
 let running = false;
+const robot = new URLSearchParams(location.search).get('robot') === '2' ? 2 : 1;
+const controllerName = `PINKY_${String(robot).padStart(2, '0')}`;
+const vehicleId = `vehicle_${robot}`;
+document.title = `${controllerName} Parking`;
+document.getElementById('pageTitle').textContent = `${controllerName} Parking`;
+document.querySelector(`[data-robot="${robot}"]`)?.classList.add('active');
 
 function setButtons(disabled){
   document.getElementById('entryButton').disabled = disabled;
@@ -267,7 +277,7 @@ function updateProgress(value){
 }
 
 function applyStatus(data){
-  document.getElementById('vehicleId').textContent = data.vehicle_id ?? 'PINKY_01';
+  document.getElementById('vehicleId').textContent = data.vehicle_id ?? vehicleId;
   const battery = data.battery_connected ? data.battery : null;
   document.getElementById('batteryValue').textContent =
     battery == null ? '--%' : `${battery}%`;
@@ -289,7 +299,7 @@ function applyStatus(data){
 
 async function loadStatus(){
   try{
-    const response = await fetch('/api/status', {cache:'no-store'});
+    const response = await fetch(`/api/status?robot=${robot}`, {cache:'no-store'});
     if(!response.ok) throw new Error(response.status);
     applyStatus(await response.json());
   }catch(error){
@@ -316,6 +326,7 @@ async function requestParking(command){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
+        robot,
         vehicle_id:document.getElementById('vehicleId').textContent,
         command
       })
@@ -341,29 +352,6 @@ async function requestParking(command){
   }finally{
     running = false;
     setButtons(false);
-  }
-}
-
-async function requestEmergencyStop(){
-  const button = document.getElementById('emergencyButton');
-  button.disabled = true;
-  document.getElementById('mainState').textContent = '긴급 정지 전송 중';
-
-  try{
-    const response = await fetch('/api/emergency', {method:'POST'});
-    const data = await response.json();
-    if(!response.ok) throw new Error(data.message || response.status);
-    document.getElementById('mainState').textContent = '긴급 정지';
-    document.getElementById('stateBadge').textContent = '긴급 정지';
-    document.getElementById('requestState').textContent = '정지 명령 전송 완료';
-    updateProgress(0);
-    showToast(data.message);
-    await loadStatus();
-  }catch(error){
-    document.getElementById('requestState').textContent = '긴급 정지 전송 실패';
-    showToast(`긴급 정지 실패: ${error.message}`);
-  }finally{
-    button.disabled = false;
   }
 }
 

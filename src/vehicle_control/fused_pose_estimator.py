@@ -190,17 +190,17 @@ class FusedPoseEstimator(Node):
 
     def _declare_parameters(self) -> None:
         defaults = {
-            "camera_pose_topic": "/pinkk/vehicle_pose",
-            "imu_topic": "/imu_raw",
+            "camera_pose_topic": "camera_pose",
+            "imu_topic": "imu_raw",
             "require_imu": False,
-            "odom_topic": "/odom",
+            "odom_topic": "odom",
             "require_odom": True,
             # ROS odom +yaw는 반시계, 이미지 map +yaw는 시계 방향이다.
             "odom_yaw_sign": -1.0,
-            "scan_topic": "/scan",
-            "trajectory_topic": "/pinkk/planned_trajectory",
-            "fused_pose_topic": "/pinkk/fused_vehicle_pose",
-            "diagnostic_topic": "/pinkk/heading_diagnostics",
+            "scan_topic": "scan",
+            "trajectory_topic": "trajectory",
+            "fused_pose_topic": "localization_pose",
+            "diagnostic_topic": "heading_diagnostics",
             "map_image_path": (
                 "src/central_control/camera_tools/first_map/"
                 "my_test_map0710.png"

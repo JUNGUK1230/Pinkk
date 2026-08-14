@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import sys
 import threading
 import time
@@ -9,7 +10,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, render_template, request
-from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
@@ -24,6 +24,8 @@ SRC_DIR = Path(__file__).resolve().parents[2]
 TEMPLATE_DIR = BASE_DIR / "templates"
 
 sys.path.insert(0, str(SRC_DIR))
+
+from central_control.vehicle_registry import VEHICLES as VEHICLE_REGISTRY
 
 FIRST_MAP_DIR = SRC_DIR / "central_control" / "camera_tools" / "first_map"
 
@@ -42,13 +44,21 @@ CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FPS = 30
 
-ROBOT_NAMESPACE = "/pinky1"
-BATTERY_PERCENT_TOPIC = f"{ROBOT_NAMESPACE}/battery/percent"
-BATTERY_VOLTAGE_TOPIC = f"{ROBOT_NAMESPACE}/battery/voltage"
-CMD_VEL_TOPIC = f"{ROBOT_NAMESPACE}/cmd_vel"
-WEB_CONTROL_TOPIC = f"{ROBOT_NAMESPACE}/web/control"
-EMERGENCY_STOP_HZ = 20
-EMERGENCY_STOP_SECONDS = 3
+VEHICLES = {
+    index: {
+        "vehicle_id": vehicle.vehicle_id,
+        "namespace": vehicle.ros_namespace,
+        "ros_namespace": vehicle.ros_namespace,
+        "controller_id": vehicle.controller_id,
+        "hardware_serial": vehicle.hardware_serial,
+        "display_name": vehicle.display_name,
+    }
+    for index, vehicle in enumerate(VEHICLE_REGISTRY.values(), start=1)
+}
+ROBOT_NAMESPACES = {
+    robot: vehicle["namespace"] for robot, vehicle in VEHICLES.items()
+}
+CENTRAL_CONTROL_TOPIC = "/pinkk/web/control"
 
 app = Flask(
     __name__,
@@ -64,81 +74,111 @@ homography_matrix: np.ndarray | None = None
 bev_width = 1600
 bev_height = 800
 
-system_state = {
-    "vehicle_id": "PINKY_01",
-    "battery": None,
-    "battery_voltage": None,
-    "battery_connected": False,
-    "charging": False,
-    "parking_slot": "P3",
-    "location": "P3 주차구역",
-    "state": "주차 완료",
-    "request_state": "대기 중",
-    "estimated_time": "-",
-    "progress": 100,
-    "camera_mode": "확인 중",
-}
+def initial_vehicle_state(robot: int) -> dict:
+    return {
+        "robot": robot,
+        **VEHICLES[robot],
+        "battery": None,
+        "battery_voltage": None,
+        "battery_connected": False,
+        "charging": False,
+        "parking_slot": "P3" if robot == 1 else "P4",
+        "location": f"P{robot + 2} 주차구역",
+        "state": "주차 완료",
+        "request_state": "대기 중",
+        "estimated_time": "-",
+        "progress": 100,
+        "camera_mode": "확인 중",
+    }
+
+
+system_states = {robot: initial_vehicle_state(robot) for robot in ROBOT_NAMESPACES}
+
+
+def set_camera_mode(mode: str) -> None:
+    for state in system_states.values():
+        state["camera_mode"] = mode
 
 battery_lock = threading.Lock()
-battery_last_update = 0.0
+battery_last_updates = {robot: 0.0 for robot in ROBOT_NAMESPACES}
 ros_node_lock = threading.Lock()
-ros_node: BatterySubscriber | None = None
+ros_node: ParkingUserRosNode | None = None
 
 
-class BatterySubscriber(Node):
+class ParkingUserRosNode(Node):
     def __init__(self):
         super().__init__("parking_user_web_battery_subscriber")
-        self.create_subscription(
-            Float32,
-            BATTERY_PERCENT_TOPIC,
-            self.percent_callback,
-            10,
+        self.central_control_publisher = self.create_publisher(
+            String, CENTRAL_CONTROL_TOPIC, 10
         )
-        self.create_subscription(
-            Float32,
-            BATTERY_VOLTAGE_TOPIC,
-            self.voltage_callback,
-            10,
-        )
-        self.cmd_vel_publisher = self.create_publisher(Twist, CMD_VEL_TOPIC, 10)
-        self.web_control_publisher = self.create_publisher(
-            String,
-            WEB_CONTROL_TOPIC,
-            10,
-        )
+        self.lcd_status_publishers = {}
+        self._subscriptions = []
+        for robot, namespace in ROBOT_NAMESPACES.items():
+            self._subscriptions.append(self.create_subscription(
+                Float32,
+                f"{namespace}/battery/percent",
+                lambda msg, robot=robot: self.percent_callback(robot, msg),
+                10,
+            ))
+            self._subscriptions.append(self.create_subscription(
+                Float32,
+                f"{namespace}/battery/voltage",
+                lambda msg, robot=robot: self.voltage_callback(robot, msg),
+                10,
+            ))
+            self.lcd_status_publishers[robot] = self.create_publisher(
+                String, f"{namespace}/lcd_status", 10
+            )
 
-    def percent_callback(self, msg):
-        global battery_last_update
-
+    def percent_callback(self, robot: int, msg):
         percent = max(0.0, min(100.0, float(msg.data)))
         with battery_lock:
-            system_state["battery"] = round(percent, 1)
-            system_state["battery_connected"] = True
-            battery_last_update = time.time()
+            system_states[robot]["battery"] = round(percent, 1)
+            system_states[robot]["battery_connected"] = True
+            battery_last_updates[robot] = time.time()
 
-    def voltage_callback(self, msg):
-        global battery_last_update
-
+    def voltage_callback(self, robot: int, msg):
         with battery_lock:
-            system_state["battery_voltage"] = round(float(msg.data), 2)
-            system_state["battery_connected"] = True
-            battery_last_update = time.time()
+            system_states[robot]["battery_voltage"] = round(float(msg.data), 2)
+            system_states[robot]["battery_connected"] = True
+            battery_last_updates[robot] = time.time()
 
-    def publish_emergency_stop(self) -> None:
-        self.cmd_vel_publisher.publish(Twist())
+    def publish_user_request(
+        self,
+        robot: int,
+        command: str,
+        requested_by: str,
+    ) -> None:
+        vehicle = VEHICLES[robot]
+        request_message = String()
+        request_message.data = json.dumps(
+            {
+                "vehicle_id": vehicle["vehicle_id"],
+                "robot_id": vehicle["vehicle_id"],
+                "controller_id": vehicle["controller_id"],
+                "hardware_serial": vehicle["hardware_serial"],
+                "ros_namespace": vehicle["ros_namespace"],
+                "command": command,
+                "priority": 6 if command == "entry" else 4,
+                "source": "parking_user_web",
+                "requested_by": requested_by,
+                "requested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            },
+            ensure_ascii=False,
+        )
+        self.central_control_publisher.publish(request_message)
 
-    def publish_web_command(self, command: str) -> None:
-        message = String()
-        message.data = command
-        self.web_control_publisher.publish(message)
+        lcd_message = String()
+        lcd_message.data = "입차 중" if command == "entry" else "출차 중"
+        self.lcd_status_publishers[robot].publish(lcd_message)
 
 
-def run_battery_subscriber() -> None:
+def run_ros_node() -> None:
     global ros_node
 
     try:
         rclpy.init(args=None)
-        node = BatterySubscriber()
+        node = ParkingUserRosNode()
         with ros_node_lock:
             ros_node = node
         rclpy.spin(node)
@@ -152,20 +192,24 @@ def run_battery_subscriber() -> None:
             rclpy.shutdown()
 
 
-def publish_emergency_stop_burst(node: BatterySubscriber) -> None:
-    interval = 1.0 / EMERGENCY_STOP_HZ
-    publish_count = EMERGENCY_STOP_HZ * EMERGENCY_STOP_SECONDS
-    for _ in range(publish_count):
-        node.publish_emergency_stop()
-        time.sleep(interval)
-
-
 def refresh_battery_connection_state() -> None:
     while True:
         with battery_lock:
-            if battery_last_update == 0.0 or time.time() - battery_last_update > 15.0:
-                system_state["battery_connected"] = False
+            for robot, last_update in battery_last_updates.items():
+                if last_update == 0.0 or time.time() - last_update > 15.0:
+                    system_states[robot]["battery_connected"] = False
         time.sleep(2.0)
+
+
+def requested_robot(payload: dict | None = None) -> int:
+    raw = (payload or {}).get("robot", request.args.get("robot", 1))
+    try:
+        robot = int(raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError("robot은 1 또는 2여야 합니다.") from error
+    if robot not in ROBOT_NAMESPACES:
+        raise ValueError("robot은 1 또는 2여야 합니다.")
+    return robot
 
 
 def find_existing_file(candidates: list[Path], label: str) -> Path:
@@ -238,7 +282,7 @@ def open_camera() -> bool:
         cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_V4L2)
 
         if not cap.isOpened():
-            system_state["camera_mode"] = "연결 끊김"
+            set_camera_mode("연결 끊김")
             print(f"[경고] 카메라 {CAMERA_ID}번을 열 수 없습니다.")
             return False
 
@@ -261,7 +305,7 @@ def open_camera() -> bool:
 
         if not received:
             cap.release()
-            system_state["camera_mode"] = "연결 끊김"
+            set_camera_mode("연결 끊김")
             print("[경고] 카메라는 열렸지만 프레임을 받지 못했습니다.")
             return False
 
@@ -271,9 +315,9 @@ def open_camera() -> bool:
             and dist_coeffs is not None
             and homography_matrix is not None
         ):
-            system_state["camera_mode"] = "실시간 BEV"
+            set_camera_mode("실시간 BEV")
         else:
-            system_state["camera_mode"] = "카메라 연결됨 / BEV 파일 없음"
+            set_camera_mode("카메라 연결됨 / BEV 파일 없음")
 
         actual_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -315,7 +359,7 @@ def read_bev_frame() -> np.ndarray | None:
         ok, frame = camera.read()
 
     if not ok or frame is None:
-        system_state["camera_mode"] = "연결 끊김"
+        set_camera_mode("연결 끊김")
         close_camera()
         return None
 
@@ -376,19 +420,33 @@ def video_feed():
 
 @app.route("/api/status")
 def api_status():
+    try:
+        robot = requested_robot()
+    except ValueError as error:
+        return jsonify({"ok": False, "message": str(error)}), 400
     with battery_lock:
-        return jsonify(system_state)
+        return jsonify(system_states[robot])
+
+
+@app.route("/api/vehicles")
+def api_vehicles():
+    return jsonify({"vehicles": list(VEHICLES.values())})
 
 
 @app.route("/api/battery")
 def api_battery():
+    try:
+        robot = requested_robot()
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error)}), 400
     with battery_lock:
+        state = system_states[robot]
         return jsonify(
             {
                 "success": True,
-                "percent": system_state["battery"],
-                "voltage": system_state["battery_voltage"],
-                "connected": system_state["battery_connected"],
+                "percent": state["battery"],
+                "voltage": state["battery_voltage"],
+                "connected": state["battery_connected"],
             }
         )
 
@@ -404,10 +462,28 @@ def route_request(command: str):
         ), 400
 
     payload = request.get_json(silent=True) or {}
-    vehicle_id = payload.get("vehicle_id", system_state["vehicle_id"])
+    try:
+        robot = requested_robot(payload)
+    except ValueError as error:
+        return jsonify({"ok": False, "message": str(error)}), 400
+    state = system_states[robot]
+    vehicle_id = payload.get("vehicle_id", state["vehicle_id"])
+
+    with ros_node_lock:
+        node = ros_node
+    if node is None:
+        return jsonify(
+            {
+                "ok": False,
+                "message": "ROS 연결이 준비되지 않아 요청을 전송하지 못했습니다.",
+            }
+        ), 503
+
+    requested_by = str(payload.get("requested_by") or "parking_user").strip()
+    node.publish_user_request(robot, command, requested_by)
 
     if command == "entry":
-        system_state.update(
+        state.update(
             {
                 "vehicle_id": vehicle_id,
                 "state": "입차 경로 생성 완료",
@@ -418,70 +494,31 @@ def route_request(command: str):
             }
         )
         message = "입차 요청이 중앙 관제 시스템에 전달되었습니다."
-        destination = system_state["parking_slot"]
+        destination = state["parking_slot"]
     else:
-        system_state.update(
+        state.update(
             {
                 "vehicle_id": vehicle_id,
                 "state": "출차 준비 완료",
                 "request_state": "출차 요청 완료",
                 "estimated_time": "약 1분",
                 "progress": 15,
-                "location": f"{system_state['parking_slot']} 출차 준비",
+                "location": f"{state['parking_slot']} 출차 준비",
             }
         )
         message = "출차 요청이 중앙 관제 시스템에 전달되었습니다."
         destination = "출구"
 
-    # 현재는 웹 연동 확인용 상태 변경이다.
-    # 나중에 여기서 ROS2 서비스 또는 토픽을 호출하면 됨.
     return jsonify(
         {
             "ok": True,
             "message": message,
-            "state": system_state["state"],
-            "estimated_time": system_state["estimated_time"],
+            "state": state["state"],
+            "estimated_time": state["estimated_time"],
             "destination": destination,
-            "progress": system_state["progress"],
+            "progress": state["progress"],
         }
     )
-
-
-@app.route("/api/emergency", methods=["POST"])
-def emergency_stop():
-    with ros_node_lock:
-        node = ros_node
-
-    if node is None:
-        return jsonify(
-            {
-                "ok": False,
-                "message": "ROS 연결이 준비되지 않아 긴급 정지를 전송하지 못했습니다.",
-            }
-        ), 503
-
-    node.publish_web_command("emergency")
-    node.publish_emergency_stop()
-    threading.Thread(
-        target=publish_emergency_stop_burst,
-        args=(node,),
-        daemon=True,
-    ).start()
-    system_state.update(
-        {
-            "state": "긴급 정지",
-            "request_state": "긴급 정지 전송 완료",
-            "estimated_time": "정지",
-            "progress": 0,
-        }
-    )
-    return jsonify(
-        {
-            "ok": True,
-            "message": "PINKY_01 긴급 정지 명령을 전송했습니다.",
-        }
-    )
-
 
 if __name__ == "__main__":
     try:
@@ -489,16 +526,16 @@ if __name__ == "__main__":
     except (FileNotFoundError, KeyError) as error:
         print(error)
         print("[경고] BEV 영상 스트림을 시작할 수 없습니다.")
-        system_state["camera_mode"] = "사용 불가"
+        set_camera_mode("사용 불가")
 
     open_camera()
-    threading.Thread(target=run_battery_subscriber, daemon=True).start()
+    threading.Thread(target=run_ros_node, daemon=True).start()
     threading.Thread(target=refresh_battery_connection_state, daemon=True).start()
 
     print("=" * 64)
     print("사용자 주차 서비스 웹 서버 시작")
     print("접속 주소: http://127.0.0.1:5002")
-    print(f"카메라 모드: {system_state['camera_mode']}")
+    print(f"카메라 모드: {system_states[1]['camera_mode']}")
     print("=" * 64)
 
     app.run(

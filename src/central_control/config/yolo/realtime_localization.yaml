@@ -1,4 +1,7 @@
 realtime_localization:
+  # 영속 차량 ID다. ByteTrack track_id와 혼용하지 않는다. 차량 2 관제 인스턴스는
+  # vehicle_2로 설정하며 ROS 출력이 /pinkk/vehicle_2/*로 자동 분리된다.
+  vehicle_id: vehicle_1
   model_path: src/central_control/models/best.pt
   calibration_path: src/central_control/camera_tools/first_map/camera_calibration.npz
   homography_path: src/central_control/camera_tools/first_map/bev_homography.npz

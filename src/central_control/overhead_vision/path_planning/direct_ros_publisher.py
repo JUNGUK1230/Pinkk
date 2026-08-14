@@ -2,13 +2,16 @@
 
 import json
 import math
+from pathlib import Path
+import sys
 from typing import Mapping, Sequence
 
+try:
+    from ...vehicle_registry import get_vehicle
+except ImportError:  # direct script compatibility
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from central_control.vehicle_registry import get_vehicle
 
-PATH_TOPIC = "/pinkk/planned_path"
-TRAJECTORY_TOPIC = "/pinkk/planned_trajectory"
-POSE_TOPIC = "/pinkk/vehicle_pose"
-PATH_VALID_TOPIC = "/pinkk/path_valid"
 IMAGE_TOPIC = "/pinkk/localization/image"
 LIDAR_IMAGE_TOPIC = "/pinkk/lidar_map/image"
 MANAGEMENT_STATUS_TOPIC = "/pinkk/management/status"
@@ -25,10 +28,7 @@ class DirectRosPublisher:
 
     def __init__(
         self,
-        path_topic: str = PATH_TOPIC,
-        trajectory_topic: str = TRAJECTORY_TOPIC,
-        pose_topic: str = POSE_TOPIC,
-        path_valid_topic: str = PATH_VALID_TOPIC,
+        vehicle_id: str,
         image_topic: str = IMAGE_TOPIC,
         lidar_image_topic: str = LIDAR_IMAGE_TOPIC,
         management_status_topic: str = MANAGEMENT_STATUS_TOPIC,
@@ -37,6 +37,11 @@ class DirectRosPublisher:
             str, Sequence[Sequence[float]]
         ] | None = None,
     ) -> None:
+        vehicle = get_vehicle(vehicle_id)
+        path_topic = vehicle.topic("path")
+        trajectory_topic = vehicle.topic("trajectory")
+        pose_topic = vehicle.topic("localization_pose")
+        path_valid_topic = vehicle.topic("path_valid")
         try:
             import rclpy
             from geometry_msgs.msg import PoseStamped
@@ -68,6 +73,7 @@ class DirectRosPublisher:
         if self._owns_context:
             rclpy.init(args=None)
         self._node = Node("pinkk_live_planning_bridge")
+        self.vehicle = vehicle
         trajectory_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -161,7 +167,7 @@ class DirectRosPublisher:
         stamp = self._node.get_clock().now().to_msg()
         message = self._PoseStamped()
         message.header.stamp = stamp
-        message.header.frame_id = "lidar_map"
+        message.header.frame_id = f"{self.vehicle.frame_prefix}/map"
         message.pose.position.x = (
             float(center_lidar_px[0]) * self.lidar_resolution_cm / 100.0
         )
@@ -237,6 +243,13 @@ class DirectRosPublisher:
                 "vehicle_track_ids": track_ids,
             }
         payload = {
+            "vehicle_id": self.vehicle.vehicle_id,
+            "controller_id": self.vehicle.controller_id,
+            "hardware_serial": self.vehicle.hardware_serial,
+            "ros_namespace": self.vehicle.ros_namespace,
+            "online": True,
+            "identity_confirmed": True,
+            "localization_valid": bool(getattr(scene, "planning_ready", False)),
             "frame_index": int(getattr(scene, "frame_index")),
             "total_parking_slots": total_count,
             "occupied_parking_slots": occupied_count,
@@ -308,7 +321,7 @@ class DirectRosPublisher:
         stamp = self._node.get_clock().now().to_msg()
         path_message = self._RosPath()
         path_message.header.stamp = stamp
-        path_message.header.frame_id = "lidar_map"
+        path_message.header.frame_id = f"{self.vehicle.frame_prefix}/map"
         matrix: list[float] = []
         for point in trajectory:
             pose = self._PoseStamped()

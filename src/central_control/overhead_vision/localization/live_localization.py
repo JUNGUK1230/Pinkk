@@ -1046,6 +1046,7 @@ def main() -> int:
         )
         ros_publisher = (
             DirectRosPublisher(
+                vehicle_id=str(config.get("vehicle_id", "vehicle_1")),
                 image_topic=str(
                     config.get("ros_image_topic", "/pinkk/localization/image")
                 ),

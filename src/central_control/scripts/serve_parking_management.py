@@ -12,8 +12,26 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+import yaml
+
 
 class ParkingManagementHandler(SimpleHTTPRequestHandler):
+    vehicle_config: str
+
+    def do_GET(self) -> None:
+        if self.path == "/api/vehicles":
+            with open(self.vehicle_config, encoding="utf-8") as file:
+                vehicles = yaml.safe_load(file)["vehicles"]
+            body = json.dumps({"vehicles": vehicles}, ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
     def do_POST(self) -> None:
         if self.path != "/api/shutdown":
             self.send_error(404)
@@ -48,8 +66,10 @@ def main() -> None:
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--directory", required=True)
+    parser.add_argument("--vehicle-config", required=True)
     args = parser.parse_args()
 
+    ParkingManagementHandler.vehicle_config = args.vehicle_config
     handler = partial(ParkingManagementHandler, directory=args.directory)
     ThreadingHTTPServer((args.bind, args.port), handler).serve_forever()
 

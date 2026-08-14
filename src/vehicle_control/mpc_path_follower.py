@@ -198,13 +198,13 @@ class MpcPathFollower(Node):
 
     def _declare_parameters(self) -> None:
         defaults = {
-            "trajectory_topic": "/pinkk/planned_trajectory",
-            "path_valid_topic": "/pinkk/path_valid",
-            "pose_topic": "/pinkk/fused_vehicle_pose",
-            "cmd_vel_topic": "/cmd_vel",
+            "trajectory_topic": "trajectory",
+            "path_valid_topic": "path_valid",
+            "pose_topic": "localization_pose",
+            "cmd_vel_topic": "cmd_vel",
             # Pinky 실차 구동계에서 map curvature와 동일한 부호를 사용한다.
             "angular_command_sign": 1.0,
-            "scan_topic": "/scan",
+            "scan_topic": "scan",
             "require_scan": True,
             "scan_timeout_sec": 0.8,
             "front_scan_half_angle_deg": 18.0,
