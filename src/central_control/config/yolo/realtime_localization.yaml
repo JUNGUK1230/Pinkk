@@ -46,6 +46,9 @@ realtime_localization:
   latency_warning_ms: 150.0
 
   confidence: 0.25
+  # 실제 차량은 오검출 방지를 위해 더 높은 기준을 적용한다. dummy는 위의
+  # 공통 0.25 기준을 유지하여 주차칸 점유물을 놓치지 않는다.
+  car_confidence: 0.50
   iou: 0.45
   occupancy_threshold: 0.10
   output_every_n_frames: 1
@@ -53,12 +56,14 @@ realtime_localization:
   # 현재 에피소드: 재정렬된 상단 P5~P8 주차 후 충전 구역으로 이동한다.
   # C2가 비어 있으면 C2만 계획하고, C2가 점유됐을 때만 C1로 대체한다.
   parking_assignment:
-    active_phase: parking_to_charge
+    # START 차량은 C2/C1이 모두 점유됐을 때 아래 대기칸 정책으로 fallback한다.
+    active_phase: entry_to_parking
     phases:
       entry_to_parking:
         reference_point: entrance
+        # 거리 계산이 아니라 운영 우선순위를 그대로 적용한다.
         allowed_slots: [P5, P6, P7, P8]
-        preference: farthest
+        preference: ordered
         candidate_limit: 4
       parking_to_charge:
         # ordered 정책에서는 reference_point를 거리 계산에 사용하지 않는다.

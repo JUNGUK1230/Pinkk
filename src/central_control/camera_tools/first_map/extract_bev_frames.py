@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Maximum number of frames to extract (default: 1500).",
     )
-    parser.add_argument(
+    parser.add_argument(z
         "--output-dir",
         type=Path,
         help="Output folder. Default: bev_dataset/cvat_images/<video_name>.",

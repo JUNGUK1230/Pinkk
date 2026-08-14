@@ -537,6 +537,128 @@ def main() -> int:
         assert assignment.target_slot_name is None
         assert assignment.status == "waiting_for_charge_slot"
 
+        # START 차량은 C1/C2가 모두 점유됐을 때 충전칸 앞에서 기다리지 않고
+        # P5→P6→P7→P8의 명시된 우선순위로 첫 빈 대기칸을 선택한다.
+        waiting_slots_path = temporary / "waiting_slots.json"
+        waiting_slots_path.write_text(
+            json.dumps(
+                {
+                    "C1": rectangle(1200.0, 300.0, 150.0, 160.0).tolist(),
+                    "C2": rectangle(1200.0, 600.0, 150.0, 160.0).tolist(),
+                    "P5": rectangle(900.0, 700.0, 80.0, 80.0).tolist(),
+                    "P6": rectangle(750.0, 700.0, 80.0, 80.0).tolist(),
+                    "P7": rectangle(600.0, 700.0, 80.0, 80.0).tolist(),
+                    "P8": rectangle(450.0, 700.0, 80.0, 80.0).tolist(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        waiting_parking = ParkingSlotMap(
+            waiting_slots_path,
+            transform,
+            rear_axle_offset_cm=4.0,
+            occupancy_threshold=0.10,
+        )
+        start_waiting_policy = ParkingAssignmentPolicy(
+            name="entry_to_parking",
+            reference_bev_px=(120.0, 120.0),
+            allowed_slots=("P5", "P6", "P7", "P8"),
+            preference="ordered",
+            candidate_limit=4,
+        )
+        start_waiting_scene = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(120.0, 120.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            waiting_parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=start_waiting_policy,
+        ).observe(
+            [
+                detection((120.0, 120.0), 0.90, track_id=7),
+                detection((1200.0, 300.0), 0.99, 100.0, 70.0, track_id=21),
+                detection((1200.0, 600.0), 0.99, 100.0, 70.0, track_id=22),
+            ],
+            (800, 1600),
+            frame_index=13,
+            observed_at_unix_sec=103.0,
+        )
+        assert start_waiting_scene.charge_assignment is not None
+        assert start_waiting_scene.charge_assignment.status == "waiting_for_charge_slot"
+        assert start_waiting_scene.planning_request is not None
+        assert start_waiting_scene.planning_request.slot_name == "P5"
+        assert start_waiting_scene.planning_request.candidate_slot_names == (
+            "P5",
+            "P6",
+            "P7",
+            "P8",
+        )
+
+        p5_occupied_scene = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(120.0, 120.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            waiting_parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=start_waiting_policy,
+        ).observe(
+            [
+                detection((120.0, 120.0), 0.90, track_id=7),
+                detection((1200.0, 300.0), 0.99, 100.0, 70.0, track_id=21),
+                detection((1200.0, 600.0), 0.99, 100.0, 70.0, track_id=22),
+                detection((900.0, 700.0), 0.99, 70.0, 70.0, track_id=23),
+            ],
+            (800, 1600),
+            frame_index=13,
+            observed_at_unix_sec=103.0,
+        )
+        assert p5_occupied_scene.planning_request is not None
+        assert p5_occupied_scene.planning_request.slot_name == "P6"
+        assert p5_occupied_scene.planning_request.candidate_slot_names == (
+            "P6",
+            "P7",
+            "P8",
+        )
+
+        # 이미 P8에서 기다리는 차량에는 다른 P 대기칸 경로를 만들지 않는다.
+        parked_waiting_scene = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(450.0, 700.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            waiting_parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=start_waiting_policy,
+        ).observe(
+            [
+                detection((450.0, 700.0), 0.90, track_id=7),
+                detection((1200.0, 300.0), 0.99, 100.0, 70.0, track_id=21),
+                detection((1200.0, 600.0), 0.99, 100.0, 70.0, track_id=22),
+            ],
+            (800, 1600),
+            frame_index=13,
+            observed_at_unix_sec=103.0,
+        )
+        assert parked_waiting_scene.planning_request is None
+        assert "waiting in P5~P8" in parked_waiting_scene.status
+
         # Episode 배정된 ego는 기존 active phase와 관계없이 C2 목표로 planner
         # 입력을 생성한다. 다른 ID가 배정되면 planner 입력을 만들지 않는다.
         episode_tracker = EgoVehicleTracker(

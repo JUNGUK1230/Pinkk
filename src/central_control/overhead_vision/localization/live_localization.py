@@ -520,8 +520,13 @@ def open_camera(config: dict[str, object]) -> LatestFrameCamera:
     return LatestFrameCamera(camera).start()
 
 
-def detections_from_result(result: object) -> list[Detection]:
+def detections_from_result(
+    result: object,
+    minimum_confidence_by_class: dict[str, float] | None = None,
+) -> list[Detection]:
+    """YOLO 결과를 변환하며 클래스별 추가 confidence 기준을 적용한다."""
     detections: list[Detection] = []
+    thresholds = minimum_confidence_by_class or {}
     if result.boxes is None:
         return detections
     mask_polygons: Sequence[np.ndarray] = (
@@ -532,6 +537,8 @@ def detections_from_result(result: object) -> list[Detection]:
         class_id = int(box.cls[0].item())
         class_name = str(result.names[class_id])
         confidence = float(box.conf[0].item())
+        if confidence < thresholds.get(class_name, 0.0):
+            continue
         xyxy = tuple(float(value) for value in box.xyxy[0].cpu().numpy())
         if index < len(mask_polygons) and len(mask_polygons[index]) >= 3:
             polygon = np.asarray(mask_polygons[index], dtype=np.float64)
@@ -1076,6 +1083,17 @@ def main() -> int:
     inference_imgsz = int(config.get("inference_imgsz", 1600))
     inference_device = config.get("inference_device", 0)
     tracker_config = str(config.get("tracker_config", "bytetrack.yaml"))
+    car_confidence = float(config.get("car_confidence", 0.5))
+    if not math.isfinite(car_confidence) or not 0.0 <= car_confidence <= 1.0:
+        print(
+            "ERROR: car_confidence must be finite and between 0 and 1, "
+            f"got {car_confidence}"
+        )
+        return 1
+    print(
+        "Detection confidence: "
+        f"base={float(config['confidence']):.2f}, car={car_confidence:.2f}"
+    )
     if static_bev is None:
         warmup_image = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
         model.predict(
@@ -1155,7 +1173,10 @@ def main() -> int:
                 iou=float(config["iou"]),
                 verbose=False,
             )[0]
-            detections = detections_from_result(result)
+            detections = detections_from_result(
+                result,
+                minimum_confidence_by_class={"car": car_confidence},
+            )
             scene = localizer.observe(
                 detections,
                 bev.shape[:2],

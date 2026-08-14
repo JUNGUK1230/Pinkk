@@ -972,6 +972,23 @@ class SceneLocalizer:
             assignment_policy = self.post_charge_parking_assignment.name
         elif (
             charge_assignment is not None
+            and charge_assignment.status == "waiting_for_charge_slot"
+            and current_vehicle_state == "waiting_for_charge"
+        ):
+            # 이미 P5~P8에 정차한 차량은 C1/C2가 모두 찼을 때 다른 대기칸으로
+            # 다시 이동하지 않는다. 충전칸이 비는 프레임까지 현재 칸에서 대기한다.
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "vehicle is waiting in P5~P8 for a free charge slot",
+                tracked_vehicles,
+                charge_assignment,
+            )
+        elif (
+            charge_assignment is not None
             and charge_assignment.status == "assigned_to_charge"
             and vehicle.track_id != charge_assignment.vehicle_track_id
         ):
