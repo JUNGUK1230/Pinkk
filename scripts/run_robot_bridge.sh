@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROBOT_PROFILE="${1:-${PINKK_ROBOT_PROFILE:-robot_a}}"
+case "${ROBOT_PROFILE}" in
+    robot_a) PROFILE_DOMAIN_ID=36 ;;
+    robot_b) PROFILE_DOMAIN_ID=38 ;;
+    *)
+        echo "지원하지 않는 로봇 프로필입니다: ${ROBOT_PROFILE} (robot_a|robot_b)" >&2
+        exit 2
+        ;;
+esac
+
 source_environment() {
     local setup_file="$1"
     if [[ ! -f "${setup_file}" ]]; then
@@ -30,9 +40,11 @@ PYMYCOBOT_SITE_PACKAGES="$(
 )"
 export PYTHONPATH="${PYMYCOBOT_SITE_PACKAGES}${PYTHONPATH:+:${PYTHONPATH}}"
 
-export ROS_DOMAIN_ID=38
+export ROS_DOMAIN_ID="${PINKK_ROS_DOMAIN_ID:-${PROFILE_DOMAIN_ID}}"
 export ROS_LOCALHOST_ONLY=0
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-exec ros2 launch pinkk_usb_insertion observe_session.launch.py
+echo "로봇 프로필=${ROBOT_PROFILE}, ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+exec ros2 launch pinkk_usb_insertion observe_session.launch.py \
+    robot_profile:="${ROBOT_PROFILE}"

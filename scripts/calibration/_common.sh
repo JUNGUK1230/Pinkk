@@ -30,7 +30,17 @@ source_optional() {
 }
 
 setup_ros_network() {
-    export ROS_DOMAIN_ID=38
+    local profile="${PINKK_ROBOT_PROFILE:-robot_a}"
+    local profile_domain
+    case "${profile}" in
+        robot_a) profile_domain=36 ;;
+        robot_b) profile_domain=38 ;;
+        *)
+            echo "지원하지 않는 로봇 프로필입니다: ${profile}" >&2
+            return 2
+            ;;
+    esac
+    export ROS_DOMAIN_ID="${PINKK_ROS_DOMAIN_ID:-${profile_domain}}"
     export ROS_LOCALHOST_ONLY=0
     export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
     export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
