@@ -364,6 +364,10 @@ pinkk_frozen_target_executor_node:
     # 실제 결과 안전 판정값. 초과 시 다음 관절 하강을 차단한다.
     joint_vertical_minimum_progress_m: 0.0005
     joint_vertical_maximum_overshoot_m: 0.003
+    # true이면 혼합 XY/Roll/Pitch 보정의 결합 Z 이동으로 포트 기반 최종
+    # Z 아래에 도달해도 실행을 거절하지 않고 경고만 남긴다. 과삽입을
+    # 허용하는 시험 설정이며, 다른 무동작·관절·누적 하강 하드 한계는 유지한다.
+    allow_mixed_correction_below_final_z: true
     # [m] 명령 초과가 있더라도 1회 실제 하강이 이 값을 넘으면 즉시 중단.
     joint_vertical_hard_maximum_descent_m: 0.015
     # 각 correction 단계가 실제로 실행되는 오차 deadband.

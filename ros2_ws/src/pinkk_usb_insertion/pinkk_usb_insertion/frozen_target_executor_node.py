@@ -223,6 +223,9 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('joint_vertical_minimum_progress_m', 0.0005)
         self.declare_parameter('joint_vertical_maximum_overshoot_m', 0.003)
         self.declare_parameter(
+            'allow_mixed_correction_below_final_z', False
+        )
+        self.declare_parameter(
             'joint_vertical_hard_maximum_descent_m', 0.015
         )
         self.declare_parameter(
@@ -628,6 +631,11 @@ class FrozenTargetExecutorNode(Node):
         self._joint_vertical_maximum_overshoot = float(
             self.get_parameter('joint_vertical_maximum_overshoot_m').value
         )
+        self._allow_mixed_correction_below_final_z = bool(
+            self.get_parameter(
+                'allow_mixed_correction_below_final_z'
+            ).value
+        )
         self._joint_vertical_hard_maximum_descent = float(
             self.get_parameter(
                 'joint_vertical_hard_maximum_descent_m'
@@ -915,6 +923,8 @@ class FrozenTargetExecutorNode(Node):
             f'{self._joint_vertical_max_z_step * 1000.0:.1f}mm, '
             'joint_vertical_max_joint_step='
             f'{math.degrees(self._joint_vertical_max_joint_step):.1f}deg, '
+            'allow_mixed_below_final_z='
+            f'{self._allow_mixed_correction_below_final_z}, '
             f'z_backend={self._vertical_z_control_backend}, '
             f'z_cartesian_mode={self._vertical_z_cartesian_mode}, '
             f'z_cartesian_speed={self._vertical_z_cartesian_speed}, '
@@ -2549,11 +2559,17 @@ class FrozenTargetExecutorNode(Node):
             < self._aligned_hardware_final_target_z
             - self._joint_vertical_minimum_progress
         ):
-            raise RuntimeError(
+            message = (
                 'Cartesian XY 보정 후 포트 기반 목표 Z 아래로 내려갔습니다: '
                 f'actual_z={after_xy[2, 3] * 1000.0:.1f}mm, '
                 'target_z='
                 f'{self._aligned_hardware_final_target_z * 1000.0:.1f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 설정에 따라 차단하지 않고 '
+                '혼합 보정을 계속합니다'
             )
 
         # 3/3: 기존 coarse/Yaw 뒤 자세 복구와 같은 Cartesian 경로를 쓴다.
@@ -2634,9 +2650,15 @@ class FrozenTargetExecutorNode(Node):
                 f'z_drift={rp_z_drift * 1000.0:.1f}mm'
             )
         if final_remaining_z < -self._joint_vertical_minimum_progress:
-            raise RuntimeError(
+            message = (
                 '혼합 보정 후 포트 기반 최종 Z 아래로 내려갔습니다: '
                 f'overshoot={-final_remaining_z * 1000.0:.1f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 설정에 따라 과삽입 차단 없이 '
+                '다음 단계로 진행합니다'
             )
         if total_descent > self._joint_vertical_hard_maximum_cycle_descent:
             raise RuntimeError(
@@ -2767,14 +2789,29 @@ class FrozenTargetExecutorNode(Node):
         self._final_insertion_ready = False
         start = self._current_hardware_transform()
         start_z = float(start[2, 3])
-        # 상대 10mm 목표가 configured port 삽입 목표보다 낮으면 포트 기반
-        # 최종 Z에서 자른다. guard 결합 이동으로 남은 거리가 10mm보다
-        # 작아진 경우 추가 과삽입 목표를 만들지 않는다.
-        target_z = final_insertion_target_z_m(
-            start_z,
-            self._final_insertion_relative_distance,
-            self._aligned_hardware_final_target_z,
-        )
+        # 기본 모드는 상대 10mm 목표가 configured 포트 삽입 목표보다
+        # 낮으면 포트 기반 최종 Z에서 자른다. 과삽입 허용 시험 모드에서
+        # 이미 configured Z 아래라면 10mm 단계는 생략하고 R/P 복구와
+        # 그 뒤의 별도 5mm 하강 단계로 이어간다.
+        if (
+            self._allow_mixed_correction_below_final_z
+            and start_z < self._aligned_hardware_final_target_z
+        ):
+            self._publish(
+                'WARN: guard 시작 자세가 configured 최종 Z보다 이미 낮아 '
+                '최종 상대 10mm 하강을 생략합니다. 과삽입을 거절하지 않고 '
+                'R/P 복구와 후속 Z 하강으로 진행합니다: below_target='
+                f'{(self._aligned_hardware_final_target_z - start_z) * 1000.0:.1f}mm'
+            )
+            self._execute_post_insertion_roll_pitch_recovery()
+            self._execute_post_recovery_final_z()
+            return
+        else:
+            target_z = final_insertion_target_z_m(
+                start_z,
+                self._final_insertion_relative_distance,
+                self._aligned_hardware_final_target_z,
+            )
         commanded_total = start_z - target_z
         if commanded_total <= self._final_insertion_tolerance:
             self._publish(
@@ -2940,7 +2977,18 @@ class FrozenTargetExecutorNode(Node):
             self._aligned_hardware_observation_transform,
         )
         if actual_descent < self._joint_vertical_minimum_progress:
-            raise RuntimeError('R/P 복구 뒤 최종 Z-only 실제 진행량이 부족합니다')
+            message = (
+                'R/P 복구 뒤 최종 Z-only 실제 진행량이 부족합니다: '
+                f'command={self._post_recovery_final_z_distance * 1000.0:.1f}mm, '
+                f'actual={actual_descent * 1000.0:+.1f}mm, '
+                f'minimum={self._joint_vertical_minimum_progress * 1000.0:.1f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 과삽입 허용 시험 설정에 따라 '
+                '거절하지 않고 현재 실제 자세로 완료 처리합니다'
+            )
         if actual_descent > self._final_insertion_hard_maximum_total_descent:
             raise RuntimeError(
                 'R/P 복구 뒤 최종 Z-only 실제 하강량이 하드 한계를 '
