@@ -1,0 +1,34 @@
+handeye:
+  source_file: src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/T_flange_camera.npy
+  source_run: 20260715_baseline_old
+  parent_frame: joint6_flange
+  child_frame: camera_optical_frame
+  matrix_4x4:
+  - - 0.7196940328983735
+    - 0.6942159294646512
+    - 0.010234367982707415
+    - -0.03232665499936334
+  - - -0.6942857440150502
+    - 0.7195506984147523
+    - 0.01463209036025572
+    - -0.040054971670837186
+  - - 0.002793683579664983
+    - -0.01763620391050368
+    - 0.9998405671124191
+    - 0.030691235580366204
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  translation_m:
+    x: -0.03232665499936334
+    y: -0.040054971670837186
+    z: 0.030691235580366204
+  quaternion_xyzw:
+    x: -0.008700105907432497
+    y: 0.0020061408200591213
+    z: -0.374364740526967
+    w: 0.9272385478432109
+  calibrated: true
+  source: easy_handeye2
+

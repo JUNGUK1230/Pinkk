@@ -1,0 +1,20 @@
+camera:
+  # 현재 Git에 보관된 Robot B 내부행렬. B 전용 재보정 시 이 파일만 교체한다.
+  source_file: src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
+  frame_id: camera_optical_frame
+  image_width: 640
+  image_height: 480
+  camera_matrix:
+    - [1013.8718723623618, 0.0, 332.32897314859434]
+    - [0.0, 1015.4859559544775, 219.98489401481856]
+    - [0.0, 0.0, 1.0]
+  distortion_coefficients:
+    - -0.39132518254387283
+    - -0.3263735987270663
+    - -0.002528670174442522
+    - -0.006151687867492985
+    - 1.4055464780313762
+  calibration:
+    rms_reprojection_error_px: 0.3452522274970516
+    calibrated: true
+

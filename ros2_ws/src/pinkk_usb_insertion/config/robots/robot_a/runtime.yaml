@@ -1,0 +1,9 @@
+# Robot A 전용 덮어쓰기. 공통값은 ../../hybrid_runtime.yaml을 사용한다.
+pinkk_usb_camera_node:
+  ros__parameters:
+    camera_device: /dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd._USB_2.0_Camera-video-index0
+
+pinkk_frozen_target_executor_node:
+  ros__parameters:
+    # Robot A Roll 방향 확인용 2.5도 보정값. Pitch는 공통 설정의 0도를 사용한다.
+    fixed_roll_target_deg: -177.5
