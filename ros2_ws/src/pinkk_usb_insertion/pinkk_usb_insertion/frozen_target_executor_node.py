@@ -1622,6 +1622,11 @@ class FrozenTargetExecutorNode(Node):
                 self._publish('REJECTED: 이전 이동이 실행 중입니다')
                 return
             self._executing = True
+            # 수동 명령과 자동 시작이 같은 세션에서 연속 실행되지 않도록
+            # 어떤 수동 이동 명령이든 받으면 자동 one-shot을 소모한다.
+            if self._auto_start_enabled:
+                self._auto_start_triggered = True
+                self._auto_start_samples.clear()
         try:
             if not self._enabled:
                 raise ValueError('enable_execution=false')
