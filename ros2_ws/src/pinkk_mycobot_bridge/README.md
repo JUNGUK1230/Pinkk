@@ -10,7 +10,7 @@ MoveIt의 `FollowJointTrajectory` 목표를 로봇에 전달하는 구성입니�
 노트북과 로봇 PC에서 동일한 ROS 네트워크 설정을 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=38
+export ROS_DOMAIN_ID=36
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ```

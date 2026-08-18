@@ -18,7 +18,7 @@
 |---|---|
 | 최종 통합 브랜치 | `robot_arm_1828` |
 | ROS 2 | Jazzy |
-| ROS domain | `38` |
+| ROS domain | `36` |
 | RMW | `rmw_fastrtps_cpp` |
 | 로봇 PC 계정 | `jetcobot@raspi` |
 | 로봇 serial | `/dev/ttyUSB0`, `1000000 baud` |
@@ -29,11 +29,11 @@
 | ChArUco 유효 기준 | 코너 25개 이상, 재투영 오차 0.7 px 이하 |
 | 자동 관측 자세 | 최대 30개 |
 
-스크립트는 domain 38과 Fast DDS를 고정하므로 일반적으로 별도 `export`가 필요하지 않습니다.
+스크립트는 domain 36과 Fast DDS를 기본값으로 사용하므로 일반적으로 별도 `export`가 필요하지 않습니다.
 직접 ROS 명령을 실행할 때는 두 PC에서 다음 값을 동일하게 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=38
+export ROS_DOMAIN_ID=36
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
