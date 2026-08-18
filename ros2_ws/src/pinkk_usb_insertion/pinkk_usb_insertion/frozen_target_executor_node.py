@@ -14,6 +14,7 @@ from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped
 import numpy as np
 from pinkk_usb_insertion_interfaces.action import CartesianMove
+from pinkk_usb_insertion_interfaces.msg import UsbPortObservation
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -37,6 +38,7 @@ from .control.frozen_target import (
     proportional_z_descent_m,
     xy_residual_m,
 )
+from .control.auto_start import AutoStartSample, evaluate_auto_start
 from .control.serial_chain import (
     SerialChainModel,
     damped_joint_step,
@@ -86,6 +88,18 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('base_frame', 'g_base')
         self.declare_parameter('flange_frame', 'joint6_flange')
         self.declare_parameter('maximum_input_age_seconds', 1.0)
+        # 영상 중앙에서 일정 시간 정지한 포트를 확인한 뒤 통합 제어를
+        # 프로세스당 한 번 자동 시작한다.
+        self.declare_parameter('auto_start_enabled', False)
+        self.declare_parameter('auto_start_stable_duration_seconds', 5.0)
+        self.declare_parameter('auto_start_minimum_samples', 30)
+        self.declare_parameter('auto_start_image_center_u_px', 320.0)
+        self.declare_parameter('auto_start_image_center_v_px', 240.0)
+        self.declare_parameter('auto_start_center_tolerance_px', 80.0)
+        self.declare_parameter('auto_start_maximum_center_spread_px', 5.0)
+        self.declare_parameter('auto_start_maximum_depth_spread_m', 0.005)
+        self.declare_parameter('auto_start_maximum_yaw_spread_deg', 2.0)
+        self.declare_parameter('auto_start_maximum_sample_gap_seconds', 0.5)
         self.declare_parameter(
             'hardware_cartesian_pose_maximum_age_seconds', 2.0
         )
@@ -257,6 +271,44 @@ class FrozenTargetExecutorNode(Node):
         self._flange_frame = str(self.get_parameter('flange_frame').value)
         self._maximum_age = float(
             self.get_parameter('maximum_input_age_seconds').value
+        )
+        self._auto_start_enabled = bool(
+            self.get_parameter('auto_start_enabled').value
+        )
+        self._auto_start_stable_duration = float(
+            self.get_parameter('auto_start_stable_duration_seconds').value
+        )
+        self._auto_start_minimum_samples = int(
+            self.get_parameter('auto_start_minimum_samples').value
+        )
+        self._auto_start_image_center_u = float(
+            self.get_parameter('auto_start_image_center_u_px').value
+        )
+        self._auto_start_image_center_v = float(
+            self.get_parameter('auto_start_image_center_v_px').value
+        )
+        self._auto_start_center_tolerance = float(
+            self.get_parameter('auto_start_center_tolerance_px').value
+        )
+        self._auto_start_maximum_center_spread = float(
+            self.get_parameter(
+                'auto_start_maximum_center_spread_px'
+            ).value
+        )
+        self._auto_start_maximum_depth_spread = float(
+            self.get_parameter(
+                'auto_start_maximum_depth_spread_m'
+            ).value
+        )
+        self._auto_start_maximum_yaw_spread = float(
+            self.get_parameter(
+                'auto_start_maximum_yaw_spread_deg'
+            ).value
+        )
+        self._auto_start_maximum_sample_gap = float(
+            self.get_parameter(
+                'auto_start_maximum_sample_gap_seconds'
+            ).value
         )
         self._hardware_pose_maximum_age = float(
             self.get_parameter(
@@ -691,6 +743,13 @@ class FrozenTargetExecutorNode(Node):
         self._target_samples = deque(maxlen=sample_buffer_size)
         self._port_z_samples = deque(maxlen=sample_buffer_size)
         self._axis_samples = deque(maxlen=sample_buffer_size)
+        auto_buffer_size = max(
+            300,
+            self._auto_start_minimum_samples * 4,
+        )
+        self._auto_start_samples = deque(maxlen=auto_buffer_size)
+        self._auto_start_triggered = False
+        self._auto_start_last_reason = ''
         self._aligned_frozen_xy = None
         self._aligned_observation_transform = None
         self._aligned_port_z: float | None = None
@@ -757,6 +816,13 @@ class FrozenTargetExecutorNode(Node):
             callback_group=callbacks,
         )
         self.create_subscription(
+            UsbPortObservation,
+            '/robot_arm/perception/usb_port/observation',
+            self._auto_start_observation_callback,
+            10,
+            callback_group=callbacks,
+        )
+        self.create_subscription(
             JointState,
             '/joint_states',
             self._joint_callback,
@@ -770,6 +836,12 @@ class FrozenTargetExecutorNode(Node):
             10,
             callback_group=callbacks,
         )
+        if self._auto_start_enabled:
+            self.create_timer(
+                0.5,
+                self._auto_start_timer_callback,
+                callback_group=callbacks,
+            )
         mode = '허용' if self._enabled else '차단'
         self.get_logger().warning(
             '초기 관측 고정목표 실행기: '
@@ -856,6 +928,30 @@ class FrozenTargetExecutorNode(Node):
         )
 
     def _validate_parameters(self) -> None:
+        if not 1.0 <= self._auto_start_stable_duration <= 60.0:
+            raise ValueError(
+                'auto_start_stable_duration_seconds는 1~60초여야 합니다'
+            )
+        if not 5 <= self._auto_start_minimum_samples <= 1000:
+            raise ValueError('auto_start_minimum_samples는 5~1000이어야 합니다')
+        if not 1.0 <= self._auto_start_center_tolerance <= 500.0:
+            raise ValueError('auto_start_center_tolerance_px 범위가 잘못됐습니다')
+        if not 0.5 <= self._auto_start_maximum_center_spread <= 100.0:
+            raise ValueError(
+                'auto_start_maximum_center_spread_px 범위가 잘못됐습니다'
+            )
+        if not 0.0001 <= self._auto_start_maximum_depth_spread <= 0.100:
+            raise ValueError(
+                'auto_start_maximum_depth_spread_m 범위가 잘못됐습니다'
+            )
+        if not 0.1 <= self._auto_start_maximum_yaw_spread <= 45.0:
+            raise ValueError(
+                'auto_start_maximum_yaw_spread_deg 범위가 잘못됐습니다'
+            )
+        if not 0.05 <= self._auto_start_maximum_sample_gap <= 5.0:
+            raise ValueError(
+                'auto_start_maximum_sample_gap_seconds 범위가 잘못됐습니다'
+            )
         if not 0.0 < self._maximum_age <= 5.0:
             raise ValueError('maximum_input_age_seconds는 0~5초여야 합니다')
         if not 0.5 <= self._hardware_pose_maximum_age <= 5.0:
@@ -1247,6 +1343,114 @@ class FrozenTargetExecutorNode(Node):
                 self._latest_axis = value
                 self._axis_received_at = received_at
                 self._axis_samples.append((received_at, value))
+
+    def _auto_start_observation_callback(
+        self,
+        message: UsbPortObservation,
+    ) -> None:
+        if not self._auto_start_enabled or self._auto_start_triggered:
+            return
+        if not message.valid or not all(point.visible for point in message.keypoints):
+            with self._lock:
+                self._auto_start_samples.clear()
+            return
+        points = np.asarray(
+            [(point.x, point.y) for point in message.keypoints],
+            dtype=np.float64,
+        )
+        depth = float(message.depth_m)
+        if not np.all(np.isfinite(points)) or not math.isfinite(depth):
+            with self._lock:
+                self._auto_start_samples.clear()
+            return
+        long_axis = points[1] - points[0]
+        axis_deg = math.degrees(
+            math.atan2(float(long_axis[1]), float(long_axis[0]))
+        )
+        center = np.mean(points, axis=0)
+        sample = AutoStartSample(
+            timestamp=time.monotonic(),
+            center_u=float(center[0]),
+            center_v=float(center[1]),
+            depth_m=depth,
+            axis_deg=axis_deg,
+        )
+        with self._lock:
+            self._auto_start_samples.append(sample)
+
+    def _auto_start_timer_callback(self) -> None:
+        if not self._auto_start_enabled:
+            return
+        with self._lock:
+            if self._auto_start_triggered or self._executing:
+                return
+            samples = list(self._auto_start_samples)
+            observation_ready = self._observation_reference is not None
+        if not observation_ready:
+            reason = '초기 관측 자세 확인 대기'
+            if reason != self._auto_start_last_reason:
+                self._auto_start_last_reason = reason
+                self._publish('AUTO_START_WAIT: ' + reason)
+            return
+        result = evaluate_auto_start(
+            samples,
+            now=time.monotonic(),
+            stable_duration_seconds=self._auto_start_stable_duration,
+            minimum_samples=self._auto_start_minimum_samples,
+            image_center_u_px=self._auto_start_image_center_u,
+            image_center_v_px=self._auto_start_image_center_v,
+            center_tolerance_px=self._auto_start_center_tolerance,
+            maximum_center_spread_px=(
+                self._auto_start_maximum_center_spread
+            ),
+            maximum_depth_spread_m=self._auto_start_maximum_depth_spread,
+            maximum_yaw_spread_deg=self._auto_start_maximum_yaw_spread,
+            maximum_sample_gap_seconds=self._auto_start_maximum_sample_gap,
+        )
+        if not result.ready:
+            if result.reason != self._auto_start_last_reason:
+                self._auto_start_last_reason = result.reason
+                self._publish(
+                    'AUTO_START_WAIT: '
+                    f'{result.reason}, samples={result.sample_count}, '
+                    f'duration={result.duration_seconds:.1f}s, '
+                    f'center_error={result.center_error_px:.1f}px, '
+                    f'center_spread={result.center_spread_px:.1f}px, '
+                    f'depth_spread={result.depth_spread_m * 1000.0:.1f}mm, '
+                    f'yaw_spread={result.yaw_spread_deg:.1f}deg'
+                )
+            return
+        with self._lock:
+            if self._auto_start_triggered or self._executing:
+                return
+            self._auto_start_triggered = True
+            self._executing = True
+        self._publish(
+            'AUTO_START_TRIGGERED: 포트 중앙·정지 관측 완료, '
+            f'samples={result.sample_count}, '
+            f'duration={result.duration_seconds:.1f}s, '
+            f'center_error={result.center_error_px:.1f}px, '
+            f'center_spread={result.center_spread_px:.1f}px, '
+            f'depth_spread={result.depth_spread_m * 1000.0:.1f}mm, '
+            f'yaw_spread={result.yaw_spread_deg:.1f}deg. '
+            '최종 Z 포함 통합 제어를 한 번 자동 실행합니다'
+        )
+        threading.Thread(
+            target=self._auto_start_worker,
+            name='pinkk-auto-start',
+            daemon=True,
+        ).start()
+
+    def _auto_start_worker(self) -> None:
+        try:
+            if not self._enabled:
+                raise ValueError('enable_execution=false')
+            self._execute_full_sequence(include_final_insertion=True)
+        except Exception as error:
+            self._publish(f'REJECTED: 자동 통합 실행 실패: {error}')
+        finally:
+            with self._lock:
+                self._executing = False
 
     def _joint_callback(self, message: JointState) -> None:
         values = dict(zip(message.name, message.position))

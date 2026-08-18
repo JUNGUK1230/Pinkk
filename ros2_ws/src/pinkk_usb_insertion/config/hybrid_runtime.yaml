@@ -170,6 +170,27 @@ pinkk_frozen_target_executor_node:
   ros__parameters:
     # false이면 모든 계산과 상태 발행은 하지만 실제 로봇 action을 보내지 않는다.
     enable_execution: true
+    # true이면 포트가 영상 중앙에서 아래 조건을 연속 만족할 때 수동 topic
+    # 명령 없이 최종 Z 포함 통합 제어를 프로세스당 한 번 자동 시작한다.
+    # 한 번 실행한 뒤에는 노드를 재시작하기 전까지 다시 자동 시작하지 않는다.
+    auto_start_enabled: true
+    # [s] 차량이 정지했다고 판단하기 위한 연속 관찰 시간.
+    auto_start_stable_duration_seconds: 5.0
+    # 위 시간창에 필요한 최소 유효 SolvePnP 관측 수.
+    auto_start_minimum_samples: 30
+    # [px] 640x480 영상에서 제어 시작 기준이 되는 화면 중심.
+    auto_start_image_center_u_px: 320.0
+    auto_start_image_center_v_px: 240.0
+    # [px] 포트 네 keypoint 중심과 화면 중심 사이 허용 거리.
+    auto_start_center_tolerance_px: 80.0
+    # [px] 관찰 시간 동안 포트 중심의 최대 흔들림.
+    auto_start_maximum_center_spread_px: 5.0
+    # [m] 관찰 시간 동안 SolvePnP depth의 중앙값 대비 최대 흔들림.
+    auto_start_maximum_depth_spread_m: 0.005
+    # [deg] 관찰 시간 동안 keypoint 장축각의 최대 흔들림.
+    auto_start_maximum_yaw_spread_deg: 2.0
+    # [s] 이보다 긴 검출 공백이 있으면 연속 관찰로 인정하지 않는다.
+    auto_start_maximum_sample_gap_seconds: 0.5
     # 모든 포트/flange 목표를 표현하는 로봇 base 좌표계.
     base_frame: g_base
     # 실제 Cartesian 제어와 현재 자세 조회에 사용하는 말단 flange TF.
