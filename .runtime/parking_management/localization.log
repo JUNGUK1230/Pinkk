@@ -1,86 +1,42 @@
-[WARN] [1785467293.805210761] [pinkk_live_planning_bridge]: Invalidated active trajectory
-[INFO] [1785467296.253603018] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
-[INFO] [1785467297.426807417] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
-[INFO] [1785467298.638862232] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
-[INFO] [1785467299.803484551] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
-[INFO] [1785467300.970213774] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
-[INFO] [1785467302.241744570] [pinkk_live_planning_bridge]: Published 345 points: /pinkk/planned_path, /pinkk/planned_trajectory
+QFontDatabase: Cannot find font directory /home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
 Opened overhead camera: 1920x1080 @ 30.0 FPS, latest-frame buffer request=1 accepted=True
-Loaded YOLO segmentation: /home/junguk/PINKK/src/central_control/models/best.pt names={0: 'car'}
+Loaded YOLO segmentation: /home/kukjiho/Pinkk/src/central_control/models/best.pt names={0: 'car'}
 Runtime path/scene files: disabled (direct ROS topics only)
-Direct ROS topics: /pinkk/vehicle_pose, /pinkk/planned_path, /pinkk/planned_trajectory, /pinkk/path_valid
-Parking assignment: parking_to_charge, ordered from (100.0, 120.0), slots=['C2', 'C1']
+Direct ROS topics: /pinkk/vehicle_1/localization_pose, /pinkk/vehicle_1/path, /pinkk/vehicle_1/trajectory, /pinkk/vehicle_1/path_valid
+Parking assignment: entry_to_parking, ordered from (100.0, 120.0), slots=['P5', 'P6', 'P7', 'P8']
 e: switch ego vehicle | SPACE: charge complete | p: replan | q/ESC: quit
 Fixed route publish: immediate + every 1.00 sec
-YOLO warm-up complete: imgsz=1600, device=cpu
-Frame 24: ego vehicle selection is ambiguous
-  Ego rear axle: (64.89, 22.75) cm, id=1, yaw=43.7 deg, conf=0.94, ambiguous=True
-  Route context: START -> WAIT
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Live timing: capture_age=1308.0 ms, dropped_for_freshness=0
-Frame 40: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.86, 22.61) cm, id=1, yaw=44.9 deg, conf=0.93, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.85924877299762, 22.60752903144143, 0.7836339292122494), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1261.1 ms, dropped_for_freshness=15
-Frame 57: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.88, 22.70) cm, id=1, yaw=43.6 deg, conf=0.94, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.88076410735427, 22.69745392087633, 0.76131366786985), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1176.2 ms, dropped_for_freshness=31
-Frame 72: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.82, 22.78) cm, id=1, yaw=41.7 deg, conf=0.94, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.82103252639172, 22.780115865767677, 0.7284948664531541), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1144.4 ms, dropped_for_freshness=45
-Frame 85: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.86, 22.78) cm, id=1, yaw=42.3 deg, conf=0.94, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.8571138179952, 22.778075200514806, 0.7381667285279025), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1214.2 ms, dropped_for_freshness=57
-Frame 100: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.84, 22.69) cm, id=1, yaw=43.4 deg, conf=0.93, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.84096192448291, 22.694953607488504, 0.7573597542108375), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1182.8 ms, dropped_for_freshness=71
-Frame 115: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.88, 22.72) cm, id=1, yaw=43.0 deg, conf=0.94, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.87813741450421, 22.723830190372762, 0.7507232772797079), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1193.2 ms, dropped_for_freshness=85
-Frame 130: planning input ready (charge_episode_fifo)
-  Ego rear axle: (64.33, 23.00) cm, id=1, yaw=34.1 deg, conf=0.93, ambiguous=False
-  Route context: START -> C1
-  Parking slots: 11/12 free
-  Tracked vehicles: id=1:entry_or_transit(-,live), id=2:charging(C2,live)
-  Charge assignment: id=1 -> C1 (assigned_to_charge)
-  Selected C1: start=(64.3275192943009, 22.998696113985, 0.59525896872475), goal=(162.20323667859284, 123.87150109209493, 0.689413868664666)
-  Assignment candidates: C1
-  Live timing: capture_age=1297.1 ms, dropped_for_freshness=99
-ERROR: Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:423
+Detection confidence: base=0.25, car=0.50
+Ultralytics 8.4.110 🚀 Python-3.12.3 torch-2.13.0+cpu 
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/kukjiho/Pinkk/src/central_control/overhead_vision/localization/live_localization.py", line 1438, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/kukjiho/Pinkk/src/central_control/overhead_vision/localization/live_localization.py", line 1198, in main
+    model.predict(
+  File "/home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/ultralytics/engine/model.py", line 541, in predict
+    self.predictor.setup_model(model=self.model, verbose=is_cli)
+  File "/home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/ultralytics/engine/predictor.py", line 417, in setup_model
+    device=select_device(self.args.device, verbose=verbose),
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kukjiho/Pinkk/.venv/lib/python3.12/site-packages/ultralytics/utils/torch_utils.py", line 268, in select_device
+    raise ValueError(
+ValueError: Invalid CUDA 'device=0' requested. Use 'device=cpu' or pass valid CUDA device(s) if available, i.e. 'device=0' or 'device=0,1,2,3' for Multi-GPU.
+
+torch.cuda.is_available(): False
+torch.cuda.device_count(): 0
+os.environ['CUDA_VISIBLE_DEVICES']: None
+See https://pytorch.org/get-started/locally/ for up-to-date torch install instructions if no CUDA devices are seen by torch.
+
+FATAL: exception not rethrown

@@ -1,15 +1,17 @@
-[INFO] [launch]: All log files can be found below /home/junguk/.ros/log/2026-07-31-12-08-08-894658-junguk-Cyborg-A15-AI-B2HWFKG-1046682
+[INFO] [launch]: All log files can be found below /home/kukjiho/.ros/log/2026-08-18-15-16-55-240470-kukjiho-Cyborg-A15-AI-B2HWFKG-14708
 [INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [rosbridge_websocket-1]: process started with pid [1046748]
-[INFO] [rosapi_node-2]: process started with pid [1046749]
-[rosbridge_websocket-1] [INFO] [1785467289.388494382] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
-[rosbridge_websocket-1] [INFO] [1785467291.118232254] [rosbridge_websocket]: Calling services in new thread
-[rosbridge_websocket-1] [INFO] [1785467291.118740460] [rosbridge_websocket]: Sending action goals in new thread
-[rosbridge_websocket-1] [INFO] [1785467291.119766309] [rosbridge_websocket]: Client connected. 1 clients total.
-[rosbridge_websocket-1] [INFO] [1785467291.122849718] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky1/battery/percent
-[rosbridge_websocket-1] [INFO] [1785467291.125132291] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky1/battery/voltage
-[rosbridge_websocket-1] [INFO] [1785467291.126940151] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky2/battery/percent
-[rosbridge_websocket-1] [INFO] [1785467291.129310730] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky2/battery/voltage
-[rosbridge_websocket-1] [INFO] [1785467291.131225551] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinkk/management/status
-[rosbridge_websocket-1] [INFO] [1785467291.132892837] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinkk/management/events
-[rosbridge_websocket-1] [INFO] [1785467301.355773092] [rosbridge_websocket]: Client disconnected. 0 clients total.
+[INFO] [rosbridge_websocket-1]: process started with pid [14763]
+[INFO] [rosapi_node-2]: process started with pid [14764]
+[rosbridge_websocket-1] [INFO] [1787033815.794304305] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
+[rosbridge_websocket-1] [INFO] [1787033816.643359772] [rosbridge_websocket]: Calling services in new thread
+[rosbridge_websocket-1] [INFO] [1787033816.643716979] [rosbridge_websocket]: Sending action goals in new thread
+[rosbridge_websocket-1] [INFO] [1787033816.644324001] [rosbridge_websocket]: Client connected. 1 clients total.
+[rosbridge_websocket-1] [INFO] [1787033816.646026652] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_1/battery/percent
+[rosbridge_websocket-1] [INFO] [1787033816.648604703] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_1/battery/voltage
+[rosbridge_websocket-1] [INFO] [1787033816.649235500] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_2/battery/percent
+[rosbridge_websocket-1] [INFO] [1787033816.650088488] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_2/battery/voltage
+[rosbridge_websocket-1] [INFO] [1787033816.651065843] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_1/emergency_stop_state
+[rosbridge_websocket-1] [INFO] [1787033816.651706238] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/vehicle_2/emergency_stop_state
+[rosbridge_websocket-1] [INFO] [1787033816.652589033] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/management/status
+[rosbridge_websocket-1] [INFO] [1787033816.653254115] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/management/events
+[rosbridge_websocket-1] [INFO] [1787033816.653904849] [rosbridge_websocket]: [Client 59d86300-af47-440d-b929-d9004da93be9] Subscribed to /pinkk/web/control
