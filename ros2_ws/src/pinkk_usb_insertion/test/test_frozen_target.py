@@ -5,6 +5,7 @@ from pinkk_usb_insertion.control.frozen_target import (
     circular_mean_degrees,
     circular_median_degrees,
     final_insertion_target_z_m,
+    flange_xy_for_tcp_lateral_offset,
     limited_xy_target,
     maximum_angular_deviation_degrees,
     port_based_flange_target_z,
@@ -61,6 +62,33 @@ def test_port_based_flange_target_z_uses_tcp_and_insertion_depth() -> None:
 def test_port_based_flange_target_z_rejects_depth_beyond_tcp() -> None:
     with pytest.raises(ValueError):
         port_based_flange_target_z(0.070, 0.100, 0.110)
+
+
+def test_tcp_positive_x_moves_flange_negative_x_at_zero_yaw() -> None:
+    target = flange_xy_for_tcp_lateral_offset(
+        (0.200, -0.060),
+        np.eye(3),
+        0.005,
+        0.0,
+    )
+    assert np.allclose(target, (0.195, -0.060))
+
+
+def test_tcp_local_x_rotates_with_flange_yaw() -> None:
+    yaw_90 = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    target = flange_xy_for_tcp_lateral_offset(
+        (0.200, -0.060),
+        yaw_90,
+        -0.005,
+        0.0,
+    )
+    assert np.allclose(target, (0.200, -0.055))
 
 
 def test_xy_residual() -> None:

@@ -31,6 +31,7 @@ from .control.frozen_target import (
     circular_mean_degrees,
     circular_median_degrees,
     final_insertion_target_z_m,
+    flange_xy_for_tcp_lateral_offset,
     limited_xy_target,
     maximum_angular_deviation_degrees,
     port_based_flange_target_z,
@@ -95,7 +96,7 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('auto_start_minimum_samples', 30)
         self.declare_parameter('auto_start_image_center_u_px', 320.0)
         self.declare_parameter('auto_start_image_center_v_px', 240.0)
-        self.declare_parameter('auto_start_center_tolerance_px', 80.0)
+        self.declare_parameter('auto_start_center_tolerance_px', 150.0)
         self.declare_parameter('auto_start_maximum_center_spread_px', 5.0)
         self.declare_parameter('auto_start_maximum_depth_spread_m', 0.005)
         self.declare_parameter('auto_start_maximum_yaw_spread_deg', 2.0)
@@ -178,6 +179,8 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('final_z_p_max_xy_step_m', 0.005)
         self.declare_parameter('final_z_p_xy_deadband_m', 0.004)
         self.declare_parameter('final_z_p_use_port_target', True)
+        self.declare_parameter('final_tcp_offset_x_m', 0.0)
+        self.declare_parameter('final_tcp_offset_y_m', 0.0)
         self.declare_parameter('final_tcp_offset_z_m', 0.120)
         self.declare_parameter('final_port_insertion_depth_m', 0.010)
         # 힘 센서가 없는 마지막 구간은 자동 반복하지 않고 명시적인 단발
@@ -513,6 +516,12 @@ class FrozenTargetExecutorNode(Node):
         )
         self._final_z_p_use_port_target = bool(
             self.get_parameter('final_z_p_use_port_target').value
+        )
+        self._final_tcp_offset_x = float(
+            self.get_parameter('final_tcp_offset_x_m').value
+        )
+        self._final_tcp_offset_y = float(
+            self.get_parameter('final_tcp_offset_y_m').value
         )
         self._final_tcp_offset_z = float(
             self.get_parameter('final_tcp_offset_z_m').value
@@ -1115,6 +1124,10 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError('final_z_p_max_xy_step_m은 0.1~5mm여야 합니다')
         if not 0.0 <= self._final_z_p_xy_deadband <= 0.005:
             raise ValueError('final_z_p_xy_deadband_m은 0~5mm여야 합니다')
+        if not -0.050 <= self._final_tcp_offset_x <= 0.050:
+            raise ValueError('final_tcp_offset_x_m은 -0.050~0.050m여야 합니다')
+        if not -0.050 <= self._final_tcp_offset_y <= 0.050:
+            raise ValueError('final_tcp_offset_y_m은 -0.050~0.050m여야 합니다')
         if not 0.0 <= self._final_tcp_offset_z <= 0.300:
             raise ValueError('final_tcp_offset_z_m은 0~0.300m여야 합니다')
         if not 0.0 <= self._final_port_insertion_depth <= 0.050:
@@ -1762,7 +1775,7 @@ class FrozenTargetExecutorNode(Node):
         )
         current = self._current_flange()
         frozen_target = current.copy()
-        frozen_target[:2, 3] = initial_target_transform[:2, 3]
+        port_target_xy = initial_target_transform[:2, 3].copy()
         if self._use_pbvs_target_z:
             frozen_target[2, 3] = initial_target_transform[2, 3]
             z_source = 'pbvs_pre_approach'
@@ -1785,6 +1798,12 @@ class FrozenTargetExecutorNode(Node):
                 observation_transform,
             )[:3, :3]
         )
+        frozen_target[:2, 3] = flange_xy_for_tcp_lateral_offset(
+            port_target_xy,
+            frozen_target[:3, :3],
+            self._final_tcp_offset_x,
+            self._final_tcp_offset_y,
+        )
         frozen_xy = frozen_target[:2, 3].copy()
         initial_residual = xy_residual_m(current[:2, 3], frozen_xy)
         if initial_residual > self._maximum_coarse_step:
@@ -1795,7 +1814,11 @@ class FrozenTargetExecutorNode(Node):
 
         self._publish(
             '초기 관측 목표 고정: '
+            f'port_xy=[{port_target_xy[0]:+.6f}, {port_target_xy[1]:+.6f}]m, '
             f'xy=[{frozen_xy[0]:+.6f}, {frozen_xy[1]:+.6f}]m, '
+            'tcp_xy_local='
+            f'[{self._final_tcp_offset_x * 1000.0:+.1f}, '
+            f'{self._final_tcp_offset_y * 1000.0:+.1f}]mm, '
             f'z={frozen_target[2, 3]:.6f}m({z_source}), '
             f'keypoint_axis={initial_axis:+.3f}deg, '
             f'{sample_summary}. '
@@ -1857,6 +1880,17 @@ class FrozenTargetExecutorNode(Node):
         )
         if self._enable_initial_yaw:
             self._execute_initial_yaw(float(initial_axis))
+            frozen_xy = flange_xy_for_tcp_lateral_offset(
+                port_target_xy,
+                self._current_flange()[:3, :3],
+                self._final_tcp_offset_x,
+                self._final_tcp_offset_y,
+            )
+            self._publish(
+                'Yaw 후 TCP X/Y 회전 반영: target_flange_xy='
+                f'[{frozen_xy[0] * 1000.0:+.1f}, '
+                f'{frozen_xy[1] * 1000.0:+.1f}]mm'
+            )
         residual = self._finalize_coupled_alignment(
             frozen_xy,
             observation_transform,

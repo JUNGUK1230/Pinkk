@@ -25,7 +25,7 @@ servo는 사용하지 않습니다. YOLO 픽셀은 포트 pose와 초기 Yaw를 
 5초 동안 검사합니다. 다음을 모두 만족하면 차량과 포트가 정지했다고 판단합니다.
 
 - 유효 관측 30개 이상
-- 포트 중심이 영상 `(320, 240)`에서 80px 이내
+- 포트 중심이 영상 `(320, 240)`에서 150px 이내
 - 포트 중심 최대 흔들림 5px 이하
 - SolvePnP depth 최대 흔들림 5mm 이하
 - keypoint 장축각 최대 흔들림 2도 이하
@@ -40,12 +40,14 @@ servo는 사용하지 않습니다. YOLO 픽셀은 포트 pose와 초기 Yaw를 
 
 초기 관측 5장을 최근 1초 시간창에서 모아 중앙값을 사용합니다.
 
-- 포트 모델: 장축 18mm × 단축 12mm
+- 포트 모델: 장축 18mm × 단축 10mm
 - 카메라 pose: `camera_optical_frame → usb_port`
 - 로봇 pose: `g_base → joint6_flange → camera_optical_frame → usb_port`
 - coarse Z: `port_z + 180mm` pre-approach
 - 최종 flange Z: `port_z + TCP_Z - insertion_depth`
 - 현재 TCP Z: 130mm
+- 로봇 A TCP X: flange 로컬 -5mm
+- 로봇 B TCP X/Y: 0mm
 - 현재 포트 삽입 깊이: 10mm
 
 따라서 현재 최종 목표는 다음과 같습니다.

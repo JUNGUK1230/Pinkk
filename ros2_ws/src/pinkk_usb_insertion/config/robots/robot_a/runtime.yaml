@@ -7,3 +7,6 @@ pinkk_frozen_target_executor_node:
   ros__parameters:
     # Robot A Roll 방향 확인용 2.5도 보정값. Pitch는 공통 설정의 0도를 사용한다.
     fixed_roll_target_deg: -177.5
+    # flange 로컬 -X 방향으로 5mm 치우친 충전기 팁의 시험 보정값.
+    # 실행 시 목표 flange는 회전된 +X 방향으로 보정된다.
+    final_tcp_offset_x_m: -0.005

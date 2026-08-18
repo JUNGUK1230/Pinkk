@@ -70,6 +70,31 @@ def port_based_flange_target_z(
     return port_z + tcp_z - insertion
 
 
+def flange_xy_for_tcp_lateral_offset(
+    port_xy,
+    flange_rotation,
+    tcp_x_m: float,
+    tcp_y_m: float,
+):
+    """flange 로컬 TCP X/Y 편심을 반영한 base-frame flange XY를 반환한다."""
+    port = np.asarray(port_xy, dtype=np.float64).reshape(2)
+    rotation = np.asarray(flange_rotation, dtype=np.float64).reshape(3, 3)
+    tcp_x = float(tcp_x_m)
+    tcp_y = float(tcp_y_m)
+    if (
+        not np.all(np.isfinite(port))
+        or not np.all(np.isfinite(rotation))
+        or not math.isfinite(tcp_x)
+        or not math.isfinite(tcp_y)
+    ):
+        raise ValueError('포트 XY, flange 회전, TCP X/Y는 유한값이어야 합니다')
+    lateral_tcp_base = rotation @ np.array(
+        [tcp_x, tcp_y, 0.0],
+        dtype=np.float64,
+    )
+    return port - lateral_tcp_base[:2]
+
+
 def limited_xy_target(current_xy, target_xy, maximum_step_m: float):
     """목표 방향으로 최대 step만 이동한 다음 XY 목표를 반환한다."""
     current = np.asarray(current_xy, dtype=np.float64).reshape(2)

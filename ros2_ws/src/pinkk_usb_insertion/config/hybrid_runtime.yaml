@@ -68,7 +68,7 @@ pinkk_frozen_target_executor_node:
     auto_start_image_center_u_px: 320.0
     auto_start_image_center_v_px: 240.0
     # [px] 포트 네 keypoint 중심과 화면 중심 사이 허용 거리.
-    auto_start_center_tolerance_px: 80.0
+    auto_start_center_tolerance_px: 150.0
     # [px] 관찰 시간 동안 포트 중심의 최대 흔들림.
     auto_start_maximum_center_spread_px: 5.0
     # [m] 관찰 시간 동안 SolvePnP depth의 중앙값 대비 최대 흔들림.
@@ -180,9 +180,14 @@ pinkk_frozen_target_executor_node:
     # 최종 flange Z를 자동 계산한다:
     # target_flange_z = port_z + tcp_offset_z - insertion_depth
     final_z_p_use_port_target: true
+    # [m] flange 로컬 좌표계에서 충전기 팁까지의 측면 편심.
+    # 실행기는 현재 flange Yaw를 포함한 회전행렬로 base XY 보정량을 계산한다.
+    # 로봇별 실측값은 config/robots/<profile>/runtime.yaml에서 덮어쓴다.
+    final_tcp_offset_x_m: 0.000
+    final_tcp_offset_y_m: 0.000
     # [m] 그리퍼를 완전히 닫은 상태에서 flange부터 수직 아래 USB 충전기
     # 단자 끝까지의 시험 실측 거리: 130mm.
-    # X/Y 편심은 0이고 USB 축은 flange 축과 평행하다고 가정한다.
+    # USB 축은 flange 축과 평행하다고 가정한다.
     final_tcp_offset_z_m: 0.130
     # [m] USB 끝이 포트 입구 평면보다 안쪽으로 들어갈 목표 깊이: 10mm.
     final_port_insertion_depth_m: 0.010
