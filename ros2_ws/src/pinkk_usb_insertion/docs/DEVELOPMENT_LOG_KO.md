@@ -149,19 +149,7 @@ Joint6 범위 제한은 실제 장비 실행에 필요한 최소 보호로 유�
 - 유효한 5~10프레임의 u/v/장축각/SolvePnP 깊이 중앙값을 사용한다.
 - 분산이 큰 관측에서는 이동하지 않는다.
 
-### 4. 결합 IBVS
-
-실제 하드웨어에서 다음 관계를 측정한다.
-
-```text
-[Δu, Δv, Δθ] = J × [ΔX, ΔY, ΔJoint6]
-```
-
-Joint6 회전으로 생기는 화면 중심 이동까지 포함한 로컬 영상 자코비안을
-사용해 XY와 Yaw를 함께 보정한다. 관측 거리가 바뀌면 자코비안을 다시
-추정하거나 SolvePnP 깊이로 스케일을 갱신한다.
-
-### 5. 충전기 장착 이후
+### 4. 충전기 장착 이후
 
 - flange에서 충전기 끝까지 TCP를 측정한다.
 - 충전기와 포트가 정렬됐을 때의 목표 영상각을 보정한다.
@@ -309,7 +297,7 @@ PBVS coarse (mode 1, path lock 없음)
 ### 보류 및 미적용
 
 - TCP XYZ를 삽입 pose로 역산하는 절차는 검토했지만 이번 작업에서는 측정하거나
-  제어에 적용하지 않았다. 현재 코드는 기존 scalar TCP Z 시험값 120mm만 쓴다.
+  제어에 적용하지 않았다. 현재 코드는 scalar TCP Z 시험값 130mm만 쓴다.
 - 최종 Z guard 15mm는 제거하지 않았다. 실측에서 3~5mm Z 명령이 실제
   9~19.5mm 이동했으므로 포트 내부 10mm 자동 삽입은 현재 범위 밖이다.
 - 다음 XY 개선 후보인 제조사 실제 `cartesian_pose_actual` 기반 refine 시작
@@ -340,7 +328,7 @@ PBVS coarse (mode 1, path lock 없음)
 - 최종 순서를 `Z-only 삽입 → 초기 Roll/Pitch 복구 → Z-only 3mm 추가 하강`
   으로 확장했다. 추가 3mm는 한 번의 관절 Jacobian 명령으로 실행한다.
 - 비교 시험을 위해 `vertical_z_control_backend=cartesian`을 추가했다. 이
-  설정에서는 통합 실행의 guard 하강, 최종 10mm 및 R/P 뒤 3mm를 모두
+  설정에서는 통합 실행의 guard 하강, 최종 10mm 및 R/P 뒤 5mm를 모두
   제조사 `send_coords(mode=1)`로 실행하고 최종 실제 오차를 보고한다.
 - 다음 비교 시험은 같은 통합 흐름에서 backend만 `joint`로 되돌려 Jacobian
   관절 증분과 제조사 `send_angles` 결과를 비교한다.

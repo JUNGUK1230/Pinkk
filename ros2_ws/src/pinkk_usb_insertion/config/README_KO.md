@@ -57,13 +57,12 @@ bash scripts/calibration/laptop_handeye_data.sh activate RUN
 
 ## `insertion_control.yaml`
 
-포트 실제 크기, solvePnP 품질 기준, 접근 거리, IBVS 제한, 삽입 제한과 안전
-스위치를 관리합니다.
+포트 실제 크기, SolvePnP 품질 기준, PBVS 기준과 검출 유효시간을 관리합니다.
 
 `pose_estimation`에는 YOLO 검출 선택 기준도 포함합니다.
 현재 SolvePnP 포트 모델은 YOLO keypoint 라벨링 순서
 `LEFT_TOP → RIGHT_TOP → RIGHT_BOTTOM → LEFT_BOTTOM`을 사용하며,
-실측 외곽 크기는 장축 18 mm × 단축 10 mm입니다.
+실측 외곽 크기는 장축 18 mm × 단축 12 mm입니다.
 
 ```yaml
 target_class_name: usb_port
@@ -75,36 +74,9 @@ minimum_keypoint_confidence: 0.60
 `target_detection_id`가 비어 있으면 품질 점수가 가장 높은 포트 후보를 선택합니다.
 특정 포트를 추적할 때는 상위 상태 머신이 선택한 ID를 지정하도록 확장합니다.
 
-`pbvs.maximum_xy_step_m`은 원거리 PBVS의 1회 최대 XY 이동량입니다. 현재 값은
-10 mm지만 목표에 가까워지면 계산된 오차만큼만 이동합니다.
-`pbvs_test_execution.cartesian_speed`와 `cartesian_mode`는 로봇 PC 브리지의
-`send_coords()`에 전달됩니다. 현재 mode 1은 선형 좌표 이동 용도이며, 실제 로봇
-PC의 `pymycobot` 버전에서 동작을 확인하기 전에는 실행을 허용하지 않습니다.
-
-### 주요 실행 조합
-
-계산만 수행:
-
-```yaml
-execution_enabled: false
-insertion_enabled: false
-```
-
-접근만 허용:
-
-```yaml
-execution_enabled: true
-insertion_enabled: false
-```
-
-실제 삽입 허용:
-
-```yaml
-execution_enabled: true
-insertion_enabled: true
-```
-
-마지막 조합은 TCP, IBVS, 접촉 감지와 후퇴 로직이 모두 검증된 뒤에만 사용합니다.
+`pbvs.maximum_xy_step_m`은 PBVS 목표 계산에서 한 번에 제한할 XY 이동량입니다.
+실제 로봇 실행 허용, 자동 시작, frozen-target XY/RP 및 Z 하강값은
+`hybrid_runtime.yaml`에서 관리합니다.
 
 ## 단위 규칙
 

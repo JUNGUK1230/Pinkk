@@ -233,7 +233,7 @@ remaining_z = actual_flange_z - port_based_target_flange_z
 | 주 사용 | `descend_joint_z_once` | 유지, 단일 혼합 사이클 |
 | 주 사용 | `descend_joint_z_to_guard` | 유지, 15mm guard까지 자동 반복 |
 | 진단 | `yaw_only_once` | 유지 |
-| 레거시 | PBVS `recover_z_once`, waypoint | 코드 유지, 현재 주 시험 아님 |
+| 제거 | PBVS `recover_z_once`, waypoint | frozen-target 단일 경로 정리 시 삭제 |
 | 비권장 | Cartesian Z 반복 | 실측 오버슈트 때문에 주 경로에서 제외 |
 | 제거 | 별도 `frozen_target_p` 실행기/launch | 기본 실행기에 통합되어 삭제 |
 | 미구현 | 마지막 15mm 접촉 삽입 | 힘/컴플라이언스 확보 후 진행 |
@@ -584,10 +584,10 @@ YAML이 3초로 남아 있어 실행 로그가 계속 `3.0초 후 ...`로 출력
 
 ## 14. ROS domain 전환
 
-스크립트는 `ROS_DOMAIN_ID=38`로 고정해 사용한다.
+스크립트는 `ROS_DOMAIN_ID=36`을 기본값으로 사용한다.
 
 ```bash
-ROS_DOMAIN_ID=38 ./scripts/run_laptop_frozen_target_test.sh
+ROS_DOMAIN_ID=36 ./scripts/run_laptop_frozen_target_test.sh
 ```
 
 노트북과 로봇 PC의 domain이 반드시 같아야 한다. `.bashrc`를 자주 고치기보다
@@ -721,7 +721,7 @@ Cartesian 명령 후 로봇 무동작 ... error=32: 역기구학 해 없음
 삽입 상태의 포트 base pose와 실제 flange `get_coords()` pose로
 `T_flange_tcp = inverse(T_base_flange) × T_base_tip`을 계산하는 절차를
 검토했다. 그러나 이번 시험에서는 TCP XYZ를 측정하거나 코드에 적용하지
-않았다. 현재 제어는 scalar `final_tcp_offset_z_m=0.120`만 사용한다.
+않았다. 현재 제어는 scalar `final_tcp_offset_z_m=0.130`만 사용한다.
 
 최종 Z guard를 제거하는 변경도 적용하지 않았다. 기존 실측에서 3mm 관절
 Z 명령이 약 9.5~11.8mm, 5mm Cartesian 명령이 약 18~19.5mm 이동했다.

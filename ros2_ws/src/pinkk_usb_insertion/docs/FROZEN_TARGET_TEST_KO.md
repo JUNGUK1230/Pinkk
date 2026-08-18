@@ -38,7 +38,7 @@ target_flange_z
 = frozen_port_z + final_tcp_offset_z_m - final_port_insertion_depth_m
 ```
 
-현재 YAML 시험값은 완전히 닫힌 그리퍼에서 flange부터 USB 끝까지 120mm,
+현재 YAML 시험값은 완전히 닫힌 그리퍼에서 flange부터 USB 끝까지 130mm,
 삽입 깊이 10mm다. USB-A와 flange의 X/Y 방향은 동일하고 X/Y 편심은
 0으로 가정한다.
 
@@ -78,7 +78,7 @@ URDF Jacobian 관절 Z 하강(send_angles)
 → 실제 get_coords 최종 측정
 ```
 
-- Z 명령은 남은 절대 Z 오차에 P gain을 적용하고 최대 3mm로 제한한다.
+- Z 명령은 남은 절대 Z 오차에 P gain을 적용하고 최대 6mm로 제한한다.
 - Jacobian 관절 하나의 계산 step은 최대 2도다.
 - XY와 Roll/Pitch는 앞선 정렬에서 더 잘 동작한 Cartesian 좌표 제어를 쓴다.
 - XY 5mm, Roll/Pitch 5도 안이면 다음 사이클을 허용한다.
@@ -203,7 +203,7 @@ execute_once 전체 정렬
 → descend_joint_z_to_guard 자동 반복
 → insert_final_z_once (XY/Roll/Pitch 보정 없음)
 → 초기 관측 Roll/Pitch 복구
-→ Z-only 3mm 추가 하강
+→ Z-only 5mm 추가 하강
 → 제조사 실제 좌표 최종 측정
 → X/Y/XY/Z/Roll/Pitch/Yaw 오차 보고
 ```
@@ -266,12 +266,12 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 | `fixed_roll_target_deg` | -180.0 | 전체 제어 Roll 목표 |
 | `fixed_pitch_target_deg` | 0.0 | 전체 제어 Pitch 목표 |
 | `pitch_correction_gain` | 1.70 | Pitch 오차에만 적용하는 보정 배율 |
-| `final_tcp_offset_z_m` | 0.120 | 닫힌 그리퍼의 flange에서 USB 끝까지 거리 |
+| `final_tcp_offset_z_m` | 0.130 | 닫힌 그리퍼의 flange에서 USB 끝까지 거리 |
 | `final_port_insertion_depth_m` | 0.010 | 목표 삽입 깊이 |
 | `enable_final_insertion` | false | 최종 단발 삽입 안전 스위치 |
 | `final_insertion_step_m` | 0.0005 | 승인 1회당 삽입 명령량 |
 | `joint_vertical_z_kp` | 0.40 | 남은 Z 오차 비율 |
-| `joint_vertical_z_step_m` | 0.003 | 관절 Z 1회 명령 상한 |
+| `joint_vertical_z_step_m` | 0.006 | 관절 Z 1회 명령 상한 |
 | `joint_vertical_max_joint_step_deg` | 2.0 | 관절별 계산 증분 상한 |
 | `joint_vertical_xy_tolerance_m` | 0.005 | 다음 사이클 XY 허용오차 |
 | `joint_vertical_roll_pitch_tolerance_deg` | 5.0 | 다음 사이클 자세 허용오차 |
@@ -280,7 +280,7 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 | `final_insertion_relative_distance_m` | 0.010 | guard 이후 Z-only 상대 하강 거리 |
 | `final_insertion_hard_maximum_total_descent_m` | 0.015 | 마지막 단발 실제 하강 하드 한계 |
 | `enable_post_recovery_final_z` | true | 삽입 후 R/P 복구 뒤 추가 Z 하강 사용 |
-| `post_recovery_final_z_distance_m` | 0.003 | R/P 복구 뒤 Z-only 추가 하강 거리 |
+| `post_recovery_final_z_distance_m` | 0.005 | R/P 복구 뒤 Z-only 추가 하강 거리 |
 
 이 작업공간에서는 YAML data file이 install에 복사될 수 있으므로 YAML만
 수정해도 노트북 패키지를 재빌드하고 launch를 재시작한다. Python/launch/
