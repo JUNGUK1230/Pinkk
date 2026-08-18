@@ -19,6 +19,7 @@ log/
 *.pth
 *.onnx
 *.engine
+*.log
 
 # PyTorch checkpoints are ZIP archives. Ignore accidental manual extraction
 # beside the model file (for example models/best/data/*).
