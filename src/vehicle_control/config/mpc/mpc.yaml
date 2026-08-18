@@ -1,4 +1,4 @@
-pinkk_mpc_path_follower:
+/**:
   ros__parameters:
     # MPC가 감시할 설정 파일 경로다. 상대 경로는 ~/PINKK에서 실행하는 기준이다.
     # 이 경로 자체를 바꾸면 노드를 재시작해야 한다.
@@ -10,18 +10,19 @@ pinkk_mpc_path_follower:
 
     # 중앙제어가 [x_m, y_m, yaw_rad, direction] 배열로 발행하는 고정 경로 토픽이다.
     # 토픽을 바꾸면 subscription 재생성을 위해 노드를 재시작해야 한다.
-    trajectory_topic: /pinkk/planned_trajectory
+    trajectory_topic: trajectory
     # false 수신 시 현재 경로와 MPC 진행 상태를 즉시 폐기하고 정지하는 토픽이다.
     # 토픽을 바꾸면 노드를 재시작해야 한다.
-    path_valid_topic: /pinkk/path_valid
+    path_valid_topic: path_valid
     # MPC가 사용할 차량 중심 pose 토픽이다. 현재는 카메라 x/y와 LiDAR/odom
     # heading을 결합한 lidar_map 좌표 pose를 사용한다. 변경 시 재시작해야 한다.
-    pose_topic: /pinkk/fused_vehicle_pose
+    pose_topic: fused_pose
 
     # 실차 pinky_bringup으로 선속도와 각속도를 보낼 출력 토픽이다.
     # 다른 주행 제어기와 동시에 사용하지 말며, 변경 시 노드를 재시작해야 한다.
-    cmd_vel_topic: /cmd_vel
-    # true이면 /cmd_vel에 다른 publisher가 발견될 때 충돌로 판단하고 정지한다.
+    cmd_vel_topic: cmd_vel
+    # true이면 같은 차량 namespace의 cmd_vel에 다른 publisher가 발견될 때
+    # 충돌로 판단하고 정지한다.
     reject_cmd_vel_conflicts: true
     # MPC 지도 각속도에 곱해 ROS angular.z로 보내는 부호다. 허용값은 -1 또는 1.
     # lidar_map은 시계방향 yaw가 양수이고 ROS는 반시계방향이 양수라 현재는 -1이다.
@@ -29,7 +30,7 @@ pinkk_mpc_path_follower:
     angular_command_sign: -1.0
 
     # 장애물 안전정지에 사용할 LaserScan 토픽이다. 변경 시 재시작해야 한다.
-    scan_topic: /scan
+    scan_topic: scan
     # true이면 scan이 없거나 오래됐거나 유효 sector가 없을 때 무조건 정지한다.
     # 실차에서는 안전을 위해 true를 유지한다.
     require_scan: true

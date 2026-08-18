@@ -50,9 +50,10 @@ def load_c2_path() -> list[ReferencePoint]:
 def production_controller() -> DifferentialDriveMpc:
     config_path = SRC_ROOT / "vehicle_control/config/mpc/mpc.yaml"
     with config_path.open(encoding="utf-8") as file:
-        parameters = yaml.safe_load(file)["pinkk_mpc_path_follower"][
-            "ros__parameters"
-        ]
+        document = yaml.safe_load(file)
+        parameters = (
+            document.get("pinkk_mpc_path_follower") or document["/**"]
+        )["ros__parameters"]
     limit_names = {field.name for field in fields(MpcLimits)}
     limit_values = {
         key: value

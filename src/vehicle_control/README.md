@@ -11,14 +11,21 @@
 상단 카메라 x/y에는 짧은 저역통과 필터를 적용해 차량 mask 중심의 프레임별
 흔들림이 조향 명령으로 바로 전달되지 않게 합니다.
 
-입출력:
+입출력은 실행한 차량 namespace 아래로 분리됩니다. 예를 들어 차량 1의
+namespace는 `/pinkk/vehicle_1`입니다.
 
-- 입력 `/pinkk/planned_trajectory`: `x_m, y_m, yaw_rad, direction`
-- 위치 입력 `localization_pose`: 차량 namespace의 확정 pose
-- 센서 입력 `/odom`: camera yaw 사이의 상대 회전
-- 센서 입력 `/scan`: LiDAR map yaw 검증·제한적 보정 및 장애물 안전정지
-- 융합 출력 `/pinkk/fused_vehicle_pose`: MPC가 사용하는 차량 중심 pose
-- 실차 출력 `/cmd_vel`: `geometry_msgs/Twist`
+- 입력 `trajectory`: `x_m, y_m, yaw_rad, direction`
+- 경로 상태 입력 `path_valid`: 이전 경로 폐기와 정지
+- 위치 입력 `localization_pose`: 상단 카메라의 차량 중심 pose
+- 센서 입력 `odom`: camera yaw 사이의 상대 회전
+- 센서 입력 `scan`: LiDAR map yaw 검증·제한적 보정 및 장애물 안전정지
+- 융합 출력 `fused_pose`: MPC가 사용하는 차량 중심 pose
+- 실차 출력 `cmd_vel`: `geometry_msgs/Twist`
+
+위 이름은 모두 상대 토픽입니다. 차량 1에서는
+`/pinkk/vehicle_1/trajectory`, `/pinkk/vehicle_1/fused_pose`,
+`/pinkk/vehicle_1/cmd_vel`로, 차량 2에서는 동일한 이름이
+`/pinkk/vehicle_2/*` 아래로 해석됩니다.
 
 MPC는 signed speed와 curvature를 최적화하고 `angular.z = speed × curvature`로
 계산합니다. `angular_command_sign`은 Pinky 실차 좌우 회전 시험 결과에 맞춰
@@ -42,8 +49,8 @@ signed 횡오차와 heading 오차 크기에 비례해 추가 곡률을 계산�
 
 - pose 또는 경로 timeout 시 0 명령
 - solver 실패나 비정상 경로 수신 시 0 명령
-- `/scan` timeout, invalid sector 또는 진행 방향 장애물 감지 시 0 명령
-- 다른 노드가 `/cmd_vel`을 발행하면 충돌 상태로 정지
+- 차량별 `scan` timeout, invalid sector 또는 진행 방향 장애물 감지 시 0 명령
+- 같은 차량 namespace에서 다른 노드가 `cmd_vel`을 발행하면 충돌 상태로 정지
 - 선속도·가속도·곡률·각속도 제한
 - 직선 구간 곡률을 제한해 횡오차를 완만하게 보정
 - 직선 경로와 heading이 25° 이상 어긋나면 `HEADING_ERROR_TOO_LARGE` 정지
@@ -55,10 +62,10 @@ signed 횡오차와 heading 오차 크기에 비례해 추가 곡률을 계산�
   찾아 전진 구간을 다시 주행하지 않고 현재 cusp에서 후진을 재개
 - 전진→후진 전환 뒤 nearest-point 탐색을 후진 direction block 안으로 제한해
   공간상 가까운 전진 cusp로 되돌아가지 않음
-- 상단 카메라에서 `e`로 ego 차량을 바꾸면 `/pinkk/path_valid=false`를
-  받아 이전 차량 경로를 즉시 폐기하고 정지
+- 상단 카메라에서 ego 차량 경로가 무효화되면 해당 차량의
+  `path_valid=false`를 받아 그 차량 경로만 즉시 폐기하고 정지
 
-실차 설정은 `/cmd_vel`을 직접 사용하므로 기존 Pure Pursuit/Stanley/PID
+실차 설정은 차량별 `cmd_vel`을 직접 사용하므로 기존 Pure Pursuit/Stanley/PID
 제어기를 반드시 종료해야 합니다.
 
 ## 오프라인 검사
@@ -73,56 +80,55 @@ cd ~/PINKK
 
 ## ROS 2 실차 실행
 
-먼저 Pinky에서 기본 bringup을 같은 `ROS_DOMAIN_ID`로 실행하고 `/scan`이
-발행되는지 확인합니다. 현재 기본 설정은 IMU를 사용하지 않습니다.
+먼저 각 Pinky에서 동일한 `ROS_DOMAIN_ID`와 서로 다른 차량 namespace로
+bringup을 실행하고 차량별 `scan`이 발행되는지 확인합니다. 현재 기본 설정은
+IMU를 사용하지 않습니다.
 
 ```bash
 export ROS_DOMAIN_ID=36
 ros2 launch pinky_bringup bringup_robot.launch.xml
 ```
 
-상단 카메라 localization을 실행한 다음 중앙제어 PC에서 fused pose를 먼저
-실행합니다.
+상단 카메라 localization을 실행한 다음 중앙제어 PC에서 차량별 제어 스크립트를
+각각 실행합니다. 이 스크립트는 같은 namespace에서 fused pose를 먼저 시작하고
+MPC를 함께 실행하며, 둘 중 하나가 종료되면 나머지도 종료합니다.
 
 ```bash
 cd ~/PINKK
 source /opt/ros/jazzy/setup.bash
-source ~/pinky_pro/install/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=36
 
-ros2 run pinkk fused_pose_estimator \
-  --ros-args \
-  --params-file src/vehicle_control/config/localization/fused_pose.yaml
+./src/vehicle_control/run_vehicle_controller.sh vehicle_1
 ```
 
-`Fused pose status: TRACKING`을 확인한 후 MPC를 실행합니다.
+별도 터미널에서 차량 2도 실행합니다.
 
 ```bash
 cd ~/PINKK
 source /opt/ros/jazzy/setup.bash
-source ~/pinky_pro/install/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=36
 
-ros2 run pinkk mpc_path_follower \
-  --ros-args \
-  --params-file src/vehicle_control/config/mpc/mpc.yaml
+./src/vehicle_control/run_vehicle_controller.sh vehicle_2
 ```
 
-실행 전 `/cmd_vel` publisher가 없는지 확인합니다.
+수동 실행이 필요한 경우에는 두 노드 모두 같은 namespace remap을 사용해야
+합니다. 한 노드에만 namespace를 적용하면 공용 토픽이나 다른 차량 토픽을
+구독할 수 있으므로 허용하지 않습니다.
+
+실행 전 각 차량의 `cmd_vel` publisher가 없는지 확인합니다.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID=36
 
-ros2 topic info -v /cmd_vel
+ros2 topic info -v /pinkk/vehicle_1/cmd_vel
+ros2 topic info -v /pinkk/vehicle_2/cmd_vel
 ```
 
-MPC 실행 전 `Publisher count: 0`, 실행 후 `Publisher count: 1`이어야 합니다.
+각 토픽은 MPC 실행 전 `Publisher count: 0`, 실행 후 `Publisher count: 1`이어야
+합니다.
 처음에는 바퀴를 띄우거나 모터 비상정지를 준비한 상태에서 검증해야 합니다.
 
-heading 진단값은 `/pinkk/heading_diagnostics`에 다음 순서로 발행됩니다.
+heading 진단값은 차량별 `heading_diagnostics`에 다음 순서로 발행됩니다.
 IMU를 사용하지 않으므로 `imu_yaw_rad` 값은 `NaN`입니다.
 
 ```text
@@ -156,11 +162,11 @@ obstacle, pose/scan timeout 또는 heading 오류에서는 설정과 관계없�
 
 ## 현재 제한
 
-이 1차 버전은 장애물을 MPC 최적화 문제에 포함하지 않지만 `/scan`의 차체
+이 1차 버전은 장애물을 MPC 최적화 문제에 포함하지 않지만 차량별 `scan`의 차체
 전방 18°, 후방 30° sector에 대해 각각 15cm/5cm 비상정지를 적용합니다.
 Pinky URDF의 LiDAR 180° 장착 방향도 반영합니다. 기존 차량 안전 계층을
-유지하고, 첫 실차 연결에서는 `/pinkk/heading_diagnostics`와 실제 차체 방향을
-대조해야 합니다.
+유지하고, 첫 실차 연결에서는 각 차량의 `heading_diagnostics`와 실제 차체
+방향을 대조해야 합니다.
 
 ## 배터리 상태 LED·LCD와 웹 긴급정지
 
@@ -169,7 +175,7 @@ Pinky에서는 `pinky_status_led.py`와 `pinky_status_lcd.py`를 동시에 실�
 `/pinkk/vehicle_1/set_emergency_stop` 서비스를 호출합니다. 노드는 정지 상태를
 래치하고 그때만 `/pinkk/vehicle_1/cmd_vel` publisher를 만들어 0속도를 20Hz로 계속
 발행하며 LED를 빨간색으로 점멸합니다.
-평상시에는 추가 `/cmd_vel` publisher가 없어 기존 주행 제어기와 충돌하지
+평상시에는 추가 `cmd_vel` publisher가 없어 기존 주행 제어기와 충돌하지
 않습니다.
 
 두 노드는 차량 namespace의 상대 토픽 `battery/percent`를 함께 구독합니다.

@@ -698,10 +698,10 @@ class MpcPathFollower(Node):
         try:
             with self._tuning_path.open(encoding="utf-8") as file:
                 document = yaml.safe_load(file)
-            node_config = document.get(self.get_name())
+            node_config = document.get(self.get_name()) or document.get("/**")
             if not isinstance(node_config, dict):
                 raise ValueError(
-                    f"missing YAML node section: {self.get_name()}"
+                    f"missing YAML node section: {self.get_name()} or /**"
                 )
             raw_parameters = node_config.get("ros__parameters")
             if not isinstance(raw_parameters, dict):

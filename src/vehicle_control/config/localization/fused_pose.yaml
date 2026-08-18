@@ -1,23 +1,23 @@
-pinkk_fused_pose_estimator:
+/**:
   ros__parameters:
     # 상단 카메라 vehicle mask에서 x/y와 LiDAR 좌표계 장축 yaw를 사용한다.
-    camera_pose_topic: camera_pose
+    camera_pose_topic: localization_pose
     imu_topic: imu_raw
     # 현재 실차 구성은 IMU를 사용하지 않는다.
     require_imu: false
     # 카메라 yaw 주변의 LiDAR 정합으로 현재 절대 방향을 초기화하고
     # wheel odom의 상대 회전을 사용한다.
-    odom_topic: /odom
+    odom_topic: odom
     require_odom: true
     odom_yaw_sign: -1.0
-    scan_topic: /scan
+    scan_topic: scan
     # 실제 주행 방향의 전진/후진 부호를 얻어 카메라 중심 이동 yaw를 계산한다.
-    motion_command_topic: /cmd_vel
+    motion_command_topic: cmd_vel
     # 고정 경로 첫 yaw는 현재 yaw로 강제하지 않는다. 카메라가 아직 없을 때의
     # LiDAR 검색 fallback과 차량 앞/뒤 180도 방향 선택에만 사용한다.
-    trajectory_topic: /pinkk/planned_trajectory
-    fused_pose_topic: /pinkk/fused_vehicle_pose
-    diagnostic_topic: /pinkk/heading_diagnostics
+    trajectory_topic: trajectory
+    fused_pose_topic: fused_pose
+    diagnostic_topic: heading_diagnostics
 
     map_image_path: src/central_control/camera_tools/first_map/my_test_map0710.png
     map_resolution_m_per_px: 0.01

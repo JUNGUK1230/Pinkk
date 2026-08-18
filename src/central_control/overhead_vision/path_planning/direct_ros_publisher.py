@@ -179,8 +179,12 @@ class DirectRosPublisher:
             - round(age_sec * 1_000_000_000),
         )
         message = self._PoseStamped()
-        message.header.stamp = stamp
-        message.header.frame_id = f"{self.vehicle.frame_prefix}/map"
+        message.header.stamp.sec = stamp_ns // 1_000_000_000
+        message.header.stamp.nanosec = stamp_ns % 1_000_000_000
+        # 차량은 topic namespace로 구분하지만 모든 pose 좌표는 하나의 상단
+        # LiDAR map을 공유한다. frame_id까지 차량별로 바꾸면 fused pose가
+        # 서로 다른 좌표계로 오해하므로 공통 frame을 유지한다.
+        message.header.frame_id = "lidar_map"
         message.pose.position.x = (
             float(center_lidar_px[0]) * self.lidar_resolution_cm / 100.0
         )
@@ -334,7 +338,7 @@ class DirectRosPublisher:
         stamp = self._node.get_clock().now().to_msg()
         path_message = self._RosPath()
         path_message.header.stamp = stamp
-        path_message.header.frame_id = f"{self.vehicle.frame_prefix}/map"
+        path_message.header.frame_id = "lidar_map"
         matrix: list[float] = []
         for point in trajectory:
             pose = self._PoseStamped()
