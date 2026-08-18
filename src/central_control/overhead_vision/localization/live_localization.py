@@ -690,6 +690,36 @@ def load_parking_assignment(
     )
 
 
+def load_operational_space_polygons(
+    config: dict[str, object],
+) -> dict[str, tuple[tuple[float, float], ...]]:
+    """입구·출구의 BEV polygon을 관제 상태 판정용으로 읽는다."""
+    points_path = resolve_path(str(config["parking_points_path"]))
+    with points_path.open(encoding="utf-8") as file:
+        points = json.load(file)
+    polygons: dict[str, tuple[tuple[float, float], ...]] = {}
+    corner_names = (
+        "top_left_bev",
+        "top_right_bev",
+        "bottom_right_bev",
+        "bottom_left_bev",
+    )
+    for name in ("entrance", "exit"):
+        raw_space = points.get(name)
+        if not isinstance(raw_space, dict):
+            raise ValueError(f"parking operational space is missing: {name}")
+        polygon = []
+        for corner_name in corner_names:
+            point = raw_space.get(corner_name)
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError(
+                    f"{name} has invalid operational-space corner: {corner_name}"
+                )
+            polygon.append((float(point[0]), float(point[1])))
+        polygons[name] = tuple(polygon)
+    return polygons
+
+
 def draw_scene(
     bev: np.ndarray,
     scene: SceneObservation,
@@ -826,6 +856,55 @@ def draw_scene(
             2,
             cv2.LINE_AA,
         )
+    return canvas
+
+
+def draw_lidar_map_scene(
+    lidar_map: np.ndarray,
+    scene: SceneObservation,
+    display_scale: int = 4,
+) -> np.ndarray:
+    """실제 LiDAR 맵에 같은 YOLO 프레임의 차량 좌표를 빨간 점으로 그린다."""
+    canvas = cv2.cvtColor(lidar_map, cv2.COLOR_GRAY2BGR)
+    canvas = cv2.resize(
+        canvas,
+        (lidar_map.shape[1] * display_scale, lidar_map.shape[0] * display_scale),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    for vehicle in scene.tracked_vehicles:
+        if not vehicle.visible:
+            continue
+        center = (
+            round(vehicle.center_lidar_px[0] * display_scale),
+            round(vehicle.center_lidar_px[1] * display_scale),
+        )
+        if not (0 <= center[0] < canvas.shape[1] and 0 <= center[1] < canvas.shape[0]):
+            continue
+        cv2.circle(canvas, center, 10, (0, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, center, 14, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            (
+                f"id={vehicle.track_id} "
+                f"({vehicle.position_cm[0]:.1f}, {vehicle.position_cm[1]:.1f}) cm"
+            ),
+            (center[0] + 16, max(24, center[1] - 12)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+    cv2.putText(
+        canvas,
+        f"frame={scene.frame_index} | red=live YOLO LiDAR coordinate",
+        (14, 26),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
     return canvas
 
 
@@ -1003,10 +1082,30 @@ def main() -> int:
             not args.no_ros and bool(config.get("ros_publish_enabled", True))
         )
         ros_publisher = (
-            DirectRosPublisher(lidar_resolution_cm=transform.resolution_cm)
+            DirectRosPublisher(
+                vehicle_id=str(config.get("vehicle_id", "vehicle_1")),
+                image_topic=str(
+                    config.get("ros_image_topic", "/pinkk/localization/image")
+                ),
+                lidar_image_topic=str(
+                    config.get("ros_lidar_image_topic", "/pinkk/lidar_map/image")
+                ),
+                management_status_topic=str(
+                    config.get(
+                        "ros_management_status_topic",
+                        "/pinkk/management/status",
+                    )
+                ),
+                lidar_resolution_cm=transform.resolution_cm,
+                operational_space_polygons=load_operational_space_polygons(config),
+            )
             if ros_publish_enabled
             else None
         )
+        lidar_map_path = resolve_path(str(config["lidar_map_path"]))
+        lidar_map = cv2.imread(str(lidar_map_path), cv2.IMREAD_GRAYSCALE)
+        if lidar_map is None:
+            raise FileNotFoundError(f"LiDAR map image not found: {lidar_map_path}")
         target_slot_value = config.get("target_slot_name")
         target_slot_name = (
             str(target_slot_value) if target_slot_value is not None else None
@@ -1231,7 +1330,8 @@ def main() -> int:
                 )
                 last_print_time = now
 
-            if not args.no_display:
+            # --no-display는 GUI만 끄며 웹용 ROS 영상 발행은 계속한다.
+            if ros_publisher is not None or not args.no_display:
                 canvas = draw_scene(
                     bev,
                     scene,
@@ -1275,6 +1375,12 @@ def main() -> int:
                     2,
                     cv2.LINE_AA,
                 )
+                if ros_publisher is not None:
+                    ros_publisher.publish_image(canvas)
+                    ros_publisher.publish_lidar_image(
+                        draw_lidar_map_scene(lidar_map, scene)
+                    )
+            if not args.no_display:
                 cv2.imshow(WINDOW_NAME, canvas)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):

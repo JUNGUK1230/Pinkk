@@ -4,15 +4,21 @@ import argparse
 import json
 import math
 from pathlib import Path
+import sys
 import time
 from typing import Any, Sequence
+
+try:
+    from ...vehicle_registry import get_vehicle
+except ImportError:  # direct script compatibility
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from central_control.vehicle_registry import get_vehicle
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_SCENE_PATH = (
     REPO_ROOT / "src/central_control/path_planning/output/live_vision_scene.json"
 )
-POSE_TOPIC = "/pinkk/vehicle_pose"
 
 
 def load_current_vehicle_pose(
@@ -68,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         description="Publish fresh camera-localized vehicle pose to ROS 2."
     )
     parser.add_argument("--scene", type=Path, default=DEFAULT_SCENE_PATH)
-    parser.add_argument("--topic", default=POSE_TOPIC)
+    parser.add_argument("--vehicle-id", choices=("vehicle_1", "vehicle_2"), required=True)
     parser.add_argument("--max-age-sec", type=float, default=0.5)
     parser.add_argument("--poll-period-sec", type=float, default=0.05)
     return parser.parse_args()
@@ -78,6 +84,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args() if argv is None else _parse_args_from(argv)
     if args.poll_period_sec <= 0.0:
         raise ValueError("poll-period-sec must be positive")
+    vehicle = get_vehicle(args.vehicle_id)
+    pose_topic = vehicle.topic("localization_pose")
     try:
         import rclpy
         from geometry_msgs.msg import PoseStamped
@@ -96,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 durability=DurabilityPolicy.TRANSIENT_LOCAL,
                 reliability=ReliabilityPolicy.RELIABLE,
             )
-            self.publisher = self.create_publisher(PoseStamped, args.topic, qos)
+            self.publisher = self.create_publisher(PoseStamped, pose_topic, qos)
             self.last_frame_index: int | None = None
             self.last_warning: str | None = None
             self.timer = self.create_timer(args.poll_period_sec, self.publish_if_fresh)
@@ -111,7 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     return
                 message = PoseStamped()
                 message.header.stamp = self.get_clock().now().to_msg()
-                message.header.frame_id = "lidar_map"
+                message.header.frame_id = f"{vehicle.frame_prefix}/map"
                 message.pose.position.x = x_m
                 message.pose.position.y = y_m
                 message.pose.position.z = 0.0

@@ -271,10 +271,10 @@ class FusedPoseEstimator(Node):
 
     def _declare_parameters(self) -> None:
         defaults = {
-            "camera_pose_topic": "/pinkk/vehicle_pose",
-            "imu_topic": "/imu_raw",
+            "camera_pose_topic": "camera_pose",
+            "imu_topic": "imu_raw",
             "require_imu": False,
-            "odom_topic": "/odom",
+            "odom_topic": "odom",
             "require_odom": True,
             # ROS odom +yaw는 반시계, 이미지 map +yaw는 시계 방향이다.
             "odom_yaw_sign": -1.0,

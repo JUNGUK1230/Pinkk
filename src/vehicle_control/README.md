@@ -14,7 +14,7 @@
 입출력:
 
 - 입력 `/pinkk/planned_trajectory`: `x_m, y_m, yaw_rad, direction`
-- 위치 입력 `/pinkk/vehicle_pose`: 상단 카메라의 `lidar_map` 차체 중심 x/y
+- 위치 입력 `localization_pose`: 차량 namespace의 확정 pose
 - 센서 입력 `/odom`: camera yaw 사이의 상대 회전
 - 센서 입력 `/scan`: LiDAR map yaw 검증·제한적 보정 및 장애물 안전정지
 - 융합 출력 `/pinkk/fused_vehicle_pose`: MPC가 사용하는 차량 중심 pose
@@ -161,3 +161,50 @@ obstacle, pose/scan timeout 또는 heading 오류에서는 설정과 관계없�
 Pinky URDF의 LiDAR 180° 장착 방향도 반영합니다. 기존 차량 안전 계층을
 유지하고, 첫 실차 연결에서는 `/pinkk/heading_diagnostics`와 실제 차체 방향을
 대조해야 합니다.
+
+## 배터리 상태 LED·LCD와 웹 긴급정지
+
+Pinky에서는 `pinky_status_led.py`와 `pinky_status_lcd.py`를 동시에 실행합니다.
+관제 웹의 긴급정지 버튼이
+`/pinkk/vehicle_1/set_emergency_stop` 서비스를 호출합니다. 노드는 정지 상태를
+래치하고 그때만 `/pinkk/vehicle_1/cmd_vel` publisher를 만들어 0속도를 20Hz로 계속
+발행하며 LED를 빨간색으로 점멸합니다.
+평상시에는 추가 `/cmd_vel` publisher가 없어 기존 주행 제어기와 충돌하지
+않습니다.
+
+두 노드는 차량 namespace의 상대 토픽 `battery/percent`를 함께 구독합니다.
+LCD에는 배터리 퍼센트와 버튼 상태가 표시되고, LED는 배터리를 3등분해
+66.7% 이상 노랑, 33.3% 이상 66.7% 미만 주황, 33.3% 미만 빨강으로 표시합니다.
+긴급정지 때는 LCD에 `긴급정지`가 나오며 LED도 빨간색으로 점멸합니다.
+웹에서 충전을 요청하면 LED가 초록색으로 두 번 점멸한 뒤 현재 배터리 구간
+색으로 자동 복귀합니다. 긴급정지는 해제될 때까지 빨간색 점멸을 계속하며,
+긴급정지 중에는 충전 점멸 요청을 무시합니다.
+일시정지는 다음 주행 상태 요청이 들어올 때까지 노란색 점멸을 계속합니다.
+긴급정지가 들어오면 일시정지의 노란 점멸보다 빨간 점멸이 우선합니다.
+
+`run_parking_management.sh`는 두 상태 노드와 `run_pinky_services.sh`를 Pinky 홈에
+복사하고 namespaced bringup, LED와 LCD 노드를 자동 실행합니다. 수동 실행은
+Pinky에서 다음과 같이 합니다.
+노드는 현재 래치 상태를 transient-local
+`/pinkk/vehicle_1/emergency_stop_state` 토픽으로 발행하며, 웹은 이 상태를 구독해
+새로고침 후에도 긴급정지 잠금을 복원합니다.
+
+```bash
+ROS_DOMAIN_ID=36 ~/run_pinky_services.sh
+```
+
+서비스를 직접 시험하려면 다음 명령을 사용합니다.
+
+```bash
+ros2 service call /pinkk/vehicle_1/set_emergency_stop \
+  std_srvs/srv/SetBool "{data: true}"
+```
+
+해제는 반드시 주변 안전을 확인한 뒤 수행합니다.
+관제 웹에서는 해당 Pinky의 `경로 재생성` 버튼을 누르면 확인 후 같은 해제
+서비스를 호출하고, 해제 성공 뒤에만 경로 재생성 요청을 발행합니다.
+
+```bash
+ros2 service call /pinkk/vehicle_1/set_emergency_stop \
+  std_srvs/srv/SetBool "{data: false}"
+```

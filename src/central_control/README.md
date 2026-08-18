@@ -80,9 +80,9 @@ heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`
 
 ## ROS 2 토픽
 
-- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 상단 카메라에서 얻은
+- `/pinkk/vehicle_N/localization_pose`: `geometry_msgs/PoseStamped`, 차량별로 확정한
   차체 중심 x/y와 LiDAR map 좌표계의 측정 yaw
-- `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
+- `/pinkk/vehicle_N/path`: `nav_msgs/Path`, m 단위, 차량별 map frame
 - `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
 - `/pinkk/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
 

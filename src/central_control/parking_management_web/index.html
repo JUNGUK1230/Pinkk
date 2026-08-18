@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스마트 주차 통합 관제센터</title>
+<style>
+:root{--bg:#070b14;--panel:#101827;--panel2:#0b1220;--line:#263247;--text:#f3f6fb;--muted:#8fa0b8;--green:#28d17c;--yellow:#f7b955;--red:#ff5c6c;--blue:#4f8cff;--cyan:#22d3ee}
+*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;background:radial-gradient(circle at top left,rgba(79,140,255,.11),transparent 28%),var(--bg);color:var(--text);font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button{font:inherit}
+.topbar{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(7,11,20,.94);position:sticky;top:0;z-index:20}.brand{display:flex;align-items:center;gap:13px}.brand-mark{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,#1d4ed8,#22d3ee);font-weight:900}.brand h1{font-size:20px}.brand p{margin-top:3px;color:var(--muted);font-size:12px}.top-status{display:flex;gap:10px}.chip{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}.shutdown-button{cursor:pointer;border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e;font-weight:800}.shutdown-button:hover{background:rgba(255,92,108,.25)}.shutdown-button:disabled{cursor:wait;opacity:.65}
+.layout{display:flex;flex-direction:column;gap:18px;width:100%;max-width:2560px;margin:auto;padding:18px clamp(12px,2vw,32px) 32px}.left{display:flex;flex-direction:column;gap:18px;min-width:0}.right{display:grid;grid-template-columns:1fr;gap:18px;align-items:start;min-width:0}.panel{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(16,24,39,.98),rgba(11,18,32,.98));box-shadow:0 12px 35px rgba(0,0,0,.26);overflow:hidden}.panel-head{min-height:54px;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-bottom:1px solid var(--line)}.title{font-size:15px;font-weight:800}.sub{margin-top:3px;color:var(--muted);font-size:12px}.tools{display:flex;gap:8px}.tool{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#131d2e;color:#d8e2ef;cursor:pointer;font-size:12px}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sum{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.sum small{color:var(--muted)}.sum strong{display:block;margin-top:7px;font-size:25px}.sum p{margin-top:6px;color:#b8c5d5;font-size:11px}
+.fleet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.vehicle{padding:15px}.veh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.veh-id{font-size:17px;font-weight:900}.badge{padding:6px 9px;border-radius:999px;background:rgba(40,209,124,.13);color:#68e5a5;font-size:11px;font-weight:800}.badge.run{background:rgba(79,140,255,.14);color:#8fb5ff}.badge.emergency{background:rgba(255,92,108,.22);color:#ff929e}.row{display:grid;grid-template-columns:80px 1fr auto;gap:10px;align-items:center;margin-top:11px}.label{color:var(--muted);font-size:12px}.value{font-size:12px;font-weight:800}.battery{height:10px;overflow:hidden;border-radius:999px;background:#263247}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,#28d17c,#72e6a8)}.fill.low{background:linear-gradient(90deg,#f7b955,#ff7a59)}
+.route{padding:15px}.route-line{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #202c40;font-size:13px}.route-line span{color:var(--muted)}.progress{height:8px;margin-top:12px;border-radius:999px;background:#263247;overflow:hidden}.progress div{width:64%;height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:15px}.control{min-height:48px;border:1px solid var(--line);border-radius:10px;background:#162236;color:white;cursor:pointer;font-weight:800}.danger{border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e}.logs{max-height:210px;overflow-y:auto;padding:8px 15px 15px}.log{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #202c40;color:#cbd5e1;font-size:12px}.time{color:#6f849e}
+.event-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:16px}.event-category{border:1px solid #263247;border-radius:11px;background:#0b1321;overflow:hidden}.event-category:first-child{grid-column:1/-1}.event-category-head{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-bottom:1px solid #263247;background:#111b2b}.event-category-title{font-size:13px;font-weight:900}.event-category-state{padding:4px 7px;border-radius:999px;background:#202b3c;color:#91a2b9;font-size:10px}.event-list{padding:5px 12px}.event-item{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;min-height:38px;border-bottom:1px solid #1c293a}.event-item:last-child{border-bottom:0}.event-dot{width:9px;height:9px;border-radius:50%;background:#64748b}.event-name{font-size:12px;color:#d8e2ef}.event-level{font-size:10px;color:#8495ac}.event-item.critical .event-dot{background:#ff4055;box-shadow:0 0 10px rgba(255,64,85,.85)}.event-item.error .event-dot{background:#ff7a45}.event-item.warning .event-dot{background:#f7b955}.event-item.info .event-dot{background:#4f8cff}.event-item.success .event-dot{background:#28d17c}.event-item.pending .event-dot{background:#64748b}.event-item.live{background:rgba(79,140,255,.08)}.event-item.live.critical{background:rgba(255,64,85,.10)}.event-item.live .event-level{color:#dbe7f5;font-weight:800}
+.event-empty{padding:18px 8px;text-align:center;color:var(--muted);font-size:12px}
+.user-request-list{padding:6px 14px 14px}.user-request-item{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;min-height:44px;border-bottom:1px solid #202c40}.user-request-item:last-child{border-bottom:0}.user-request-name{font-size:12px;color:#e7eef8;font-weight:800}.user-request-meta{font-size:10px;color:#8fa0b8}.user-request-dot{width:9px;height:9px;border-radius:50%;background:#4f8cff;box-shadow:0 0 8px rgba(79,140,255,.6)}
+.robot-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:15px;padding-top:15px;border-top:1px solid #202c40}.robot-control{min-height:42px;padding:8px 6px;border:1px solid var(--line);border-radius:9px;background:#162236;color:white;cursor:pointer;font-size:12px;font-weight:800}.robot-control:hover{border-color:var(--blue);background:#1c2d49}.robot-control.danger{border-color:rgba(255,92,108,.55);background:rgba(255,92,108,.14);color:#ff929e}
+.command-toast{position:fixed;right:24px;bottom:24px;z-index:100;max-width:380px;padding:15px 18px;border:1px solid #36517b;border-radius:14px;background:#111c2d;color:#f4f7fb;box-shadow:0 18px 48px rgba(0,0,0,.38);opacity:0;transform:translateY(16px);pointer-events:none;transition:.22s}.command-toast.show{opacity:1;transform:translateY(0)}.command-toast strong{display:block;margin-bottom:4px;color:#8fb5ff}
+.monitor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:18px}
+.monitor{overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#000}
+.monitor-title{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--line);background:#111827;font-size:14px;font-weight:800}
+.monitor-live{color:var(--cyan);font-size:11px}
+.monitor img{display:block;width:100%;height:auto;min-height:360px;aspect-ratio:2/1;object-fit:contain;object-position:center;background:#000}
+.monitor-grid:fullscreen{align-content:center;background:var(--bg);padding:12px}
+.monitor-grid:fullscreen .monitor img{height:calc(100vh - 62px)}
+@media(max-width:1280px){.right{grid-template-columns:1fr}}
+@media(max-width:900px){.monitor-grid,.fleet,.event-board{grid-template-columns:1fr}.event-category:first-child{grid-column:auto}.monitor img{min-height:300px}.summary{grid-template-columns:repeat(2,1fr)}.right{grid-template-columns:1fr}.right .panel:last-child{grid-column:auto}.monitor-grid:fullscreen{overflow:auto;align-content:start}.monitor-grid:fullscreen .monitor img{height:auto;min-height:calc(100vh - 90px)}}
+@media(max-width:600px){.topbar{height:auto;padding:12px 14px;align-items:flex-start;gap:12px}.brand h1{font-size:16px}.brand p{display:none}.top-status{flex-direction:column;gap:6px}.chip{padding:7px 9px;font-size:11px}.layout{padding:10px;gap:12px}.left,.right{gap:12px}.panel-head{align-items:flex-start;gap:10px}.tools{flex-shrink:0}.summary{grid-template-columns:1fr 1fr;gap:8px}.sum{padding:12px}.monitor-grid{padding:8px;gap:10px}.monitor img{min-height:280px}.row{grid-template-columns:70px 1fr auto}}
+
+</style>
+</head>
+<body>
+<header class="topbar"><div class="brand"><div class="brand-mark">P</div><div><h1>스마트 주차 통합 관제센터</h1><p>LiDAR Map · Robot Fleet · Route Monitoring</p></div></div><div class="top-status"><div class="chip"><span class="dot"></span>중앙 제어 정상</div><div class="chip" id="clock">--:--:--</div><button class="chip shutdown-button" id="shutdownButton" onclick="shutdownServer()">서버 종료</button></div></header>
+<main class="layout">
+<section class="left">
+<section class="panel"><div class="panel-head"><div><div class="title">주차장 실시간 관제</div><div class="sub">YOLO BEV 객체 인식과 LiDAR 맵을 동시에 표시</div></div><div class="tools"><button class="tool" onclick="refreshFeeds()">새로고침</button><button class="tool" onclick="toggleFullscreen()">전체화면</button></div></div>
+<div class="monitor-grid" id="monitorGrid"><div class="monitor"><div class="monitor-title"><span>YOLO BEV</span><span class="monitor-live">● LIVE</span></div><img id="yoloFeed" alt="YOLO BEV 화면"></div><div class="monitor"><div class="monitor-title"><span>LiDAR MAP</span><span class="monitor-live">● LIVE</span></div><img id="lidarFeed" alt="LiDAR 맵 화면"></div></div></section>
+<section class="fleet">
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_01</div><div class="sub">/pinkk/vehicle_1 · vehicle_1 · PINKY-001</div></div><span id="batteryState1" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar1" class="fill" style="width:0%"></div></div><span id="batteryText1" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage1" class="value">-- V</span><span class="value">pinky_01</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(1,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(1,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(1,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(1,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(1,'pause')">일시 정지</button><button class="robot-control danger" onclick="sendRobotCommand(1,'emergency_stop')">긴급 정지</button></div></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_02</div><div class="sub">/pinkk/vehicle_2 · vehicle_2 · PINKY-002</div></div><span id="batteryState2" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar2" class="fill" style="width:0%"></div></div><span id="batteryText2" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage2" class="value">-- V</span><span class="value">pinky_02</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(2,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(2,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(2,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(2,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(2,'pause')">일시 정지</button><button class="robot-control danger" onclick="sendRobotCommand(2,'emergency_stop')">긴급 정지</button></div></div></section>
+</section>
+<section class="summary"><article class="sum"><small>전체 주차면</small><strong id="totalParkingSlots">--</strong><p>일반 주차구역</p></article><article class="sum"><small>사용 중</small><strong id="occupiedParkingSlots">--</strong><p id="occupancyPercent">점유율 --%</p></article><article class="sum"><small>충전 가능</small><strong id="chargingAvailability">-- / --</strong><p>실시간 충전구역 상태</p></article><article class="sum"><small>입구 공간</small><strong id="entranceSpaceState">--</strong><p id="entranceVehicleIds">YOLO 판정 대기</p></article><article class="sum"><small>출구 공간</small><strong id="exitSpaceState">--</strong><p id="exitVehicleIds">YOLO 판정 대기</p></article><article class="sum"><small>등록 로봇</small><strong>2</strong><p>PINKY_01 · PINKY_02</p></article></section>
+<section class="panel"><div class="panel-head"><div><div class="title">경로 생성 현황</div><div class="sub">Hybrid A* 경로 계획 및 임무 진행 상태</div></div></div><div class="route"><div class="route-line"><span>담당 로봇</span><strong id="activeRobot">PINKY_01</strong></div><div class="route-line"><span>현재 상태</span><strong id="sceneStatus">중앙제어 연결 대기</strong></div><div class="route-line"><span>목적지</span><strong id="targetSlot">--</strong></div><div class="route-line"><span>경로 상태</span><strong id="routeStatus" style="color:#8fb5ff">연결 대기</strong></div><div class="route-line"><span>예상 완료</span><strong id="estimatedCompletion">--</strong></div><div class="progress"><div></div></div></div></section>
+</section>
+<aside class="right">
+<section class="panel"><div class="panel-head"><div><div class="title">사용자 요청 목록</div><div class="sub">사용자웹에서 전송한 입차·출차 요청</div></div><span class="event-category-state" id="userRequestCount">0건</span></div><div class="user-request-list" id="userRequestList"></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">분야별 요청 알림</div><div class="sub">종목별로 관리자 버튼에서 실제 요청한 항목만 표시</div></div><span class="event-category-state">실시간</span></div><div class="event-board" id="eventCategories"></div></section>
+</aside>
+</main>
+<div class="command-toast" id="commandToast" role="status" aria-live="polite"></div>
+<script>
+const params=new URLSearchParams(location.search);
+const rosHost=params.get('host')||location.hostname||'127.0.0.1';
+const videoPort=params.get('videoPort')||'8080';
+const bridgePort=params.get('bridgePort')||'9090';
+const yoloTopic=params.get('yoloTopic')||'/pinkk/localization/image';
+const lidarTopic=params.get('lidarTopic')||'/pinkk/lidar_map/image';
+const managementStatusTopic=params.get('statusTopic')||'/pinkk/management/status';
+const managementEventTopic=params.get('eventTopic')||'/pinkk/management/events';
+let vehicles={};
+let batteryTopics={};
+let emergencyStateTopics={};
+async function loadVehicleRegistry(){
+  const response=await fetch('/api/vehicles',{cache:'no-store'});
+  if(!response.ok)throw new Error(`차량 설정 HTTP ${response.status}`);
+  const registry=(await response.json()).vehicles||{};
+  for(const [vehicleId,vehicle] of Object.entries(registry)){
+    const match=vehicleId.match(/^vehicle_([12])$/);
+    if(!match||vehicle.vehicle_id!==vehicleId)continue;
+    const robot=Number(match[1]);
+    vehicles[robot]={...vehicle,namespace:vehicle.ros_namespace};
+    batteryTopics[`${vehicle.ros_namespace}/battery/percent`]={kind:'percent',robot};
+    batteryTopics[`${vehicle.ros_namespace}/battery/voltage`]={kind:'voltage',robot};
+    emergencyStateTopics[`${vehicle.ros_namespace}/emergency_stop_state`]=robot;
+  }
+  if(!vehicles[1]||!vehicles[2])throw new Error('필수 차량 설정이 없습니다.');
+}
+// web_video_server expects ROS topic slashes to remain literal. Jazzy rejects
+// encodeURIComponent output such as %2Fpinkk%2Flocalization%2Fimage.
+const streamUrl=topic=>`http://${rosHost}:${videoPort}/stream?topic=${encodeURI(topic)}`;
+
+function updateClock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false})}
+function refreshFeeds(){const now=Date.now();document.getElementById('yoloFeed').src=streamUrl(yoloTopic)+'&t='+now;document.getElementById('lidarFeed').src=streamUrl(lidarTopic)+'&t='+now}
+function toggleFullscreen(){const el=document.getElementById('monitorGrid');if(!document.fullscreenElement)el.requestFullscreen?.();else document.exitFullscreen?.()}
+async function shutdownServer(){
+  if(!confirm('주차 관제 서버와 연결된 서비스를 모두 종료할까요?'))return;
+  const button=document.getElementById('shutdownButton');
+  button.disabled=true;
+  button.textContent='종료 중...';
+  try{
+    const response=await fetch('/api/shutdown',{method:'POST'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    document.querySelector('.top-status .chip:first-child').innerHTML='<span class="dot" style="background:var(--yellow)"></span>서버 종료 중';
+    document.getElementById('yoloFeed').removeAttribute('src');
+    document.getElementById('lidarFeed').removeAttribute('src');
+    rosSocket?.close();
+    document.body.innerHTML='<main style="min-height:100vh;display:grid;place-items:center;background:#070b14;color:#f3f6fb;font-family:Pretendard,-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,sans-serif"><div style="text-align:center"><h1>주차 관제 서버가 종료되었습니다</h1><p style="margin-top:12px;color:#8fa0b8">이 창을 닫아도 됩니다.</p></div></main>';
+    setTimeout(()=>{
+      window.close();
+      setTimeout(()=>location.replace('about:blank'),300);
+    },700);
+  }catch(error){
+    button.disabled=false;
+    button.textContent='서버 종료';
+    alert(`서버 종료 요청에 실패했습니다: ${error.message}`);
+  }
+}
+const centralControlTopic='/pinkk/web/control';
+const commandPriorities={
+  emergency_stop:1,
+  pause:2,
+  replan:3,
+  exit:4,
+  charge:5,
+  entry:6
+};
+const requestEventCatalog={
+  emergency_stop_requested:['system','긴급 정지 요청','critical'],
+  pause_requested:['system','일시 정지 요청','warning'],
+  manual_entry_requested:['access','입차 요청','info'],
+  manual_exit_requested:['access','출차 요청','info'],
+  charging_requested:['charging','충전 요청','info'],
+  route_replan_requested:['route','경로 재생성 요청','info']
+};
+const requestCategories=[
+  ['system','1. 긴급·시스템'],
+  ['route','2. 경로 생성'],
+  ['access','3. 입·출차'],
+  ['charging','4. 충전'],
+  ['parking','5. 주차 공간']
+];
+let requestEventSequence=0;
+const userRequestStorageKey='pinkk-user-requests-v1';
+let userRequests=[];
+function loadUserRequests(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(userRequestStorageKey)||'[]');
+    userRequests=Array.isArray(saved)?saved.slice(0,20):[];
+  }catch{userRequests=[]}
+  renderUserRequests();
+}
+function renderUserRequests(){
+  const list=document.getElementById('userRequestList');
+  document.getElementById('userRequestCount').textContent=`${userRequests.length}건`;
+  if(!userRequests.length){
+    list.innerHTML='<div class="event-empty">사용자 요청 없음</div>';
+    return;
+  }
+  list.replaceChildren();
+  userRequests.forEach(request=>{
+    const item=document.createElement('div');
+    item.className='user-request-item';
+    const vehicle=request.vehicle_id==='vehicle_2'?'PINKY_02':'PINKY_01';
+    const command=request.command==='exit'?'출차 요청':'입차 요청';
+    const occurredAt=new Date(request.requested_at||Date.now());
+    const time=occurredAt.toLocaleTimeString('ko-KR',{hour12:false});
+    item.innerHTML=`<span class="user-request-dot"></span><span class="user-request-name">${vehicle} · ${command}</span><span class="user-request-meta">사용자 요청 · ${time}</span>`;
+    list.append(item);
+  });
+}
+function addUserRequest(request){
+  if(!request||request.source!=='parking_user_web')return;
+  if(request.command!=='entry'&&request.command!=='exit')return;
+  userRequests.unshift({
+    vehicle_id:request.vehicle_id,
+    command:request.command,
+    requested_by:request.requested_by,
+    requested_at:request.requested_at||new Date().toISOString()
+  });
+  userRequests=userRequests.slice(0,20);
+  localStorage.setItem(userRequestStorageKey,JSON.stringify(userRequests));
+  renderUserRequests();
+}
+function renderEventCatalog(){
+  const board=document.getElementById('eventCategories');
+  board.replaceChildren();
+  requestCategories.forEach(([id,title])=>{
+    const section=document.createElement('section');
+    section.className='event-category';
+    section.dataset.category=id;
+    section.innerHTML=`<div class="event-category-head"><span class="event-category-title">${title}</span><span class="event-category-state">0건</span></div><div class="event-list"><div class="event-empty">요청 없음</div></div>`;
+    board.append(section);
+  });
+}
+function showReceivedEvent(event){
+  if(!event||typeof event!=='object'||event.user_requested!==true)return;
+  const definition=requestEventCatalog[event.event];
+  if(!definition)return;
+  const [categoryId,name,severity]=definition;
+  const section=document.querySelector(`[data-category="${categoryId}"]`);
+  if(!section)return;
+  const list=section.querySelector('.event-list');
+  list.querySelector('.event-empty')?.remove();
+  const item=document.createElement('div');
+  item.className=`event-item ${severity} live`;
+  item.dataset.sequence=String(++requestEventSequence);
+  const vehicle=event.robot_id==='vehicle_2'?'PINKY_02':'PINKY_01';
+  const time=new Date().toLocaleTimeString('ko-KR',{hour12:false});
+  const requester=event.requester_label||'관리자 요청';
+  item.innerHTML=`<span class="event-dot"></span><span class="event-name">${vehicle} · ${name}</span><span class="event-level">${requester} · ${time}</span>`;
+  list.prepend(item);
+  const allItems=[...document.querySelectorAll('#eventCategories .event-item')]
+    .sort((a,b)=>Number(b.dataset.sequence)-Number(a.dataset.sequence));
+  if(allItems.length>20)allItems.slice(20).forEach(oldItem=>oldItem.remove());
+  requestCategories.forEach(([id])=>{
+    const category=document.querySelector(`[data-category="${id}"]`);
+    const categoryList=category.querySelector('.event-list');
+    const count=categoryList.querySelectorAll('.event-item').length;
+    category.querySelector('.event-category-state').textContent=`${count}건`;
+    if(!count&&!categoryList.querySelector('.event-empty')){
+      categoryList.innerHTML='<div class="event-empty">요청 없음</div>';
+    }
+  });
+}
+let commandToastTimer;
+function showCommandNotification(robot,command){
+  const labels={entry:'입차',exit:'출차',charge:'충전',replan:'경로 재생성',pause:'일시 정지',emergency_stop:'긴급 정지'};
+  const toast=document.getElementById('commandToast');
+  clearTimeout(commandToastTimer);
+  toast.innerHTML=`<strong>PINKY_0${robot}</strong>${labels[command]||command} 요청을 접수했습니다.`;
+  toast.classList.add('show');
+  commandToastTimer=setTimeout(()=>toast.classList.remove('show'),3200);
+}
+const serviceCallbacks=new Map();
+const emergencyStoppedRobots=new Set();
+const robotStatusTimers=new Map();
+const robotBatteryPercents=new Map();
+const persistentRobotStatuses=new Set();
+function showRobotBattery(robot){
+  const badge=document.getElementById(`batteryState${robot}`);
+  const percent=robotBatteryPercents.get(robot);
+  badge.textContent=percent==null?'배터리 대기':`${percent.toFixed(1)}%`;
+  badge.classList.remove('emergency');
+}
+function showRobotStatus(robot,text,{persistent=false,emergency=false}={}){
+  const previousTimer=robotStatusTimers.get(robot);
+  if(previousTimer)clearTimeout(previousTimer);
+  robotStatusTimers.delete(robot);
+  if(persistent)persistentRobotStatuses.add(robot);
+  else persistentRobotStatuses.delete(robot);
+  const badge=document.getElementById(`batteryState${robot}`);
+  badge.textContent=text;
+  badge.classList.toggle('emergency',emergency);
+  if(!persistent){
+    const timer=setTimeout(()=>{
+      robotStatusTimers.delete(robot);
+      showRobotBattery(robot);
+    },5000);
+    robotStatusTimers.set(robot,timer);
+  }
+}
+function rosCallService(service,type,args){
+  return new Promise((resolve,reject)=>{
+    if(rosSocket?.readyState!==WebSocket.OPEN){
+      reject(new Error('ROS가 연결되지 않았습니다.'));
+      return;
+    }
+    const id=`service-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const timeout=setTimeout(()=>{
+      serviceCallbacks.delete(id);
+      reject(new Error('Pinky 응답 시간이 초과되었습니다.'));
+    },3000);
+    serviceCallbacks.set(id,{resolve,reject,timeout});
+    rosSocket.send(JSON.stringify({op:'call_service',id,service,type,args}));
+  });
+}
+async function sendEmergencyStop(robot){
+  try{
+    const values=await rosCallService(
+      `${vehicles[robot].namespace}/set_emergency_stop`,
+      'std_srvs/srv/SetBool',
+      {data:true}
+    );
+    if(values?.success===false)throw new Error(values.message||'요청이 거부되었습니다.');
+    emergencyStoppedRobots.add(robot);
+    showRobotStatus(robot,'긴급 정지',{persistent:true,emergency:true});
+  }catch(error){
+    alert(`PINKY_0${robot} 긴급정지 실패: ${error.message}`);
+    showReceivedEvent({category:'system',event:'command_send_failed'});
+  }
+}
+async function releaseEmergencyStop(robot){
+  try{
+    const values=await rosCallService(
+      `${vehicles[robot].namespace}/set_emergency_stop`,
+      'std_srvs/srv/SetBool',
+      {data:false}
+    );
+    if(values?.success===false)throw new Error(values.message||'요청이 거부되었습니다.');
+    emergencyStoppedRobots.delete(robot);
+    persistentRobotStatuses.delete(robot);
+    showRobotBattery(robot);
+    return true;
+  }catch(error){
+    alert(`PINKY_0${robot} 긴급정지 해제 실패: ${error.message}`);
+    showReceivedEvent({category:'system',event:'command_send_failed'});
+    return false;
+  }
+}
+async function sendRobotCommand(robot,command){
+  if(robot!==1&&robot!==2)return;
+  const vehicle=vehicles[robot];
+  if(!vehicle||vehicle.vehicle_id!==`vehicle_${robot}`){
+    alert('차량 ID와 ROS namespace 설정이 일치하지 않아 명령을 차단했습니다.');
+    return;
+  }
+  const priority=commandPriorities[command];
+  if(priority==null)return;
+  if(command!=='emergency_stop'&&!robotBatteryPercents.has(robot)){
+    alert(`PINKY_0${robot} 연결이 확인되지 않아 주행 명령을 차단했습니다.`);
+    showRobotStatus(robot,'오프라인 · 명령 차단',{persistent:true,emergency:true});
+    return;
+  }
+  if(
+    emergencyStoppedRobots.has(robot)&&
+    command!=='replan'&&
+    command!=='emergency_stop'
+  ){
+    alert(`PINKY_0${robot}는 긴급정지 중입니다. 경로 재생성으로 해제하세요.`);
+    return;
+  }
+  if(
+    command==='replan'&&
+    emergencyStoppedRobots.has(robot)&&
+    !confirm(`PINKY_0${robot} 긴급정지를 해제하고 경로를 재생성할까요?`)
+  )return;
+  if(command==='replan'&&!(await releaseEmergencyStop(robot)))return;
+  const request={
+    vehicle_id:vehicle.vehicle_id,
+    robot_id:vehicle.vehicle_id,
+    controller_id:vehicle.controller_id,
+    hardware_serial:vehicle.hardware_serial,
+    ros_namespace:vehicle.ros_namespace,
+    command,
+    priority,
+    source:'parking_management_web',
+    requested_by:params.get('user')||'local_admin',
+    requested_at:new Date().toISOString()
+  };
+  document.getElementById('activeRobot').textContent=`PINKY_0${robot}`;
+  rosSend({
+    op:'publish',
+    topic:centralControlTopic,
+    type:'std_msgs/msg/String',
+    msg:{data:JSON.stringify(request)}
+  });
+  showCommandNotification(robot,command);
+  if(command==='emergency_stop')sendEmergencyStop(robot);
+  const statusByCommand={
+    replan:'경로 생성 중',
+    entry:'입차 중',
+    exit:'출차 중',
+    charge:'충전 중'
+  };
+  if(statusByCommand[command])showRobotStatus(robot,statusByCommand[command]);
+  if(command==='pause')showRobotStatus(robot,'일시 정지',{persistent:true});
+  const lcdStatus=statusByCommand[command]||(command==='pause'?'일시 정지':null);
+  if(lcdStatus){
+    rosSend({
+      op:'publish',
+      topic:`${vehicle.ros_namespace}/lcd_status`,
+      type:'std_msgs/msg/String',
+      msg:{data:lcdStatus}
+    });
+  }
+  const eventByCommand={
+    emergency_stop:['system','emergency_stop_requested'],
+    pause:['system','pause_requested'],
+    entry:['access','manual_entry_requested'],
+    exit:['access','manual_exit_requested'],
+    charge:['charging','charging_requested'],
+    replan:['route','route_replan_requested']
+  };
+  const eventInfo=eventByCommand[command];
+  if(eventInfo){
+    const [category,event]=eventInfo;
+    showReceivedEvent({
+      category,event,
+      robot_id:vehicles[robot].vehicle_id,
+      user_requested:true
+    });
+  }
+}
+renderEventCatalog();
+loadUserRequests();
+updateClock();setInterval(updateClock,1000)
+
+let rosSocket;
+const pending=[];
+const batteryFilters=new Map();
+let lastManagementStatusAt=0;
+let managementStatusWasReceived=false;
+function rosSend(message){const encoded=JSON.stringify(message);if(rosSocket?.readyState===WebSocket.OPEN)rosSocket.send(encoded);else pending.push(encoded)}
+function filteredBatteryValue(robot,kind,value){
+  const key=`${robot}:${kind}`;
+  const state=batteryFilters.get(key)||{samples:[],filtered:null,displayed:null};
+  state.samples.push(value);
+  if(state.samples.length>7)state.samples.shift();
+  const sorted=[...state.samples].sort((a,b)=>a-b);
+  const median=sorted[Math.floor(sorted.length/2)];
+  state.filtered=state.filtered==null?median:(state.filtered*.8+median*.2);
+  // 충전 전압의 순간 변동으로 퍼센트 문구가 계속 바뀌지 않게 한다.
+  const deadband=kind==='percent'?.5:.03;
+  if(state.displayed==null||Math.abs(state.filtered-state.displayed)>=deadband){
+    state.displayed=state.filtered;
+  }
+  batteryFilters.set(key,state);
+  return state.displayed;
+}
+function updateBattery(topic,value){
+  const target=batteryTopics[topic];
+  if(!target||!Number.isFinite(Number(value)))return;
+  const number=filteredBatteryValue(target.robot,target.kind,Number(value));
+  if(target.kind==='percent'){
+    const percent=Math.max(0,Math.min(100,number));
+    robotBatteryPercents.set(target.robot,percent);
+    const bar=document.getElementById(`batteryBar${target.robot}`);
+    bar.style.width=percent+'%';
+    bar.classList.toggle('low',percent<=20);
+    document.getElementById(`batteryText${target.robot}`).textContent=percent.toFixed(1)+'%';
+    if(
+      !persistentRobotStatuses.has(target.robot)&&
+      !robotStatusTimers.has(target.robot)
+    )showRobotBattery(target.robot);
+    if(percent<=20)showReceivedEvent({event:'battery_low'});
+  }else{
+    document.getElementById(`batteryVoltage${target.robot}`).textContent=number.toFixed(2)+' V';
+  }
+}
+function updateManagementStatus(value){
+  let status;
+  try{status=typeof value==='string'?JSON.parse(value):value}catch{return}
+  if(!status||typeof status!=='object')return;
+  const statusRobot=String(status.robot_id||'').match(/(?:pinky_?|vehicle_?)([12])$/i);
+  if(statusRobot){
+    document.getElementById('activeRobot').textContent=`PINKY_0${statusRobot[1]}`;
+  }
+  lastManagementStatusAt=Date.now();
+  if(!managementStatusWasReceived){
+    managementStatusWasReceived=true;
+    showReceivedEvent({category:'system',event:'central_status_started'});
+  }
+  document.getElementById('totalParkingSlots').textContent=status.total_parking_slots??'--';
+  document.getElementById('occupiedParkingSlots').textContent=status.occupied_parking_slots??'--';
+  document.getElementById('occupancyPercent').textContent=
+    `점유율 ${status.occupancy_percent??'--'}%`;
+  document.getElementById('chargingAvailability').textContent=
+    `${status.charging_available??'--'} / ${status.charging_total??'--'}`;
+  document.getElementById('targetSlot').textContent=
+    status.target_slot?`${status.target_slot} 주차구역`:'배정 대기';
+  document.getElementById('routeStatus').textContent=status.route_status||'대기';
+  document.getElementById('sceneStatus').textContent=status.scene_status||'상태 확인 중';
+  document.getElementById('estimatedCompletion').textContent=
+    status.estimated_completion_sec==null
+      ? '계산 대기'
+      : `약 ${status.estimated_completion_sec}초`;
+  updateOperationalSpace('entrance',status.spaces?.entrance);
+  updateOperationalSpace('exit',status.spaces?.exit);
+  if(status.spaces?.entrance?.occupied){
+    showReceivedEvent({category:'access',event:'entrance_vehicle_detected'});
+  }
+  if(status.spaces?.exit?.occupied){
+    showReceivedEvent({category:'access',event:'exit_vehicle_detected'});
+  }
+  const parkingStates=Object.values(status.spaces?.parking||{});
+  if(parkingStates.some(Boolean)){
+    showReceivedEvent({category:'parking',event:'parking_vehicle_detected'});
+  }
+  if(parkingStates.some(occupied=>!occupied)){
+    showReceivedEvent({category:'parking',event:'parking_available'});
+  }
+  if(status.target_slot&&status.spaces?.parking?.[status.target_slot]){
+    showReceivedEvent({event:'target_slot_occupied'});
+  }
+  const chargingStates=Object.values(status.spaces?.charging||{});
+  if(chargingStates.length&&chargingStates.every(Boolean)){
+    showReceivedEvent({category:'charging',event:'charging_full'});
+  }
+  if(chargingStates.some(Boolean)){
+    showReceivedEvent({category:'charging',event:'charging_vehicle_detected'});
+  }
+  if(chargingStates.some(occupied=>!occupied)){
+    showReceivedEvent({category:'charging',event:'charging_available'});
+  }
+}
+function updateOperationalSpace(name,space){
+  const state=document.getElementById(`${name}SpaceState`);
+  const vehicles=document.getElementById(`${name}VehicleIds`);
+  if(!space){
+    state.textContent='--';
+    vehicles.textContent='YOLO 판정 대기';
+    return;
+  }
+  state.textContent=space.occupied?'차량 있음':'비어 있음';
+  state.style.color=space.occupied?'#ff929e':'#68e5a5';
+  vehicles.textContent=space.vehicle_track_ids?.length
+    ? `추적 ID: ${space.vehicle_track_ids.join(', ')}`
+    : '검출 차량 없음';
+}
+function connectRos(){
+  rosSocket=new WebSocket(`ws://${rosHost}:${bridgePort}`);
+  rosSocket.onopen=()=>{
+    document.querySelector('.top-status .chip').innerHTML='<span class="dot"></span>ROS 연결 정상';
+    Object.keys(batteryTopics).forEach((topic,index)=>rosSocket.send(JSON.stringify({op:'subscribe',id:`battery-${index}`,topic,type:'std_msgs/msg/Float32',throttle_rate:500})));
+    Object.keys(emergencyStateTopics).forEach((topic,index)=>rosSocket.send(JSON.stringify({op:'subscribe',id:`emergency-state-${index}`,topic,type:'std_msgs/msg/Bool'})));
+    rosSocket.send(JSON.stringify({op:'subscribe',id:'management-status',topic:managementStatusTopic,type:'std_msgs/msg/String',throttle_rate:500}));
+    rosSocket.send(JSON.stringify({op:'subscribe',id:'management-events',topic:managementEventTopic,type:'std_msgs/msg/String'}));
+    rosSocket.send(JSON.stringify({op:'subscribe',id:'user-control-requests',topic:centralControlTopic,type:'std_msgs/msg/String'}));
+    showReceivedEvent({category:'system',event:'ros_connected'});
+    while(pending.length)rosSocket.send(pending.shift());
+  };
+  rosSocket.onmessage=event=>{
+    const data=JSON.parse(event.data);
+    if(data.op==='service_response'&&data.id){
+      const callback=serviceCallbacks.get(data.id);
+      if(callback){
+        clearTimeout(callback.timeout);
+        serviceCallbacks.delete(data.id);
+        if(data.result===false)callback.reject(new Error(data.values?.message||'서비스 호출 실패'));
+        else callback.resolve(data.values);
+      }
+      return;
+    }
+    if(data.msg?.data==null)return;
+    if(emergencyStateTopics[data.topic]){
+      const robot=emergencyStateTopics[data.topic];
+      if(data.msg.data){
+        emergencyStoppedRobots.add(robot);
+        showRobotStatus(robot,'긴급 정지',{persistent:true,emergency:true});
+      }else{
+        emergencyStoppedRobots.delete(robot);
+        persistentRobotStatuses.delete(robot);
+        showRobotBattery(robot);
+      }
+    }else if(data.topic===centralControlTopic){
+      try{
+        const request=JSON.parse(data.msg.data);
+        addUserRequest(request);
+      }catch{}
+    }else if(data.topic===managementStatusTopic)updateManagementStatus(data.msg.data);
+    else if(data.topic===managementEventTopic){
+      try{showReceivedEvent(JSON.parse(data.msg.data))}catch{}
+    }
+    else updateBattery(data.topic,data.msg.data);
+  };
+  rosSocket.onclose=()=>{
+    document.querySelector('.top-status .chip').textContent='ROS 재연결 중';
+    showReceivedEvent({category:'system',event:'ros_disconnected'});
+    showReceivedEvent({category:'system',event:'ros_reconnecting'});
+    setTimeout(connectRos,2000);
+  };
+}
+setInterval(()=>{
+  if(managementStatusWasReceived&&Date.now()-lastManagementStatusAt>3000){
+    managementStatusWasReceived=false;
+    showReceivedEvent({category:'system',event:'central_status_stopped'});
+  }
+},1000);
+refreshFeeds();
+loadVehicleRegistry().then(connectRos).catch(error=>{
+  document.querySelector('.top-status .chip').textContent='차량 설정 오류';
+  alert(`차량 설정을 불러오지 못했습니다: ${error.message}`);
+});
+
+</script>
+</body>
+</html>

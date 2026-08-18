@@ -79,7 +79,7 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 앞·뒤 판별에는 `fixed_mission_routes.yaml`의 endpoint yaw를 사용합니다.
 차량이 `TRANSIT` 상태이면 새 경로를 선택하지 않습니다.
 
-실시간 검출 pose는 `/pinkk/vehicle_pose`로 별도 발행하며 고정 CSV 앞에
+실시간 확정 pose는 `/pinkk/vehicle_N/localization_pose`로 별도 발행하며 고정 CSV 앞에
 삽입하지 않습니다. 검출 오차가 있는 pose를 첫 경로점으로 붙이면 START anchor
 사이에 인공적인 급회전 구간이 생길 수 있기 때문입니다.
 

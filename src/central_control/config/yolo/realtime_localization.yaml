@@ -1,4 +1,7 @@
 realtime_localization:
+  # 영속 차량 ID다. ByteTrack track_id와 혼용하지 않는다. 차량 2 관제 인스턴스는
+  # vehicle_2로 설정하며 ROS 출력이 /pinkk/vehicle_2/*로 자동 분리된다.
+  vehicle_id: vehicle_1
   model_path: src/central_control/models/best.pt
   calibration_path: src/central_control/camera_tools/first_map/camera_calibration.npz
   homography_path: src/central_control/camera_tools/first_map/bev_homography.npz
@@ -15,6 +18,11 @@ realtime_localization:
   # 발행한다. 기존 JSON/PNG 진단이 필요할 때만 true로 바꾼다.
   write_runtime_files: false
   ros_publish_enabled: true
+  # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
+  ros_image_topic: /pinkk/localization/image
+  ros_lidar_image_topic: /pinkk/lidar_map/image
+  ros_management_status_topic: /pinkk/management/status
+  lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
   # 새 경로는 즉시 발행하고, 제어기가 놓치지 않도록 같은 경로를 이 주기로
   # 재발행한다. 경로가 무효화되거나 목표가 바뀌면 이전 경로 발행은 중단한다.
   route_republish_period_sec: 1.0

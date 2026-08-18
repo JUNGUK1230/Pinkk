@@ -1,8 +1,7 @@
-numpy
+# Ubuntu의 ROS/Matplotlib 바이너리는 NumPy 1.x ABI로 빌드되어 있습니다.
+numpy<2
 opencv-python
 PyYAML
-ultralytics
-# Ultralytics ByteTrack의 프레임 간 차량 ID matching 의존성
-lap>=0.5.12
+Flask>=3.0,<4
 scipy
 typeguard

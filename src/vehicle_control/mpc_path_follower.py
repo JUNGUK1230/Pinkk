@@ -243,7 +243,7 @@ class MpcPathFollower(Node):
             "cmd_vel_topic": "/cmd_vel",
             # Pinky 실차 구동계에서 map curvature와 동일한 부호를 사용한다.
             "angular_command_sign": 1.0,
-            "scan_topic": "/scan",
+            "scan_topic": "scan",
             "require_scan": True,
             "scan_timeout_sec": 0.8,
             "front_scan_half_angle_deg": 18.0,
