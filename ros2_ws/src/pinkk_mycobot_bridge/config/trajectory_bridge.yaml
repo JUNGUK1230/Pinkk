@@ -15,8 +15,9 @@ pinkk_mycobot_trajectory_bridge:
     # 시리얼 부하를 줄이기 위해 정지 중 2Hz로만 발행한다.
     cartesian_pose_publish_rate_hz: 2.0
     # [deg] send_angles 완료 판정의 관절별 목표 허용오차.
-    # 기기 반복오차 때문에 현재 2도이며, 1도 미세명령에는 적합하지 않다.
-    goal_tolerance_deg: 2.0
+    # 초기 관측 복귀와 같은 3.5도로 맞춰 기기 반복오차로 인한 불필요한
+    # action 거절을 줄인다. 재전송은 늘리지 않고 정지 후 실제 자세는 유지 확인한다.
+    goal_tolerance_deg: 3.5
     # false이면 FollowJointTrajectory action을 받되 실제 send_angles를 차단한다.
     joint_execution_enabled: true
     # 완료 판정에 필요한 연속 정지 샘플 수와 샘플 간 최대 관절 변화량.
