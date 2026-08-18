@@ -251,7 +251,7 @@ pinkk_frozen_target_executor_node:
     vertical_z_cartesian_speed: 5
     # 1=제조사 직선 Cartesian 이동.
     vertical_z_cartesian_mode: 1
-    # 통합 실행의 guard 하강, 최종 10mm, R/P 뒤 3mm에 사용할 Z 제어 방식.
+    # 통합 실행의 guard 하강, 최종 10mm, R/P 뒤 5mm에 사용할 Z 제어 방식.
     # joint는 Jacobian으로 관절 증분을 계산해 send_angles로 실행한다.
     vertical_z_control_backend: joint
     # true이면 초기 관측 Z 대신 PBVS target Z를 사용한다. 위 alignment의
@@ -411,8 +411,8 @@ pinkk_frozen_target_executor_node:
     post_insertion_roll_pitch_speed: 10
     # true이면 최종 Z 10mm → 초기 Roll/Pitch 복구 뒤 Z만 한 번 더 내린다.
     enable_post_recovery_final_z: true
-    # [m] R/P 복구 뒤 상대 추가 하강 거리. 현재 시험값은 3mm이다.
-    post_recovery_final_z_distance_m: 0.003
+    # [m] R/P 복구 뒤 상대 추가 하강 거리. 현재 시험값은 5mm이다.
+    post_recovery_final_z_distance_m: 0.005
 
 # 세션 중 기존 bridge를 유지한 채 초기 관측 관절 자세로 복귀하는 노드.
 pinkk_return_to_observe:

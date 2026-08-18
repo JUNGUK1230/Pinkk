@@ -267,7 +267,7 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('post_insertion_roll_pitch_speed', 10)
         # 최종 Z 삽입과 R/P 복구가 끝난 뒤 상대 Z를 한 번 더 내린다.
         self.declare_parameter('enable_post_recovery_final_z', True)
-        self.declare_parameter('post_recovery_final_z_distance_m', 0.003)
+        self.declare_parameter('post_recovery_final_z_distance_m', 0.005)
 
         self._enabled = bool(self.get_parameter('enable_execution').value)
         self._base_frame = str(self.get_parameter('base_frame').value)
