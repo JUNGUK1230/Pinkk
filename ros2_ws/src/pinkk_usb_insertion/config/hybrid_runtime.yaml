@@ -42,7 +42,7 @@ pinkk_pbvs_alignment_node:
     absolute_port_xy_yaw_mode: true
     # [m] 포트 base Z보다 높은 coarse pre-approach 높이.
     # Yaw/Roll/Pitch 정렬 중 실측 약 26mm의 Z 결합 하강이 발생해, TCP
-    # 120mm 시험에서는 정렬 완료 후 하강 여유를 확보하도록 180mm를 쓴다.
+    # 130mm 시험에서는 정렬 완료 후 하강 여유를 확보하도록 180mm를 쓴다.
     # 0이면 초기 관측 flange Z를 목표로 사용하므로 해가 없을 수 있다.
     absolute_pre_approach_height_m: 0.18
     # [m] 비절대 TARGET_ONLY 모드의 PBVS 1회 최대 XY step.
@@ -271,7 +271,7 @@ pinkk_frozen_target_executor_node:
     # true이면 초기 실측 R/P 대신 모든 정렬·하강 보정·최종 오차 기준을
     # 아래 절대 Roll/Pitch로 고정한다. Yaw는 기존 초기 관측/보정값을 유지한다.
     use_fixed_roll_pitch_target: true
-    fixed_roll_target_deg: -180.0
+    fixed_roll_target_deg: -177.5
     fixed_pitch_target_deg: 0.0
     # Pitch 보정량에만 곱하는 개별 gain. Roll gain은 기존값 그대로이다.
     # 1.2는 계산된 Pitch 오차의 120%를 명령해 반복적인 미달을 보상한다.
@@ -295,9 +295,9 @@ pinkk_frozen_target_executor_node:
     # target_flange_z = port_z + tcp_offset_z - insertion_depth
     final_z_p_use_port_target: true
     # [m] 그리퍼를 완전히 닫은 상태에서 flange부터 수직 아래 USB 충전기
-    # 단자 끝까지의 시험 실측 거리: 120mm.
+    # 단자 끝까지의 시험 실측 거리: 130mm.
     # X/Y 편심은 0이고 USB 축은 flange 축과 평행하다고 가정한다.
-    final_tcp_offset_z_m: 0.120
+    final_tcp_offset_z_m: 0.130
     # [m] USB 끝이 포트 입구 평면보다 안쪽으로 들어갈 목표 깊이: 10mm.
     final_port_insertion_depth_m: 0.010
     # 힘/접촉 센서가 없으므로 최종 삽입은 기본 차단한다. TCP와 정렬을
