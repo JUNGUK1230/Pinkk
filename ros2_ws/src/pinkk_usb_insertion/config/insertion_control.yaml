@@ -1,14 +1,8 @@
-execution:
-  execution_enabled: false
-  insertion_enabled: false
-  require_calibrated_tool: true
-
 frames:
   base: g_base
   flange: joint6_flange
   camera: camera_optical_frame
   port: usb_port
-  plug_tip: plug_tip
 
 port_model:
   # YOLO keypoint로 라벨링한 포트 외곽 네 모서리의 실측 크기.
@@ -18,7 +12,6 @@ port_model:
   height_m: 0.012
 
 pose_estimation:
-  input_mode: yolo_topic
   target_class_name: usb_port
   target_detection_id: ""
   minimum_object_confidence: 0.70
@@ -26,16 +19,9 @@ pose_estimation:
   minimum_depth_m: 0.05
   maximum_depth_m: 0.60
   maximum_reprojection_error_px: 2.0
-  stable_sample_count: 10
-
-approach:
-  standoff_m: 0.10
-  maximum_translation_step_m: 0.005
-  settle_seconds: 0.5
 
 pbvs:
   enabled: true
-  reference: camera
   publish_motion_commands: false
   desired_port_x_m: 0.0
   desired_port_y_m: 0.0
@@ -49,49 +35,16 @@ alignment_reference:
   observation_joint_degrees: [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0]
   maximum_observation_joint_error_deg: 3.5
   maximum_joint_state_age_seconds: 1.0
-  lock_base_z: true
-  lock_initial_orientation: true
 
 yaw_pbvs:
   enabled: false
-  reference: flange
   flange_to_plug_yaw_offset_deg: 0.0
-  pending_requirement: yolo_keypoint_order_verification
   # 플러그 Yaw는 joint6_flange Yaw와 동일하며 장축은 flange X축을 사용.
   flange_long_axis: x
-  # 18×10mm 포트 모델에서 긴 18mm 변에 해당하는 축.
+  # 18×12mm 포트 모델에서 긴 18mm 변에 해당하는 축.
   port_long_axis: x
   maximum_step_deg: 2.0
   tolerance_deg: 1.0
-  preserve_locked_tilt: true
-
-pbvs_test_execution:
-  maximum_target_age_seconds: 30.0
-  maximum_z_change_m: 0.0005
-  maximum_orientation_change_deg: 0.5
-  cartesian_waypoint_spacing_m: 0.001
-  maximum_joint_step_deg: 5.0
-  post_move_z_tolerance_m: 0.001
-  post_move_orientation_tolerance_deg: 1.0
-  cartesian_speed: 10
-  cartesian_mode: 1
-  cartesian_action_timeout_seconds: 20.0
-
-ibvs:
-  enabled: false
-  pixel_tolerance: 3.0
-  maximum_step_m: 0.0005
-  proportional_gain_x: 0.00001
-  proportional_gain_y: 0.00001
-
-insertion:
-  speed_m_per_s: 0.001
-  maximum_distance_m: 0.015
-  timeout_seconds: 20.0
-  maximum_retry_count: 0
 
 safety:
-  command_timeout_seconds: 2.0
-  require_fresh_detection: true
   maximum_detection_age_seconds: 0.5
-  retreat_distance_m: 0.03
