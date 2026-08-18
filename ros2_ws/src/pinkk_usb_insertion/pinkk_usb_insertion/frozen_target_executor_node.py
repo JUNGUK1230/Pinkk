@@ -210,7 +210,7 @@ class FrozenTargetExecutorNode(Node):
             'urdf/mycobot_280_m5/mycobot_280_m5.urdf',
         )
         self.declare_parameter('joint_vertical_z_kp', 0.4)
-        self.declare_parameter('joint_vertical_z_step_m', 0.003)
+        self.declare_parameter('joint_vertical_z_step_m', 0.006)
         self.declare_parameter('joint_vertical_xy_kp', 0.5)
         self.declare_parameter('joint_vertical_orientation_kp', 0.3)
         self.declare_parameter('joint_vertical_damping', 0.01)
@@ -1159,9 +1159,9 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError('joint6_move_seconds는 1~30초여야 합니다')
         if not 0.0 < self._joint_vertical_z_kp <= 1.0:
             raise ValueError('joint_vertical_z_kp는 0보다 크고 1 이하여야 합니다')
-        if not 0.0005 <= self._joint_vertical_max_z_step <= 0.005:
+        if not 0.0005 <= self._joint_vertical_max_z_step <= 0.010:
             raise ValueError(
-                'joint_vertical_z_step_m은 0.0005~0.005m여야 합니다'
+                'joint_vertical_z_step_m은 0.0005~0.010m여야 합니다'
             )
         if not 0.0 < self._joint_vertical_xy_kp <= 1.0:
             raise ValueError(

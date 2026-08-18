@@ -341,9 +341,9 @@ pinkk_frozen_target_executor_node:
     joint_vertical_robot_description_relative_path: >-
       urdf/mycobot_280_m5/mycobot_280_m5.urdf
     # 남은 포트 목표 Z 오차에 적용할 P gain과 1회 최대 하강량.
-    # 2mm는 반복오차와 구분하기 어렵고 5mm는 실측 초과가 커서 3mm로 한다.
+    # 관절 명령의 하드웨어 오버슈팅을 감안한 현재 시험값은 6mm이다.
     joint_vertical_z_kp: 0.40
-    joint_vertical_z_step_m: 0.003
+    joint_vertical_z_step_m: 0.006
     # Z 하강 후 send_coords Cartesian XY/Roll-Pitch 보정에 쓰는 P gain.
     # bridge의 완료 허용값(5mm/5도)보다 작은 부분 명령은 실제 보정 없이
     # 완료될 수 있어 첫 혼합 시험은 저장 목표를 직접 보내는 gain 1.0을 쓴다.
