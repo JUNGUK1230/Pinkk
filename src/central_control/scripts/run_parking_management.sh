@@ -14,6 +14,7 @@ WITHOUT_CAMERA=false
 SETUP_SSH=false
 REMOTE_PINKY_TARGETS=()
 CHILD_PIDS=()
+CLEANUP_STARTED=false
 
 for option in "$@"; do
     case "$option" in
@@ -84,7 +85,13 @@ require_free_port() {
 }
 
 cleanup() {
-    trap - INT TERM EXIT
+    if $CLEANUP_STARTED; then
+        return
+    fi
+    CLEANUP_STARTED=true
+    # 정리 중 추가 Ctrl+C가 들어와도 KILL 단계까지 반드시 수행한다.
+    trap '' INT TERM
+    trap - EXIT
     echo
     echo "Stopping parking management services..."
     for target in "${REMOTE_PINKY_TARGETS[@]}"; do
@@ -99,10 +106,23 @@ cleanup() {
         # Stop the entire group so ROS launch children cannot keep ports open.
         kill -TERM -- "-$pid" 2>/dev/null || true
     done
-    wait "${CHILD_PIDS[@]}" 2>/dev/null || true
+    # ROS launch 자식이 TERM에 응답하지 않아도 무기한 wait하지 않는다.
+    for _ in {1..30}; do
+        any_running=false
+        for pid in "${CHILD_PIDS[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                any_running=true
+                break
+            fi
+        done
+        $any_running || break
+        sleep 0.1
+    done
     for pid in "${CHILD_PIDS[@]}"; do
         kill -KILL -- "-$pid" 2>/dev/null || true
     done
+    wait "${CHILD_PIDS[@]}" 2>/dev/null || true
+    trap - INT TERM
 }
 
 require_free_port 8000
@@ -166,8 +186,12 @@ start_remote_pinky() {
 }
 
 if $WITH_PINKY; then
-    start_remote_pinky "$PINKY1_HOST" pinkk/vehicle_1 pinky_01
-    start_remote_pinky "$PINKY2_HOST" pinkk/vehicle_2 pinky_02
+    if ! start_remote_pinky "$PINKY1_HOST" pinkk/vehicle_1 pinky_01; then
+        echo "WARNING: PINKY_01 is unavailable; web, camera, and local ROS services will continue." >&2
+    fi
+    if ! start_remote_pinky "$PINKY2_HOST" pinkk/vehicle_2 pinky_02; then
+        echo "WARNING: PINKY_02 is unavailable; web, camera, and local ROS services will continue." >&2
+    fi
 fi
 
 sleep 2

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
@@ -59,6 +59,8 @@ ROBOT_NAMESPACES = {
     robot: vehicle["namespace"] for robot, vehicle in VEHICLES.items()
 }
 CENTRAL_CONTROL_TOPIC = "/pinkk/web/control"
+LOCALIZATION_IMAGE_TOPIC = "/pinkk/localization/image"
+VIDEO_SERVER_PORT = 8080
 
 app = Flask(
     __name__,
@@ -88,7 +90,7 @@ def initial_vehicle_state(robot: int) -> dict:
         "request_state": "대기 중",
         "estimated_time": "-",
         "progress": 100,
-        "camera_mode": "확인 중",
+        "camera_mode": "관제 영상 공유",
     }
 
 
@@ -409,12 +411,12 @@ def index():
 
 @app.route("/video_feed")
 def video_feed():
-    if camera_matrix is None or homography_matrix is None or not open_camera():
-        return Response("BEV 영상 스트림을 사용할 수 없습니다.", status=503)
-
-    return Response(
-        generate_video(),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
+    # USB 카메라는 중앙 localization 프로세스 하나만 점유한다. 사용자웹은
+    # 동일 ROS 영상을 web_video_server에서 받아 카메라 충돌을 방지한다.
+    browser_host = request.host.split(":", 1)[0]
+    return redirect(
+        f"http://{browser_host}:{VIDEO_SERVER_PORT}/stream"
+        f"?topic={LOCALIZATION_IMAGE_TOPIC}"
     )
 
 
@@ -521,21 +523,13 @@ def route_request(command: str):
     )
 
 if __name__ == "__main__":
-    try:
-        load_bev_files()
-    except (FileNotFoundError, KeyError) as error:
-        print(error)
-        print("[경고] BEV 영상 스트림을 시작할 수 없습니다.")
-        set_camera_mode("사용 불가")
-
-    open_camera()
     threading.Thread(target=run_ros_node, daemon=True).start()
     threading.Thread(target=refresh_battery_connection_state, daemon=True).start()
 
     print("=" * 64)
     print("사용자 주차 서비스 웹 서버 시작")
     print("접속 주소: http://127.0.0.1:5002")
-    print(f"카메라 모드: {system_states[1]['camera_mode']}")
+    print(f"영상 모드: {system_states[1]['camera_mode']}")
     print("=" * 64)
 
     app.run(
