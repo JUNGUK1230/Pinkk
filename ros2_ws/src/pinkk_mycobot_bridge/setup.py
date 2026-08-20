@@ -24,7 +24,6 @@ setup(
     entry_points={
         "console_scripts": [
             "charuco_tf_publisher = pinkk_mycobot_bridge.charuco_tf_publisher:main",
-            "joint_state_publisher = pinkk_mycobot_bridge.joint_state_publisher:main",
             "trajectory_bridge = pinkk_mycobot_bridge.trajectory_bridge:main",
         ],
     },
