@@ -433,7 +433,9 @@ class PbvsAlignmentNode(Node):
         self._target_publisher.publish(target_pose)
 
         converged = Bool()
-        converged.data = (
+        # NumPy 비교 결과(np.bool_)를 ROS Bool 필드에 직접 넣으면
+        # rosidl 변환기의 PyBool_Check assertion으로 프로세스가 종료된다.
+        converged.data = bool(
             absolute_converged
             if absolute_converged is not None
             else result.converged and yaw_converged

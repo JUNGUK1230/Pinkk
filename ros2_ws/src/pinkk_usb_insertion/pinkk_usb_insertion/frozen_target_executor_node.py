@@ -28,13 +28,14 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from .control.frozen_target import (
-    circular_mean_degrees,
-    circular_median_degrees,
+    axial_mean_degrees,
+    axial_median_degrees,
     final_insertion_target_z_m,
     flange_xy_for_tcp_lateral_offset,
     limited_xy_target,
-    maximum_angular_deviation_degrees,
+    maximum_axial_deviation_degrees,
     port_based_flange_target_z,
+    port_xy_with_local_offset,
     proportional_xy_target,
     proportional_z_descent_m,
     xy_residual_m,
@@ -49,6 +50,7 @@ from .control.yaw_alignment import (
     apply_proportional_observation_roll_pitch_with_current_yaw,
     calibrated_keypoint_joint_step_rad,
     joint6_yaw_target_rad,
+    keypoint_long_axis_angle_deg,
 )
 from .geometry.transforms import (
     make_transform,
@@ -181,6 +183,8 @@ class FrozenTargetExecutorNode(Node):
         self.declare_parameter('final_z_p_use_port_target', True)
         self.declare_parameter('final_tcp_offset_x_m', 0.0)
         self.declare_parameter('final_tcp_offset_y_m', 0.0)
+        self.declare_parameter('final_port_target_offset_x_m', 0.0)
+        self.declare_parameter('final_port_target_offset_y_m', 0.0)
         self.declare_parameter('final_tcp_offset_z_m', 0.120)
         self.declare_parameter('final_port_insertion_depth_m', 0.010)
         # 힘 센서가 없는 마지막 구간은 자동 반복하지 않고 명시적인 단발
@@ -271,6 +275,19 @@ class FrozenTargetExecutorNode(Node):
         # 최종 Z 삽입과 R/P 복구가 끝난 뒤 상대 Z를 한 번 더 내린다.
         self.declare_parameter('enable_post_recovery_final_z', True)
         self.declare_parameter('post_recovery_final_z_distance_m', 0.005)
+        # 모든 Z 하강이 끝난 뒤 현재 XYZ/Roll/Yaw를 기준으로 Pitch만 든다.
+        self.declare_parameter('enable_post_final_z_pitch_lift', False)
+        self.declare_parameter('post_final_z_pitch_lift_deg', 3.0)
+        self.declare_parameter('post_final_z_pitch_lift_speed', 5)
+        # 통합 실행 종료 후 일정 시간 기다렸다 초기 관측 관절 자세로 복귀한다.
+        self.declare_parameter('auto_return_to_observe_enabled', False)
+        self.declare_parameter('auto_return_on_failure_enabled', False)
+        self.declare_parameter('auto_return_to_observe_delay_seconds', 10.0)
+        self.declare_parameter(
+            'auto_return_observation_joint_degrees',
+            [-1.66, -8.08, -36.65, -39.9, 0.0, 45.0],
+        )
+        self.declare_parameter('auto_return_motion_seconds', 20.0)
 
         self._enabled = bool(self.get_parameter('enable_execution').value)
         self._base_frame = str(self.get_parameter('base_frame').value)
@@ -523,6 +540,12 @@ class FrozenTargetExecutorNode(Node):
         self._final_tcp_offset_y = float(
             self.get_parameter('final_tcp_offset_y_m').value
         )
+        self._final_port_target_offset_x = float(
+            self.get_parameter('final_port_target_offset_x_m').value
+        )
+        self._final_port_target_offset_y = float(
+            self.get_parameter('final_port_target_offset_y_m').value
+        )
         self._final_tcp_offset_z = float(
             self.get_parameter('final_tcp_offset_z_m').value
         )
@@ -721,6 +744,33 @@ class FrozenTargetExecutorNode(Node):
         )
         self._post_recovery_final_z_distance = float(
             self.get_parameter('post_recovery_final_z_distance_m').value
+        )
+        self._enable_post_final_z_pitch_lift = bool(
+            self.get_parameter('enable_post_final_z_pitch_lift').value
+        )
+        self._post_final_z_pitch_lift = float(
+            self.get_parameter('post_final_z_pitch_lift_deg').value
+        )
+        self._post_final_z_pitch_lift_speed = int(
+            self.get_parameter('post_final_z_pitch_lift_speed').value
+        )
+        self._auto_return_to_observe_enabled = bool(
+            self.get_parameter('auto_return_to_observe_enabled').value
+        )
+        self._auto_return_on_failure_enabled = bool(
+            self.get_parameter('auto_return_on_failure_enabled').value
+        )
+        self._auto_return_to_observe_delay = float(
+            self.get_parameter('auto_return_to_observe_delay_seconds').value
+        )
+        self._auto_return_observation_joints_deg = [
+            float(value)
+            for value in self.get_parameter(
+                'auto_return_observation_joint_degrees'
+            ).value
+        ]
+        self._auto_return_motion_seconds = float(
+            self.get_parameter('auto_return_motion_seconds').value
         )
         self._validate_parameters()
 
@@ -943,6 +993,10 @@ class FrozenTargetExecutorNode(Node):
             f'post_recovery_z={self._enable_post_recovery_final_z}, '
             'post_recovery_z_distance='
             f'{self._post_recovery_final_z_distance * 1000.0:.1f}mm, '
+            f'post_final_pitch_lift={self._enable_post_final_z_pitch_lift}, '
+            f'post_final_pitch_lift_deg={self._post_final_z_pitch_lift:+.1f}, '
+            f'auto_return={self._auto_return_to_observe_enabled}, '
+            f'auto_return_delay={self._auto_return_to_observe_delay:.1f}s, '
             f'initial_yaw={self._enable_initial_yaw}'
         )
 
@@ -1128,6 +1182,14 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError('final_tcp_offset_x_m은 -0.050~0.050m여야 합니다')
         if not -0.050 <= self._final_tcp_offset_y <= 0.050:
             raise ValueError('final_tcp_offset_y_m은 -0.050~0.050m여야 합니다')
+        if not -0.020 <= self._final_port_target_offset_x <= 0.020:
+            raise ValueError(
+                'final_port_target_offset_x_m은 -0.020~0.020m여야 합니다'
+            )
+        if not -0.020 <= self._final_port_target_offset_y <= 0.020:
+            raise ValueError(
+                'final_port_target_offset_y_m은 -0.020~0.020m여야 합니다'
+            )
         if not 0.0 <= self._final_tcp_offset_z <= 0.300:
             raise ValueError('final_tcp_offset_z_m은 0~0.300m여야 합니다')
         if not 0.0 <= self._final_port_insertion_depth <= 0.050:
@@ -1317,6 +1379,26 @@ class FrozenTargetExecutorNode(Node):
             raise ValueError(
                 'post_recovery_final_z_distance_m은 1~10mm여야 합니다'
             )
+        if not -10.0 <= self._post_final_z_pitch_lift <= 10.0:
+            raise ValueError('post_final_z_pitch_lift_deg는 -10~10도여야 합니다')
+        if not 1 <= self._post_final_z_pitch_lift_speed <= 100:
+            raise ValueError('post_final_z_pitch_lift_speed는 1~100이어야 합니다')
+        if not 0.0 <= self._auto_return_to_observe_delay <= 60.0:
+            raise ValueError(
+                'auto_return_to_observe_delay_seconds는 0~60초여야 합니다'
+            )
+        if (
+            len(self._auto_return_observation_joints_deg) != 6
+            or not all(
+                math.isfinite(value) and -180.0 <= value <= 180.0
+                for value in self._auto_return_observation_joints_deg
+            )
+        ):
+            raise ValueError(
+                'auto_return_observation_joint_degrees는 유효한 6개 관절각이어야 합니다'
+            )
+        if not 1.0 <= self._auto_return_motion_seconds <= 60.0:
+            raise ValueError('auto_return_motion_seconds는 1~60초여야 합니다')
 
     def _publish(self, text: str) -> None:
         self._status.publish(String(data=text))
@@ -1386,10 +1468,12 @@ class FrozenTargetExecutorNode(Node):
             with self._lock:
                 self._auto_start_samples.clear()
             return
-        long_axis = points[1] - points[0]
-        axis_deg = math.degrees(
-            math.atan2(float(long_axis[1]), float(long_axis[0]))
-        )
+        try:
+            axis_deg = keypoint_long_axis_angle_deg(points)
+        except ValueError:
+            with self._lock:
+                self._auto_start_samples.clear()
+            return
         center = np.mean(points, axis=0)
         sample = AutoStartSample(
             timestamp=time.monotonic(),
@@ -1471,6 +1555,10 @@ class FrozenTargetExecutorNode(Node):
             self._execute_full_sequence(include_final_insertion=True)
         except Exception as error:
             self._publish(f'REJECTED: 자동 통합 실행 실패: {error}')
+            self._execute_auto_return_to_observe(
+                successful=False,
+                failure_reason=str(error),
+            )
         finally:
             with self._lock:
                 self._executing = False
@@ -1573,10 +1661,10 @@ class FrozenTargetExecutorNode(Node):
 
         axis_values = [sample[1] for sample in axis_samples]
         if self._initial_aggregation_method == 'median':
-            center_axis = circular_median_degrees(axis_values)
+            center_axis = axial_median_degrees(axis_values)
         else:
-            center_axis = circular_mean_degrees(axis_values)
-        yaw_spread = maximum_angular_deviation_degrees(
+            center_axis = axial_mean_degrees(axis_values)
+        yaw_spread = maximum_axial_deviation_degrees(
             axis_values, center_axis
         )
         if yaw_spread > self._initial_maximum_yaw_spread:
@@ -1671,6 +1759,14 @@ class FrozenTargetExecutorNode(Node):
                 self._execute_once()
         except Exception as error:
             self._publish(f'REJECTED: {error}')
+            if command in (
+                'execute_full_sequence',
+                'execute_full_sequence_with_final_z',
+            ):
+                self._execute_auto_return_to_observe(
+                    successful=False,
+                    failure_reason=str(error),
+                )
         finally:
             with self._lock:
                 self._executing = False
@@ -1775,7 +1871,24 @@ class FrozenTargetExecutorNode(Node):
         )
         current = self._current_flange()
         frozen_target = current.copy()
-        port_target_xy = initial_target_transform[:2, 3].copy()
+        raw_port_target_xy = initial_target_transform[:2, 3].copy()
+        if port_pose is None:
+            if (
+                abs(self._final_port_target_offset_x) > 1.0e-9
+                or abs(self._final_port_target_offset_y) > 1.0e-9
+            ):
+                raise ValueError(
+                    '포트 로컬 XY 목표 편향을 사용하려면 port_pose_base가 필요합니다'
+                )
+            port_target_xy = raw_port_target_xy
+        else:
+            port_transform = pose_to_transform(port_pose.pose)
+            port_target_xy = port_xy_with_local_offset(
+                raw_port_target_xy,
+                port_transform[:3, :3],
+                self._final_port_target_offset_x,
+                self._final_port_target_offset_y,
+            )
         if self._use_pbvs_target_z:
             frozen_target[2, 3] = initial_target_transform[2, 3]
             z_source = 'pbvs_pre_approach'
@@ -1814,7 +1927,13 @@ class FrozenTargetExecutorNode(Node):
 
         self._publish(
             '초기 관측 목표 고정: '
-            f'port_xy=[{port_target_xy[0]:+.6f}, {port_target_xy[1]:+.6f}]m, '
+            'raw_port_xy='
+            f'[{raw_port_target_xy[0]:+.6f}, {raw_port_target_xy[1]:+.6f}]m, '
+            'biased_port_xy='
+            f'[{port_target_xy[0]:+.6f}, {port_target_xy[1]:+.6f}]m, '
+            'port_target_xy_local='
+            f'[{self._final_port_target_offset_x * 1000.0:+.1f}, '
+            f'{self._final_port_target_offset_y * 1000.0:+.1f}]mm, '
             f'xy=[{frozen_xy[0]:+.6f}, {frozen_xy[1]:+.6f}]m, '
             'tcp_xy_local='
             f'[{self._final_tcp_offset_x * 1000.0:+.1f}, '
@@ -2516,11 +2635,17 @@ class FrozenTargetExecutorNode(Node):
             < self._aligned_hardware_final_target_z
             - self._joint_vertical_minimum_progress
         ):
-            raise RuntimeError(
+            message = (
                 '관절 Z 하강이 최종 목표 Z 아래로 지나갔습니다: '
                 f'actual_z={after_z[2, 3] * 1000.0:.1f}mm, '
                 'target_z='
                 f'{self._aligned_hardware_final_target_z * 1000.0:.1f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 과삽입 허용 시험 설정에 따라 '
+                'XY/Roll/Pitch 측정·보정을 계속합니다'
             )
         if overshoot > self._joint_vertical_maximum_overshoot:
             self._publish(
@@ -2537,6 +2662,30 @@ class FrozenTargetExecutorNode(Node):
                 f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg, '
                 f'limit={self._joint_vertical_roll_pitch_hard_limit:.2f}deg'
             )
+
+        remaining_after_z = float(
+            after_z[2, 3] - self._aligned_hardware_final_target_z
+        )
+        if remaining_after_z <= self._joint_vertical_final_z_guard:
+            if xy_error > self._joint_vertical_xy_tolerance:
+                raise RuntimeError(
+                    '관절 Z 하강으로 guard에 도달했지만 XY 허용오차를 '
+                    '초과했습니다. 추가 Cartesian 보정은 Z 급하강 방지를 '
+                    '위해 실행하지 않습니다: '
+                    f'xy={xy_error * 1000.0:.1f}mm'
+                )
+            self._alignment_ready_for_descent = False
+            self._insertion_ready = True
+            self._final_insertion_ready = True
+            self._publish(
+                'EXECUTED: 관절 Z 하강 직후 포트 기반 최종 Z guard에 '
+                '도달했습니다. Z 결합 급하강 방지를 위해 같은 사이클의 '
+                'Cartesian XY/Roll/Pitch 보정을 생략합니다: '
+                f'remaining={remaining_after_z * 1000.0:.1f}mm, '
+                f'xy={xy_error * 1000.0:.1f}mm, '
+                f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg'
+            )
+            return
 
         # 2/3: Z에만 관절 Jacobian을 사용한다. XY는 앞선 coarse/refine에서
         # 상대적으로 잘 동작한 제조사 Cartesian 좌표 명령으로 보정한다.
@@ -2766,8 +2915,22 @@ class FrozenTargetExecutorNode(Node):
                 break
             current_z = float(self._current_hardware_transform()[2, 3])
             remaining = current_z - self._aligned_hardware_final_target_z
-            if remaining <= self._joint_vertical_final_z_guard:
+            if remaining <= (
+                self._joint_vertical_final_z_guard
+                + self._joint_vertical_minimum_progress
+            ):
                 self._alignment_ready_for_descent = False
+                self._insertion_ready = True
+                self._final_insertion_ready = True
+                self._publish(
+                    'EXECUTED: 다음 관절 Z 최소 명령보다 guard 여유가 작아 '
+                    '추가 사이클을 생략합니다: '
+                    f'remaining={remaining * 1000.0:.1f}mm, '
+                    'guard='
+                    f'{self._joint_vertical_final_z_guard * 1000.0:.1f}mm, '
+                    'minimum_progress='
+                    f'{self._joint_vertical_minimum_progress * 1000.0:.1f}mm'
+                )
                 break
             self._publish(
                 f'자동 혼합 P제어 사이클 {cycle}/'
@@ -2891,9 +3054,15 @@ class FrozenTargetExecutorNode(Node):
                 f'{self._final_insertion_hard_maximum_total_descent * 1000.0:.1f}mm'
             )
         if target_overshoot > self._joint_vertical_maximum_overshoot:
-            raise RuntimeError(
+            message = (
                 '최종 Z-only 단발 삽입 목표를 과도하게 지나갔습니다: '
                 f'overshoot={target_overshoot * 1000.0:.1f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 과삽입 허용 시험 설정에 따라 '
+                '삽입 후 Roll/Pitch 복구와 후속 Z 단계로 계속합니다'
             )
         self._publish(
             'EXECUTED: guard 이후 최종 Z-only 단발 삽입 완료: '
@@ -3039,6 +3208,53 @@ class FrozenTargetExecutorNode(Node):
             f'xy={xy_error * 1000.0:.1f}mm, '
             f'roll={roll_error:.2f}deg, pitch={pitch_error:.2f}deg'
         )
+        self._execute_post_final_z_pitch_lift()
+
+    def _execute_post_final_z_pitch_lift(self) -> None:
+        """모든 Z 하강 뒤 현재 자세에서 Pitch만 signed 각도만큼 변경한다."""
+        if (
+            not self._enable_post_final_z_pitch_lift
+            or abs(self._post_final_z_pitch_lift) < 1e-6
+        ):
+            return
+
+        before = self._current_hardware_transform()
+        before_roll, before_pitch, before_yaw = rotation_to_rpy_degrees(
+            before[:3, :3]
+        )
+        target_pitch = before_pitch + self._post_final_z_pitch_lift
+        target = before.copy()
+        target[:3, :3] = rpy_degrees_to_rotation(
+            before_roll,
+            target_pitch,
+            before_yaw,
+        )
+        self._publish(
+            '모든 Z 하강 후 Pitch-only lift 시작: '
+            f'pitch={before_pitch:+.2f}→{target_pitch:+.2f}deg, '
+            f'delta={self._post_final_z_pitch_lift:+.2f}deg, '
+            'XYZ/Roll/Yaw target=current, '
+            f'speed={self._post_final_z_pitch_lift_speed}'
+        )
+        self._send_cartesian_transform(
+            target,
+            '모든 Z 하강 후 Pitch-only lift',
+            lock_z=False,
+            lock_roll_pitch=False,
+            speed=self._post_final_z_pitch_lift_speed,
+        )
+        time.sleep(self._settle)
+        after = self._current_hardware_transform()
+        _, after_pitch, _ = rotation_to_rpy_degrees(after[:3, :3])
+        coupled_dz = float(after[2, 3] - before[2, 3])
+        xy_drift = xy_residual_m(after[:2, 3], before[:2, 3])
+        self._publish(
+            'EXECUTED: 모든 Z 하강 후 Pitch-only lift 완료: '
+            f'command={self._post_final_z_pitch_lift:+.2f}deg, '
+            f'actual_pitch_delta={after_pitch - before_pitch:+.2f}deg, '
+            f'coupled_dz={coupled_dz * 1000.0:+.1f}mm, '
+            f'xy_drift={xy_drift * 1000.0:.1f}mm'
+        )
 
     def _execute_full_sequence(
         self,
@@ -3082,6 +3298,51 @@ class FrozenTargetExecutorNode(Node):
             f'{"execute_full_sequence_with_final_z" if include_final_insertion else "execute_full_sequence"} '
             '완료. 초기 정렬부터 Z 이동과 최종 오차 측정을 마쳤습니다'
         )
+        self._execute_auto_return_to_observe(successful=True)
+
+    def _execute_auto_return_to_observe(
+        self,
+        *,
+        successful: bool,
+        failure_reason: str | None = None,
+    ) -> None:
+        """통합 실행 종료 뒤 설정된 관절 관측 자세로 자동 복귀한다."""
+        if not self._auto_return_to_observe_enabled:
+            return
+        if not successful and not self._auto_return_on_failure_enabled:
+            return
+        outcome = '정상 완료' if successful else '실패/거절'
+        reason_suffix = (
+            '' if successful or not failure_reason
+            else f' 실패 원인={failure_reason}'
+        )
+        self._publish(
+            f'AUTO_RETURN_WAIT: 통합 실행 {outcome}. '
+            f'{self._auto_return_to_observe_delay:.1f}초 후 초기 관측 자세로 '
+            f'자동 복귀합니다.{reason_suffix}'
+        )
+        time.sleep(self._auto_return_to_observe_delay)
+        self._publish(
+            'AUTO_RETURN_START: 초기 관측 관절 자세로 복귀합니다: '
+            f'target_deg={self._auto_return_observation_joints_deg}, '
+            f'motion={self._auto_return_motion_seconds:.1f}s'
+        )
+        target_rad = [
+            math.radians(value)
+            for value in self._auto_return_observation_joints_deg
+        ]
+        try:
+            self._send_joint_target(
+                target_rad,
+                motion_seconds=self._auto_return_motion_seconds,
+            )
+        except Exception as error:
+            self._publish(
+                'AUTO_RETURN_FAILED: 초기 관측 자세 자동 복귀 실패: '
+                f'{error}'
+            )
+            return
+        self._publish('EXECUTED: AUTO_RETURN 초기 관측 자세 복귀 완료')
 
     def _publish_final_error_report(self) -> None:
         """통합 실행 종료 시 제조사 실제 자세와 저장 목표의 오차를 발행한다."""
@@ -3222,10 +3483,16 @@ class FrozenTargetExecutorNode(Node):
                 f'actual={actual_step * 1000.0:.2f}mm'
             )
         if final_remaining < -self._final_insertion_target_tolerance:
-            self._insertion_ready = False
-            raise RuntimeError(
+            message = (
                 '10mm 삽입 목표를 초과했습니다: '
                 f'overshoot={-final_remaining * 1000.0:.2f}mm'
+            )
+            if not self._allow_mixed_correction_below_final_z:
+                self._insertion_ready = False
+                raise RuntimeError(message)
+            self._publish(
+                'WARN: ' + message + '. 과삽입 허용 시험 설정에 따라 '
+                '현재 실제 위치를 삽입 완료로 수용합니다'
             )
         if (
             final_xy > self._joint_vertical_xy_tolerance

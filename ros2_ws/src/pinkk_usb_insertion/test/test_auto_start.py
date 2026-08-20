@@ -57,3 +57,22 @@ def test_short_observation_is_not_ready():
     result = _evaluate(_samples()[:20])
     assert not result.ready
     assert result.reason in ('표본 부족', '관찰 시간 부족')
+
+
+def test_undirected_axis_wrap_is_stable():
+    samples = _samples()
+    samples = [
+        AutoStartSample(
+            timestamp=sample.timestamp,
+            center_u=sample.center_u,
+            center_v=sample.center_v,
+            depth_m=sample.depth_m,
+            axis_deg=-89.0 if index % 2 == 0 else 89.0,
+        )
+        for index, sample in enumerate(samples)
+    ]
+
+    result = _evaluate(samples)
+
+    assert result.ready
+    assert result.yaw_spread_deg < 1.1

@@ -30,8 +30,9 @@ class AutoStartResult:
     yaw_spread_deg: float = math.inf
 
 
-def _angular_error_degrees(values: np.ndarray, center: float) -> np.ndarray:
-    return (values - center + 180.0) % 360.0 - 180.0
+def _axial_error_degrees(values: np.ndarray, center: float) -> np.ndarray:
+    """방향 없는 장축의 180도 주기 오차를 반환한다."""
+    return (values - center + 90.0) % 180.0 - 90.0
 
 
 def evaluate_auto_start(
@@ -111,15 +112,15 @@ def evaluate_auto_start(
     )
     depth_center = float(np.median(depths))
     depth_spread = float(np.max(np.abs(depths - depth_center)))
-    axis_radians = np.radians(axes)
-    axis_center = math.degrees(
+    doubled_axis_radians = np.radians(2.0 * axes)
+    axis_center = 0.5 * math.degrees(
         math.atan2(
-            float(np.mean(np.sin(axis_radians))),
-            float(np.mean(np.cos(axis_radians))),
+            float(np.mean(np.sin(doubled_axis_radians))),
+            float(np.mean(np.cos(doubled_axis_radians))),
         )
     )
     yaw_spread = float(
-        np.max(np.abs(_angular_error_degrees(axes, axis_center)))
+        np.max(np.abs(_axial_error_degrees(axes, axis_center)))
     )
     metrics = dict(
         sample_count=len(recent),

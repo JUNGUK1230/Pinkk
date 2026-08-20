@@ -32,6 +32,10 @@ class PortPoseNode(Node):
     def __init__(self) -> None:
         super().__init__('pinkk_port_pose_node')
         self.declare_parameter('control_config', _default_config('insertion_control.yaml'))
+        self.declare_parameter(
+            'suppress_no_candidate_warning_after_first_valid',
+            True,
+        )
         control = load_yaml(str(self.get_parameter('control_config').value))
         model = control['port_model']
         limits = control['pose_estimation']
@@ -47,6 +51,12 @@ class PortPoseNode(Node):
         self._maximum_detection_age = float(
             control['safety']['maximum_detection_age_seconds']
         )
+        self._suppress_no_candidate_warning = bool(
+            self.get_parameter(
+                'suppress_no_candidate_warning_after_first_valid'
+            ).value
+        )
+        self._has_valid_detection = False
         self._camera_info: CameraInfo | None = None
 
         self._observation_publisher = self.create_publisher(
@@ -87,6 +97,13 @@ class PortPoseNode(Node):
         observation.valid = False
         observation.rejection_reason = reason
         self._observation_publisher.publish(observation)
+        if (
+            self._suppress_no_candidate_warning
+            and self._has_valid_detection
+            and '사용 가능한 USB 포트 검출이 없습니다' in reason
+        ):
+            self.get_logger().debug(reason, throttle_duration_sec=2.0)
+            return
         self.get_logger().warning(reason, throttle_duration_sec=2.0)
 
     def _detection_callback(self, message: UsbPortDetectionArray) -> None:
@@ -149,6 +166,13 @@ class PortPoseNode(Node):
         observation.valid = True
         observation.rejection_reason = ''
         self._observation_publisher.publish(observation)
+        if not self._has_valid_detection:
+            self._has_valid_detection = True
+            if self._suppress_no_candidate_warning:
+                self.get_logger().info(
+                    '첫 유효 포트 검출 완료: 이후 검출 후보 없음 메시지는 '
+                    '관측 토픽에는 계속 반영하되 반복 WARN 로그는 숨깁니다'
+                )
 
         pose = PoseStamped()
         pose.header = observation.header
