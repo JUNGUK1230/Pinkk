@@ -46,7 +46,7 @@ data/        자동/수동 Hand-eye 영구 기록과 활성값
 최소 명령:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 source ~/venv/mycobot/bin/activate
 
 python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.collect_samples \

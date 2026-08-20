@@ -1,27 +1,25 @@
-from pinkk_usb_insertion.configuration import execution_gate, insertion_gate
+from pathlib import Path
+
+import pytest
+
+from pinkk_usb_insertion.configuration import load_yaml
 
 
-def test_execution_is_disabled_by_default() -> None:
-    control = {
-        'execution': {
-            'execution_enabled': False,
-            'insertion_enabled': False,
-            'require_calibrated_tool': True,
-        }
-    }
-    tool = {'tool': {'calibrated': False}}
-    assert execution_gate(control, tool) == (False, 'execution_enabled=false')
-    assert insertion_gate(control, tool) == (False, 'execution_enabled=false')
+def test_load_yaml_returns_top_level_mapping(tmp_path: Path) -> None:
+    config = tmp_path / 'config.yaml'
+    config.write_text('port_model:\n  width_m: 0.018\n', encoding='utf-8')
+
+    assert load_yaml(config) == {'port_model': {'width_m': 0.018}}
 
 
-def test_insertion_requires_its_own_switch() -> None:
-    control = {
-        'execution': {
-            'execution_enabled': True,
-            'insertion_enabled': False,
-            'require_calibrated_tool': True,
-        }
-    }
-    tool = {'tool': {'calibrated': True}}
-    assert execution_gate(control, tool)[0]
-    assert insertion_gate(control, tool) == (False, 'insertion_enabled=false')
+def test_load_yaml_rejects_non_mapping(tmp_path: Path) -> None:
+    config = tmp_path / 'config.yaml'
+    config.write_text('- one\n- two\n', encoding='utf-8')
+
+    with pytest.raises(ValueError, match='mapping'):
+        load_yaml(config)
+
+
+def test_load_yaml_rejects_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match='설정 파일이 없습니다'):
+        load_yaml(tmp_path / 'missing.yaml')

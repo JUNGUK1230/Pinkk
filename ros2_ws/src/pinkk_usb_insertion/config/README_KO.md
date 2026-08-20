@@ -42,18 +42,16 @@ bash scripts/calibration/laptop_handeye_data.sh activate RUN
 
 이 명령이 활성 `.calib`, NPY와 이 YAML을 같은 값으로 동기화합니다.
 
-## `tool_transform.yaml`
+## 충전기 TCP 설정
 
-`T_flange_plug`를 저장합니다. 현재 수치는 identity지만 `calibrated=false`이므로
-실제 TCP로 취급하지 않습니다.
+사용되지 않던 `tool_transform.yaml`과 과거 실행 gate는 제거했습니다. 현재 제어는
+`hybrid_runtime.yaml`의 공통 TCP Z/삽입 깊이와 로봇별
+`config/robots/<profile>/runtime.yaml`의 X/Y 편심을 직접 사용합니다.
 
-충전기 고정 후 다음을 기록합니다.
-
-- 측정 날짜
-- 측정 방법
-- translation 단위
-- quaternion 방향
-- 반복 검증 오차
+- `final_tcp_offset_x_m`, `final_tcp_offset_y_m`: flange 로컬 측면 편심
+- `final_tcp_offset_z_m`: flange에서 충전기 끝까지 길이
+- `final_port_insertion_depth_m`: 포트 평면 안쪽 목표 깊이
+- `final_port_target_offset_x_m`, `final_port_target_offset_y_m`: 포트 로컬 목표 편향
 
 ## `insertion_control.yaml`
 
@@ -61,8 +59,8 @@ bash scripts/calibration/laptop_handeye_data.sh activate RUN
 
 `pose_estimation`에는 YOLO 검출 선택 기준도 포함합니다.
 현재 SolvePnP 포트 모델은 YOLO keypoint 라벨링 순서
-`LEFT_TOP → RIGHT_TOP → RIGHT_BOTTOM → LEFT_BOTTOM`을 사용하며,
-실측 외곽 크기는 장축 18 mm × 단축 12 mm입니다.
+`LEFT_TOP → RIGHT_TOP → RIGHT_BOTTOM → LEFT_BOTTOM`을 사용합니다. 실제 크기는
+항상 `insertion_control.yaml`의 `width_m`, `height_m` 값을 기준으로 확인합니다.
 
 ```yaml
 target_class_name: usb_port

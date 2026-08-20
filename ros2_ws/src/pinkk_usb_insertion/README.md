@@ -6,17 +6,17 @@ YOLO keypoint, SolvePnP, Hand-eye로 USB 포트의 로봇 베이스 좌표를 �
 
 ## 실행
 
+아래 명령은 각 장비의 저장소 루트에서 실행합니다.
+
 로봇 A PC:
 
 ```bash
-cd ~/Pinkk-robot-arm
 ./scripts/run_robot_bridge.sh robot_a
 ```
 
 노트북:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
 ./scripts/run_laptop_frozen_target_test.sh robot_a
 ```
 
@@ -54,6 +54,7 @@ ros2 launch pinkk_usb_insertion return_to_observe.launch.py \
 - 로봇별 카메라/Hand-eye/override: `config/robots/robot_a|robot_b`
 - 로봇 PC bridge: `pinkk_mycobot_bridge/config/trajectory_bridge.yaml`
 
-현재 제어 방식과 파라미터 설명은
-[`docs/CURRENT_CONTROL_FLOW_KO.md`](docs/CURRENT_CONTROL_FLOW_KO.md)를
-참고합니다. 실패 이력은 `docs/TROUBLESHOOTING_KO.md`에 보존합니다.
+현재 실행 방식과 파라미터는
+[`docs/FROZEN_TARGET_TEST_KO.md`](docs/FROZEN_TARGET_TEST_KO.md), 개발 진행은
+[`docs/DEVELOPMENT_LOG_KO.md`](docs/DEVELOPMENT_LOG_KO.md), 문제 해결 이력은
+[`docs/TROUBLESHOOTING_KO.md`](docs/TROUBLESHOOTING_KO.md)를 참고합니다.

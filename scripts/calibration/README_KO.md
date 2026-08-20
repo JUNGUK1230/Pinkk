@@ -80,7 +80,7 @@ src/robot_arm/robot_camera/handeye_calibration_1828/data/
 로봇 PC:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git switch robot_arm_1828
 git pull origin robot_arm_1828
 bash scripts/calibration/robot_build_pinkk.sh
@@ -89,7 +89,7 @@ bash scripts/calibration/robot_build_pinkk.sh
 노트북:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git switch robot_arm_1828
 git pull origin robot_arm_1828
 bash scripts/calibration/laptop_build_pinkk.sh
@@ -137,7 +137,7 @@ sudo lsof /dev/video0
 초기 검증에서는 낮은 속도 5를 권장합니다.
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
@@ -170,7 +170,7 @@ bash scripts/calibration/laptop_usb_accuracy_check.sh observe-execute
 SSH X11 화면을 보면서 실행:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_charuco.sh true
 ```
 
@@ -186,7 +186,7 @@ bash scripts/calibration/robot_start_charuco.sh false
 ### 5.3 노트북 터미널 1 — MoveIt/RViz
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_moveit.sh
 ```
 
@@ -195,7 +195,7 @@ bash scripts/calibration/laptop_start_moveit.sh
 매 run마다 서버를 새로 시작합니다.
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_easy_handeye.sh
 ```
 
@@ -205,7 +205,7 @@ GUI의 `Load Samples`를 누르지 않습니다. 새 run은 빈 샘플 목록에
 ### 5.5 노트북 터미널 3 — 이동 없는 검사
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_auto_handeye.sh check 30 20
 ```
 
@@ -249,7 +249,7 @@ bash scripts/calibration/laptop_handeye_data.sh compute RUN
 ## 6. 저장된 run 확인
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_handeye_data.sh list
 ```
 

@@ -40,16 +40,16 @@ git clone \
   --branch development \
   --single-branch \
   https://github.com/JUNGUK1230/Pinkk.git \
-  ~/Pinkk-robot-arm
+  Pinkk-robot-arm
 
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git branch --show-current
 ```
 
 기존 저장소가 있다면 최신 상태로 갱신합니다.
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git fetch origin
 git switch development
 git pull --ff-only origin development
@@ -59,7 +59,7 @@ git pull --ff-only origin development
 
 ```bash
 source ~/venv/mycobot/bin/activate
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 ```
 
 Python과 CPU architecture를 확인합니다.

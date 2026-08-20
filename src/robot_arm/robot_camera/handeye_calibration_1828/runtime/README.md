@@ -10,7 +10,7 @@ calibrate.py        저장된 sample로 Hand-Eye 계산
 명령은 로봇 PC의 저장소 루트에서 실행합니다.
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 source ~/venv/mycobot/bin/activate
 ```
 

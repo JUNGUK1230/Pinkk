@@ -43,14 +43,14 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 bridge:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
 ChArUco 화면 포함:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_charuco.sh true
 ```
 
@@ -90,7 +90,7 @@ camera_optical_frame -> charuco_board
 MoveIt/RViz:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_moveit.sh
 ```
 
@@ -138,14 +138,14 @@ bash scripts/calibration/laptop_publish_handeye_tf.sh
 로봇 PC:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_build_pinkk.sh
 ```
 
 노트북:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_build_pinkk.sh
 ```
 
