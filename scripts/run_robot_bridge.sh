@@ -24,12 +24,14 @@ source_environment() {
 }
 
 source_environment /opt/ros/jazzy/setup.bash
-source_environment /home/jetcobot/venv/mycobot/bin/activate
-source_environment /home/jetcobot/mycobot_moveit_ws/install_pinkk/setup.bash
+ROBOT_VENV="${PINKK_ROBOT_VENV:-${HOME}/venv/mycobot}"
+ROBOT_INSTALL_SETUP="${PINKK_ROBOT_INSTALL_SETUP:-${HOME}/mycobot_moveit_ws/install_pinkk/setup.bash}"
+source_environment "${ROBOT_VENV}/bin/activate"
+source_environment "${ROBOT_INSTALL_SETUP}"
 
 # colcon이 만든 ROS console script는 /usr/bin/python3을 사용한다.
 # PyMyCobot 가상환경의 패키지를 시스템 Python entry point에서도 찾게 한다.
-PYMYCOBOT_PYTHON=/home/jetcobot/venv/mycobot/bin/python
+PYMYCOBOT_PYTHON="${ROBOT_VENV}/bin/python"
 if ! "${PYMYCOBOT_PYTHON}" -c "from pymycobot import MyCobot280" 2>/dev/null; then
     echo "PyMyCobot 가상환경에 pymycobot이 없습니다: ${PYMYCOBOT_PYTHON}" >&2
     exit 1

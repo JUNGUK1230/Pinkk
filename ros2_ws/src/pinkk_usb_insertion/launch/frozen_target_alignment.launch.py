@@ -23,6 +23,7 @@ def generate_launch_description() -> LaunchDescription:
     share = Path(get_package_share_directory('pinkk_usb_insertion'))
     runtime = str(share / 'config' / 'hybrid_runtime.yaml')
     profile = LaunchConfiguration('robot_profile')
+    model_path = LaunchConfiguration('model_path')
     profile_root = PathJoinSubstitution(
         [str(share), 'config', 'robots', profile]
     )
@@ -38,6 +39,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value='robot_a',
                 choices=['robot_a', 'robot_b'],
                 description='사용할 로봇별 보정·파라미터 프로필',
+            ),
+            DeclareLaunchArgument(
+                'model_path',
+                default_value='models/usb_02.pt',
+                description='YOLO Pose weight 경로',
             ),
             _robot_description_launch('static_virtual_joint_tfs.launch.py'),
             _robot_description_launch('rsp.launch.py'),
@@ -57,7 +63,11 @@ def generate_launch_description() -> LaunchDescription:
                 executable='yolo_keypoint_node',
                 name='pinkk_yolo_keypoint_node',
                 output='screen',
-                parameters=[runtime, profile_runtime],
+                parameters=[
+                    runtime,
+                    profile_runtime,
+                    {'model_path': model_path},
+                ],
             ),
             Node(
                 package='pinkk_usb_insertion',

@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.coverage
 *.py[cod]
 
 # 로컬 ROS 2/colcon 생성물. 실제 워크스페이스 산출물은 소스 저장소에 포함하지 않는다.
@@ -12,3 +13,6 @@ __pycache__/
 /ros2_ws/build/
 /ros2_ws/install/
 /ros2_ws/log/
+
+# YOLO 학습 weight는 로컬/릴리스 자산으로 관리하고 Git에는 넣지 않는다.
+/models/*.pt
