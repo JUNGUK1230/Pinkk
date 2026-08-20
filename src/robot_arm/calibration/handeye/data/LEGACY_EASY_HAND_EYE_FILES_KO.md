@@ -20,7 +20,7 @@
 mkdir -p ~/.ros2/easy_handeye2/samples
 
 cp \
-  src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260723_auto_30samples/samples.samples \
+  src/robot_arm/calibration/handeye/data/runs/20260723_auto_30samples/samples.samples \
   ~/.ros2/easy_handeye2/samples/pinkk_eye_in_hand_30samples_20260723.samples
 ```
 
@@ -31,6 +31,6 @@ cp \
 mkdir -p ~/.ros2/easy_handeye2/calibrations
 
 cp \
-  src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260723_auto_30samples/calibration.calib \
+  src/robot_arm/calibration/handeye/data/runs/20260723_auto_30samples/calibration.calib \
   ~/.ros2/easy_handeye2/calibrations/pinkk_eye_in_hand_30samples_20260723.calib
 ```

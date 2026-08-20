@@ -21,12 +21,12 @@ USB 인식과 제어는 `pinkk_usb_insertion` 패키지가 담당합니다.
 
 | 종류 | 파일 | 역할 |
 |---|---|---|
-| 카메라 내부 파라미터 | `camera_calibration/results/intrinsics.npz` | 왜곡 보정, ChArUco, PnP |
-| 활성 Hand-eye 원본 | `handeye_calibration_1828/data/active/calibration.calib` | Easy Handeye2 결과 |
-| 활성 Hand-eye 행렬 | `handeye_calibration_1828/data/active/T_flange_camera.npy` | camera → flange |
-| 활성 run 정보 | `handeye_calibration_1828/data/active/manifest.json` | 선택한 결과와 hash |
-| 수집 이력 | `handeye_calibration_1828/data/runs/` | 샘플, 결과, 실행 환경 |
-| 비교 이력 | `handeye_calibration_1828/data/comparisons/` | 자세별 CSV와 요약 |
+| 카메라 내부 파라미터 | `camera_intrinsics/results/intrinsics.npz` | 왜곡 보정, ChArUco, PnP |
+| 활성 Hand-eye 원본 | `handeye/data/active/calibration.calib` | Easy Handeye2 결과 |
+| 활성 Hand-eye 행렬 | `handeye/data/active/T_flange_camera.npy` | camera → flange |
+| 활성 run 정보 | `handeye/data/active/manifest.json` | 선택한 결과와 hash |
+| 수집 이력 | `handeye/data/runs/` | 샘플, 결과, 실행 환경 |
+| 비교 이력 | `handeye/data/comparisons/` | 자세별 CSV와 요약 |
 
 기존 코드 호환용 `data/T_flange_camera.npy`와 USB 시스템의 `handeye.yaml`은
 `laptop_handeye_data.sh activate RUN` 명령으로 활성값과 함께 동기화됩니다.
@@ -41,7 +41,7 @@ USB 인식과 제어는 `pinkk_usb_insertion` 패키지가 담당합니다.
 - 왜곡 보정이나 재투영 오차 악화
 
 현재 기준 해상도는 640×480입니다. 내부 파라미터 절차는
-[`camera_calibration/README.md`](camera_calibration/README.md)를 확인합니다.
+[`camera_intrinsics/README.md`](camera_intrinsics/README.md)를 확인합니다.
 
 ### Hand-eye
 
@@ -91,9 +91,9 @@ T_base_board =
 - run과 comparison은 수정하거나 덮어쓰지 않습니다.
 - 활성값은 파일을 직접 복사하지 않고 `activate RUN`으로 변경합니다.
 - Hand-eye `.samples`, `.calib`, `.npy`, `.csv`, `.json`은 Git으로 추적합니다.
-- 카메라 원본 이미지처럼 큰 파일은 `camera_calibration`의 별도 정책을 따릅니다.
+- 카메라 원본 이미지처럼 큰 파일은 `camera_intrinsics`의 별도 정책을 따릅니다.
 - serial과 카메라는 각각 한 프로세스만 엽니다.
 
 ROS2 장애 시에만
-[`handeye_calibration_1828/README.md`](handeye_calibration_1828/README.md)의
+[`handeye/README.md`](handeye/README.md)의
 수동 OpenCV 경로를 복구용으로 사용합니다.

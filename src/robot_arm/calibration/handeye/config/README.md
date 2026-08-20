@@ -104,7 +104,7 @@ python3 -m pip freeze > ~/mycobot_packages_before_handeye.txt
 로봇 PC에는 intrinsic 결과 파일이 다음 위치에 있어야 합니다.
 
 ```text
-src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
+src/robot_arm/calibration/camera_intrinsics/results/intrinsics.npz
 ```
 
 `settings.py`의 기본 경로도 이 위치를 바라봅니다.

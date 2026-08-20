@@ -2,7 +2,7 @@
   "schema_version": 1,
   "activated_at": "2026-07-23T14:36:14.787288+09:00",
   "run_id": "20260715_baseline_old",
-  "source_calibration": "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/calibration.calib",
+  "source_calibration": "src/robot_arm/calibration/handeye/data/runs/20260715_baseline_old/calibration.calib",
   "calibration_sha256": "7b7afb348b8a8592680ccd909473cd621fae6d184858e47c9bd91d01016deb16",
   "matrix_sha256": "eea16ded366cb253012d5fdd883e8aac0794dafd2c1a676e2a6e7f095107e91f"
 }

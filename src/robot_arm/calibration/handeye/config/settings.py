@@ -7,7 +7,7 @@ from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = PACKAGE_DIR / "data"
-INTRINSICS_PATH = PACKAGE_DIR.parent / "camera_calibration" / "results" / "intrinsics.npz"
+INTRINSICS_PATH = PACKAGE_DIR.parent / "camera_intrinsics" / "results" / "intrinsics.npz"
 SAMPLES_PATH = DATA_DIR / "handeye_samples.npz"
 RESULT_MATRIX_PATH = DATA_DIR / "T_flange_camera.npy"
 RESULT_NPZ_PATH = DATA_DIR / "handeye_result.npz"

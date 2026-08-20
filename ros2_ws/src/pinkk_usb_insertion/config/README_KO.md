@@ -12,7 +12,7 @@
 전체 정밀도로 옮긴 값입니다.
 
 ```text
-src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
+src/robot_arm/calibration/camera_intrinsics/results/intrinsics.npz
 ```
 
 ## `handeye.yaml`
@@ -28,7 +28,7 @@ child: camera_optical_frame
 동일한 변환입니다.
 
 ```text
-src/robot_arm/robot_camera/handeye_calibration_1828/data/active/T_flange_camera.npy
+src/robot_arm/calibration/handeye/data/active/T_flange_camera.npy
 ```
 
 카메라 브래킷 위치나 각도가 바뀌면 다시 측정합니다. 충전기 TCP가 바뀌는 것은

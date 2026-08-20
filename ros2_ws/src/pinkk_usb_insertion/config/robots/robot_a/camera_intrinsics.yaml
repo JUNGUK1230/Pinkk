@@ -1,5 +1,5 @@
 camera:
-  source_file: src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz
+  source_file: src/robot_arm/calibration/camera_intrinsics/results/intrinsics.npz
   frame_id: camera_optical_frame
   image_width: 640
   image_height: 480

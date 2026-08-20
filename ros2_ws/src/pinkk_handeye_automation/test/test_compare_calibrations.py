@@ -15,7 +15,7 @@ from pinkk_handeye_automation.compare_calibrations import (
 
 RUNS_DIR = (
     Path(__file__).resolve().parents[4]
-    / "src/robot_arm/robot_camera/handeye_calibration_1828/data/runs"
+    / "src/robot_arm/calibration/handeye/data/runs"
 )
 
 

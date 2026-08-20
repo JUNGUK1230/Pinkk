@@ -18,7 +18,7 @@ verify.py  저장된 T_flange_camera로 고정 보드 pose 안정성 확인
 
 ```bash
 python3 -c "
-from src.robot_arm.robot_camera.handeye_calibration_1828.core.robot_adapter import (
+from src.robot_arm.calibration.handeye.core.robot_adapter import (
     create_robot,
     validate_robot_frames,
 )
@@ -61,7 +61,7 @@ end type: 0
 sample 계산 후 다음 명령을 실행합니다.
 
 ```bash
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.validation.verify \
+python3 -m src.robot_arm.calibration.handeye.validation.verify \
   --camera 0
 ```
 

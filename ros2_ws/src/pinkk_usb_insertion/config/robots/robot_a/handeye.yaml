@@ -1,5 +1,5 @@
 handeye:
-  source_file: src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/20260715_baseline_old/T_flange_camera.npy
+  source_file: src/robot_arm/calibration/handeye/data/runs/20260715_baseline_old/T_flange_camera.npy
   source_run: 20260715_baseline_old
   parent_frame: joint6_flange
   child_frame: camera_optical_frame

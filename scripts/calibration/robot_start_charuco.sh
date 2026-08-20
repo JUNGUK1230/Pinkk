@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/_common.sh"
 
 SHOW_PREVIEW="${1:-false}"
 CAMERA="${2:-0}"
-INTRINSICS_PATH="${3:-${REPO_ROOT}/src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz}"
+INTRINSICS_PATH="${3:-${REPO_ROOT}/src/robot_arm/calibration/camera_intrinsics/results/intrinsics.npz}"
 
 source_required "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 source_required "${HOME}/venv/mycobot/bin/activate"

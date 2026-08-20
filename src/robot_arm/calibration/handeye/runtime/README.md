@@ -73,7 +73,7 @@ ssh jetcobot-handeye
 ChArUco 보드를 완전히 고정하고 로봇을 여러 위치와 회전 자세로 이동합니다.
 
 ```bash
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.collect_samples \
+python3 -m src.robot_arm.calibration.handeye.runtime.collect_samples \
   --camera 0
 ```
 
@@ -91,7 +91,7 @@ Q 또는 ESC   : 종료
 기존 sample 파일을 덮어쓰려면 다음 옵션을 사용합니다.
 
 ```bash
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.collect_samples \
+python3 -m src.robot_arm.calibration.handeye.runtime.collect_samples \
   --camera 0 \
   --overwrite
 ```
@@ -99,7 +99,7 @@ python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.collect_s
 저장 위치는 다음과 같습니다.
 
 ```text
-src/robot_arm/robot_camera/handeye_calibration_1828/data/handeye_samples.npz
+src/robot_arm/calibration/handeye/data/handeye_samples.npz
 ```
 
 ## 2. 계산과 방법 비교
@@ -107,7 +107,7 @@ src/robot_arm/robot_camera/handeye_calibration_1828/data/handeye_samples.npz
 sample 수집 후 다음 명령을 실행합니다.
 
 ```bash
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.calibrate
+python3 -m src.robot_arm.calibration.handeye.runtime.calibrate
 ```
 
 `TSAI`, `PARK`, `HORAUD`, `ANDREFF`, `DANIILIDIS` 방법을 모두 계산하고, 고정 보드의
@@ -117,13 +117,13 @@ base pose 일관성을 위치 평균/최대 `mm`와 회전 평균/최대 `deg`�
 특정 방법을 저장하려면 `--method`를 지정합니다.
 
 ```bash
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.calibrate \
+python3 -m src.robot_arm.calibration.handeye.runtime.calibrate \
   --method PARK
 ```
 
 계산 결과는 다음 파일로 저장됩니다.
 
 ```text
-src/robot_arm/robot_camera/handeye_calibration_1828/data/T_flange_camera.npy
-src/robot_arm/robot_camera/handeye_calibration_1828/data/handeye_result.npz
+src/robot_arm/calibration/handeye/data/T_flange_camera.npy
+src/robot_arm/calibration/handeye/data/handeye_result.npz
 ```

@@ -18,7 +18,7 @@ scripts/
   run_laptop_frozen_target_test.sh 노트북 통합 실행 진입점
   calibration/                     카메라·Hand-eye 보정 도구
 models/                             로컬 YOLO weight 위치(PT 파일은 Git 제외)
-src/robot_arm/robot_camera/         보정 원본 코드와 장비별 결과
+src/robot_arm/calibration/         보정 원본 코드와 장비별 결과
 ```
 
 `build/`, `install/`, `log/`, Python/pytest 캐시는 생성물이므로 Git에서 제외합니다.

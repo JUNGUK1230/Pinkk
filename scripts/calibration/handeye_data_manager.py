@@ -30,7 +30,7 @@ DATA_ROOT = Path(
         "PINKK_HANDEYE_DATA_ROOT",
         str(
             REPO_ROOT
-            / "src/robot_arm/robot_camera/handeye_calibration_1828/data"
+            / "src/robot_arm/calibration/handeye/data"
         ),
     )
 ).expanduser().resolve()
@@ -441,7 +441,7 @@ def create_run(arguments: argparse.Namespace) -> int:
     }
     intrinsics = (
         REPO_ROOT
-        / "src/robot_arm/robot_camera/camera_calibration/results/intrinsics.npz"
+        / "src/robot_arm/calibration/camera_intrinsics/results/intrinsics.npz"
     )
     if intrinsics.is_file():
         metadata["intrinsics"] = {

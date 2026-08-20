@@ -17,7 +17,7 @@ dist_coeffs: 렌즈 왜곡 계수
 ## 폴더 구조
 
 ```text
-camera_calibration/
+camera_intrinsics/
   images/
     raw/        # 체스보드 촬영 원본 이미지
     accepted/   # 필요하면 좋은 이미지만 따로 모아두는 폴더
@@ -36,10 +36,10 @@ camera_calibration/
 
 ## 실행 위치
 
-아래 명령어는 `camera_calibration` 폴더 안에서 실행하는 기준입니다.
+아래 명령어는 `camera_intrinsics` 폴더 안에서 실행하는 기준입니다.
 
 ```bash
-cd src/robot_arm/robot_camera/camera_calibration
+cd src/robot_arm/calibration/camera_intrinsics
 ```
 
 만약 저장소 루트가 아니라 다른 위치에서 실행한다면, 위 경로를 현재 위치에 맞게 조정하면 됩니다.

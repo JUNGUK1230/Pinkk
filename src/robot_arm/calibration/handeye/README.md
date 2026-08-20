@@ -49,12 +49,12 @@ data/        자동/수동 Hand-eye 영구 기록과 활성값
 # 저장소 루트에서 실행
 source ~/venv/mycobot/bin/activate
 
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.collect_samples \
+python3 -m src.robot_arm.calibration.handeye.runtime.collect_samples \
   --camera 0
 
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.runtime.calibrate
+python3 -m src.robot_arm.calibration.handeye.runtime.calibrate
 
-python3 -m src.robot_arm.robot_camera.handeye_calibration_1828.validation.verify \
+python3 -m src.robot_arm.calibration.handeye.validation.verify \
   --camera 0
 ```
 

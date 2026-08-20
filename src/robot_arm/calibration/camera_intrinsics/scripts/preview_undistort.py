@@ -1,8 +1,8 @@
 import argparse
-from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
 def camera_arg(value):
@@ -12,9 +12,9 @@ def camera_arg(value):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Capture checkerboard images.")
+    parser = argparse.ArgumentParser(description="Preview camera undistortion.")
+    parser.add_argument("--calib", default="results/intrinsics.npz", help="Calibration npz file.")
     parser.add_argument("--camera", type=camera_arg, default=0, help="Camera index or device path.")
-    parser.add_argument("--output", default="camera_calibration/images/raw", help="Output folder.")
     parser.add_argument("--width", type=int, default=0, help="Optional capture width.")
     parser.add_argument("--height", type=int, default=0, help="Optional capture height.")
     return parser.parse_args()
@@ -22,8 +22,13 @@ def parse_args():
 
 def main():
     args = parse_args()
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    calib_path = Path(args.calib)
+    if not calib_path.exists():
+        raise RuntimeError(f"Calibration file not found: {calib_path}")
+
+    data = np.load(calib_path, allow_pickle=True)
+    camera_matrix = data["camera_matrix"]
+    dist_coeffs = data["dist_coeffs"]
 
     cap = cv2.VideoCapture(args.camera)
     if args.width > 0:
@@ -34,19 +39,18 @@ def main():
     if not cap.isOpened():
         raise RuntimeError(f"Could not open camera {args.camera}")
 
-    saved_count = 0
-    print("Press 's' to save, 'q' to quit.")
-
+    print("Press 'q' to quit.")
     while True:
         ok, frame = cap.read()
         if not ok:
             print("Failed to read frame.")
             break
 
-        preview = frame.copy()
+        undistorted = cv2.undistort(frame, camera_matrix, dist_coeffs)
+        combined = np.hstack((frame, undistorted))
         cv2.putText(
-            preview,
-            f"saved: {saved_count} | s: save | q: quit",
+            combined,
+            "left: raw | right: undistorted | q: quit",
             (20, 35),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
@@ -54,16 +58,9 @@ def main():
             2,
             cv2.LINE_AA,
         )
-        cv2.imshow("capture_checkerboard", preview)
+        cv2.imshow("preview_undistort", combined)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("s"):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            path = output_dir / f"checkerboard_{timestamp}.jpg"
-            cv2.imwrite(str(path), frame)
-            saved_count += 1
-            print(f"Saved {path}")
-        elif key == ord("q"):
+        if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
     cap.release()

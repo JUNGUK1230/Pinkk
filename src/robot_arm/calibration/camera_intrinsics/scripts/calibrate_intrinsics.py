@@ -10,11 +10,11 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Calibrate camera intrinsics with a checkerboard.")
-    parser.add_argument("--images", default="camera_calibration/images/raw", help="Input image folder.")
+    parser.add_argument("--images", default="images/raw", help="Input image folder.")
     parser.add_argument("--cols", type=int, default=8, help="Number of inner corners per row.")
     parser.add_argument("--rows", type=int, default=6, help="Number of inner corners per column.")
     parser.add_argument("--square-size", type=float, default=28.0, help="Checkerboard square size in mm.")
-    parser.add_argument("--output", default="camera_calibration/results", help="Output folder.")
+    parser.add_argument("--output", default="results", help="Output folder.")
     parser.add_argument("--show", action="store_true", help="Show detected corners.")
     return parser.parse_args()
 
