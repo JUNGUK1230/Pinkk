@@ -126,6 +126,9 @@ class MpcPathFollower(Node):
             weights=self._load_weights(),
         )
         self._path_timeout_sec = self._positive_parameter("path_timeout_sec")
+        self._path_start_delay_sec = self._nonnegative_parameter(
+            "path_start_delay_sec"
+        )
         self._gear_pause_sec = self._positive_parameter("gear_pause_sec")
         self._scan_timeout_sec = self._positive_parameter("scan_timeout_sec")
         self._front_stop_distance_m = self._positive_parameter(
@@ -203,10 +206,12 @@ class MpcPathFollower(Node):
         self._rear_obstacle_m: float | None = None
         self._path_signature: bytes | None = None
         self._pose_received_after_path = False
+        self._motion_enable_monotonic: float | None = None
         self._path_valid = True
         self._gear_resume_monotonic: float | None = None
         self._last_status: str | None = None
         self._last_solve_log_monotonic = 0.0
+        self._last_tracking_log_monotonic = 0.0
         self.add_on_set_parameters_callback(self._on_set_parameters)
         tuning_file = str(self.get_parameter("tuning_file").value)
         self._tuning_path = Path(tuning_file).expanduser()
@@ -255,6 +260,7 @@ class MpcPathFollower(Node):
             "reject_cmd_vel_conflicts": True,
             "control_frequency_hz": 4.0,
             "path_timeout_sec": 2.5,
+            "path_start_delay_sec": 2.0,
             "gear_pause_sec": 0.7,
             "control_point_offset_m": 0.04,
             "wheel_radius_m": 0.027,
@@ -264,6 +270,10 @@ class MpcPathFollower(Node):
             "horizon_steps": 10,
             "forward_speed_mps": 0.06,
             "parking_realign_speed_mps": 0.035,
+            "first_forward_endpoint_slowdown_distance_m": 0.12,
+            "parking_realign_endpoint_slowdown_distance_m": 0.06,
+            "first_forward_endpoint_min_speed_mps": 0.024,
+            "forward_gear_endpoint_min_speed_mps": 0.018,
             "reverse_speed_mps": 0.02,
             "max_forward_speed_mps": 0.08,
             "max_reverse_speed_mps": 0.03,
@@ -280,9 +290,9 @@ class MpcPathFollower(Node):
             "full_curvature_path_threshold_1pm": 6.0,
             "cross_track_feedback_gain_1pm2": 15.0,
             "forward_cross_track_gain_scale": 1.0,
-            "forward_converging_cross_track_gain_scale": 0.8,
+            "forward_converging_cross_track_gain_scale": 0.25,
             "forward_straight_heading_gain_scale": 1.8,
-            "forward_rejoin_lookahead_m": 0.16,
+            "forward_rejoin_lookahead_m": 0.13,
             "forward_rejoin_max_heading_deg": 15.0,
             "forward_curve_rejoin_lookahead_m": 0.15,
             "heading_feedback_gain_1pmprad": 4.0,
@@ -299,15 +309,15 @@ class MpcPathFollower(Node):
             "heading_recovery_full_curvature_error_deg": 45.0,
             "heading_recovery_speed_scale": 0.60,
             "pose_timeout_sec": 0.6,
+            "path_start_max_distance_m": 0.15,
             "goal_position_tolerance_m": 0.03,
             "goal_yaw_tolerance_deg": 8.0,
             "gear_position_tolerance_m": 0.01,
             "gear_fallback_position_tolerance_m": 0.04,
             "gear_stall_speed_threshold_mps": 0.003,
             "gear_fallback_max_segment_length_m": 0.15,
-            "gear_passed_endpoint_lateral_tolerance_m": 0.06,
             "gear_transition_end_guard_points": 20,
-            "nearest_forward_window": 140,
+            "nearest_forward_window": 12,
             "nearest_backward_window": 4,
             "steering_preview_points": 6,
             "steering_preview_weight": 0.30,
@@ -317,7 +327,9 @@ class MpcPathFollower(Node):
             "steering_rejoin_full_error_m": 0.03,
             "steering_rejoin_preview_weight": 0.65,
             "curve_feedforward_preview_points": 14,
+            "reverse_curve_feedforward_preview_points": 14,
             "curve_feedforward_gain": 0.55,
+            "forward_large_curve_feedforward_gain": 0.42,
             "curve_feedforward_deadband_1pm": 0.5,
             "curvature_smoothing_points": 5,
             "straight_lookahead_points": 4,
@@ -369,6 +381,18 @@ class MpcPathFollower(Node):
             ),
             parking_realign_speed_mps=self._positive_parameter(
                 "parking_realign_speed_mps", overrides
+            ),
+            first_forward_endpoint_slowdown_distance_m=self._positive_parameter(
+                "first_forward_endpoint_slowdown_distance_m", overrides
+            ),
+            parking_realign_endpoint_slowdown_distance_m=self._positive_parameter(
+                "parking_realign_endpoint_slowdown_distance_m", overrides
+            ),
+            first_forward_endpoint_min_speed_mps=self._positive_parameter(
+                "first_forward_endpoint_min_speed_mps", overrides
+            ),
+            forward_gear_endpoint_min_speed_mps=self._positive_parameter(
+                "forward_gear_endpoint_min_speed_mps", overrides
             ),
             reverse_speed_mps=self._positive_parameter(
                 "reverse_speed_mps", overrides
@@ -488,6 +512,9 @@ class MpcPathFollower(Node):
             pose_timeout_sec=self._positive_parameter(
                 "pose_timeout_sec", overrides
             ),
+            path_start_max_distance_m=self._positive_parameter(
+                "path_start_max_distance_m", overrides
+            ),
             goal_position_tolerance_m=self._positive_parameter(
                 "goal_position_tolerance_m", overrides
             ),
@@ -505,10 +532,6 @@ class MpcPathFollower(Node):
             ),
             gear_fallback_max_segment_length_m=self._positive_parameter(
                 "gear_fallback_max_segment_length_m", overrides
-            ),
-            gear_passed_endpoint_lateral_tolerance_m=self._positive_parameter(
-                "gear_passed_endpoint_lateral_tolerance_m",
-                overrides,
             ),
             gear_transition_end_guard_points=int(
                 self._parameter_value(
@@ -554,8 +577,18 @@ class MpcPathFollower(Node):
                     overrides,
                 )
             ),
+            reverse_curve_feedforward_preview_points=int(
+                self._parameter_value(
+                    "reverse_curve_feedforward_preview_points",
+                    overrides,
+                )
+            ),
             curve_feedforward_gain=self._nonnegative_parameter(
                 "curve_feedforward_gain",
+                overrides,
+            ),
+            forward_large_curve_feedforward_gain=self._nonnegative_parameter(
+                "forward_large_curve_feedforward_gain",
                 overrides,
             ),
             curve_feedforward_deadband_1pm=self._nonnegative_parameter(
@@ -642,6 +675,9 @@ class MpcPathFollower(Node):
             path_timeout_sec = self._positive_parameter(
                 "path_timeout_sec", updates
             )
+            path_start_delay_sec = self._nonnegative_parameter(
+                "path_start_delay_sec", updates
+            )
             gear_pause_sec = self._positive_parameter("gear_pause_sec", updates)
             scan_timeout_sec = self._positive_parameter(
                 "scan_timeout_sec", updates
@@ -700,6 +736,7 @@ class MpcPathFollower(Node):
                 )
 
         self._path_timeout_sec = path_timeout_sec
+        self._path_start_delay_sec = path_start_delay_sec
         self._gear_pause_sec = gear_pause_sec
         self._scan_timeout_sec = scan_timeout_sec
         self._front_stop_distance_m = front_stop_distance_m
@@ -781,6 +818,7 @@ class MpcPathFollower(Node):
             self._path_signature = None
             self._last_path_monotonic = None
             self._pose_received_after_path = False
+            self._motion_enable_monotonic = None
             return
 
         self._last_path_monotonic = now
@@ -789,6 +827,7 @@ class MpcPathFollower(Node):
         self._controller.set_path(points)
         self._path_signature = signature
         self._pose_received_after_path = False
+        self._motion_enable_monotonic = now + self._path_start_delay_sec
         self._gear_resume_monotonic = None
         self.get_logger().info(
             f"Loaded new MPC path: {len(points)} points, "
@@ -803,6 +842,7 @@ class MpcPathFollower(Node):
         self._path_signature = None
         self._last_path_monotonic = None
         self._pose_received_after_path = False
+        self._motion_enable_monotonic = None
         self._gear_resume_monotonic = None
         self._publish_zero("PATH_INVALIDATED")
 
@@ -887,6 +927,12 @@ class MpcPathFollower(Node):
         if self._state is None or self._last_pose_monotonic is None:
             self._publish_zero("WAITING_FOR_POSE")
             return
+        if (
+            self._motion_enable_monotonic is not None
+            and now < self._motion_enable_monotonic
+        ):
+            self._publish_zero("PATH_START_DELAY")
+            return
         if now - self._last_pose_monotonic > self._controller.limits.pose_timeout_sec:
             self._publish_zero("POSE_TIMEOUT")
             return
@@ -953,6 +999,25 @@ class MpcPathFollower(Node):
         message.angular.z = self._angular_command_sign * command.angular_radps
         self._command_publisher.publish(message)
         self._log_status(command.status)
+        if now - self._last_tracking_log_monotonic >= 1.0:
+            reference = self._controller.path[command.progress_index]
+            segment_start = self._controller._segment_start(
+                command.progress_index
+            )
+            segment_end = self._controller._segment_end(command.progress_index)
+            self.get_logger().info(
+                "MPC tracking: "
+                f"index={command.progress_index}, "
+                f"segment={segment_start}:{segment_end}, "
+                f"direction={reference.direction}, "
+                f"vehicle=({self._state.x_m:.3f},{self._state.y_m:.3f},"
+                f"{math.degrees(self._state.yaw_rad):.1f}deg), "
+                f"reference=({reference.x_m:.3f},{reference.y_m:.3f},"
+                f"{math.degrees(reference.yaw_rad):.1f}deg), "
+                f"cmd=({command.linear_mps:.3f}mps,"
+                f"{self._angular_command_sign * command.angular_radps:.3f}radps)"
+            )
+            self._last_tracking_log_monotonic = now
         if (
             command.solve_time_sec > self._controller.limits.dt_sec
             and now - self._last_solve_log_monotonic > 1.0

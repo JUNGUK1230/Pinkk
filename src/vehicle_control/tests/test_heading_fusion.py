@@ -18,7 +18,11 @@ from vehicle_control.heading_fusion import (  # noqa: E402
     angle_difference,
     motion_heading,
 )
-from vehicle_control.fused_pose_estimator import odom_delta_to_map  # noqa: E402
+from vehicle_control.fused_pose_estimator import (  # noqa: E402
+    motion_heading_correction_allowed,
+    motion_heading_correction_enabled,
+    odom_delta_to_map,
+)
 
 
 def main() -> int:
@@ -114,6 +118,12 @@ def main() -> int:
     reverse_motion = motion_heading((0.02, 0.02), (0.0, 0.0), -1, 0.015)
     assert reverse_motion is not None
     assert abs(angle_difference(reverse_motion, math.radians(45.0))) < 1e-8
+    assert motion_heading_correction_allowed(0.04, 0.05)
+    assert motion_heading_correction_allowed(-0.05, 0.05)
+    assert not motion_heading_correction_allowed(0.051, 0.05)
+    assert not motion_heading_correction_allowed(-0.20, 0.05)
+    assert not motion_heading_correction_enabled(1, 0.20, 0.05)
+    assert motion_heading_correction_enabled(-1, 0.20, 0.05)
 
     # ROS odom의 전진/좌측 이동량을 시계방향 image-map 축으로 옮긴다.
     # map에서 차량이 아래(+90도)를 볼 때 전진은 +y, 차량 좌측은 +x다.

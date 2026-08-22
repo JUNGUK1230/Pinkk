@@ -30,6 +30,9 @@
     scan_frame_yaw_deg: 180.0
     # YOLO mask 중심의 프레임별 흔들림을 줄이되 주행 위치 변화는 따라간다.
     camera_position_filter_alpha: 0.35
+    # false이면 카메라는 x/y에만 사용한다. mask 장축 yaw와 카메라 이동
+    # 방향 yaw는 모두 제외하고 LiDAR 절대 yaw + wheel odom 상대회전만 쓴다.
+    use_camera_heading: false
     # 카메라 절대 위치에 프레임 촬영 이후 wheel odom 이동량을 더해 현재 위치를
     # 발행한다. 이상하면 false로 바꾸고 노드를 재시작하면 기존 방식으로 복귀한다.
     odom_position_prediction_enabled: true
@@ -60,6 +63,10 @@
     local_search_half_width_deg: 15.0
     local_search_step_deg: 0.5
     initial_search_half_width_deg: 15.0
+    # [m] 카메라 위치가 현재 고정 경로 시작점과 이 거리 안이면 경로 첫 yaw로
+    # odom 기준을 먼저 잡는다. LiDAR 정합이 탐색 범위 끝의 잘못된 각도를
+    # 선택해 출발 직후 급조향하는 현상을 막고 이후 LiDAR 보정은 계속 사용한다.
+    route_heading_anchor_max_distance_m: 0.15
     lidar_correction_alpha: 0.15
     lidar_only_yaw_alpha: 0.35
     # e 키로 ego 차량이 바뀌어 카메라 위치가 크게 뛰면 전역 yaw를 다시 찾는다.
@@ -67,10 +74,18 @@
     # 마스크 장축 대신 카메라 중심이 1.5cm 이상 실제 이동했을 때만
     # 이동 벡터로 절대 yaw를 계산한다. 후진은 이동 방향에 180도를 더한다.
     motion_heading_baseline_m: 0.015
-    # wheel odom/map yaw가 이동 yaw에서 벗어나면 절반씩 복구하되 한 번의
-    # 보정은 6도로 제한해 위치 검출 흔들림으로 급조향하지 않게 한다.
-    motion_heading_alpha: 0.50
-    motion_heading_max_step_deg: 6.0
+    # 카메라 이동 yaw는 직선에서만 wheel odom의 장기 drift를 천천히 보정한다.
+    # 기록 분석에서 곡선 chord가 실제 yaw보다 늦어 최대 29.5도 오차를 만든
+    # 현상이 확인되어 보정 비율과 1회 보정량을 낮춘다.
+    motion_heading_alpha: 0.15
+    motion_heading_max_step_deg: 2.0
+    # [rad/s] |cmd_vel.angular.z|가 이 값보다 크면 곡선으로 판단하고
+    # 지연된 카메라 이동 yaw 보정을 중단해 odom+LiDAR heading을 유지한다.
+    motion_heading_correction_max_angular_speed_radps: 0.05
+    # 후진은 실차에서 검증했던 기존 카메라 이동 yaw 보정을 그대로 쓴다.
+    # 전진 곡선 지연 완화값과 분리해 후진 자세 추정이 달라지지 않게 한다.
+    reverse_motion_heading_alpha: 0.50
+    reverse_motion_heading_max_step_deg: 6.0
     # 장애물 정지 등으로 0 명령이 섞여도 최근 주행 방향을 잠깐 유지한다.
     motion_command_timeout_sec: 0.60
     motion_command_min_speed_mps: 0.01

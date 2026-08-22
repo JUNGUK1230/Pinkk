@@ -33,10 +33,13 @@ road_backbone:
   C2: [112.0730349051, 147.3454306768, 2.2602]
   # 삭제된 기존 하단 우측 주차면은 공통 도로 형상만 유지한다.
   LOWER_TURN: [85.5603762247, 124.6797036932, -2.4522]
-  P1: [71.4444464077, 112.7192260522, -2.4522]
-  P2: [57.5096776850, 101.7180740378, -2.4522]
-  P3: [42.5021892191, 90.6426094901, -2.4522]
-  P4: [30.5095590496, 77.6785265447, -2.4522]
+  # 하단 주차열 앞은 P1~P4마다 다시 꺾지 않고 하나의 직선축을 공유한다.
+  # C1/C2의 큰 하단 곡선을 빠져나온 뒤 이 축에서만 직진하고, 각 칸의
+  # 마지막 주차 maneuver는 endpoint connector에서 별도로 수행한다.
+  P1: [71.5236, 112.7492, -2.4521787849]
+  P2: [57.7891, 101.4271, -2.4521787849]
+  P3: [43.4592, 89.6143, -2.4521787849]
+  P4: [29.9338, 78.4646, -2.4521787849]
   EXIT: [23.2712034889, 76.8954852119, -3.0299]
 
 # START -> C1에서만 카메라 화면의 수평축을 정확히 따른다. LiDAR map은
@@ -55,49 +58,62 @@ route_waypoint_merge_points:
   START:
     C1: [140.5685067750, 87.9406105818]
 
+# 충전칸에서 하단 주차열로 갈 때 직선과 원호를 조각조각 잇지 않는다.
+# C1은 넓은 5차 Bezier, C2는 물리 회전반경을 지키는 단일 전진
+# Reeds-Shepp 연결로 P1 합류점에 이어진다. 이후 P2~P4는 같은 직선을 공유한다.
+smooth_road_connections:
+  C1:
+    targets: [P1, P2, P3, P4]
+    merge_target: P1
+    start_handle_cm: 8.0
+    end_handle_cm: 8.0
+  C2:
+    targets: [P1, P2, P3, P4]
+    merge_target: P1
+    method: direction_only
+    turning_radius_cm: 16.0
+
 endpoints:
   START:
     staging: [68.1221, 23.7980, 0.8063]
     type: start
   P8:
-    # 기어 반전 중 차동 회전이 늦게 형성되는 실차 특성을 고려해 첫 곡선
-    # 후진에서 자세를 더 만든 뒤 전진 정렬한다.
     staging: [102.9833745923, 49.1535803092, 0.8013666733]
+    # 도로에서 넓게 전진 정렬한 뒤 한 번의 연속 후진으로 진입한다.
+    # 후진 구간은 조향 방향을 바꾸지 않는 원호+직선 형상이다.
+    entry_staging: [92.9833745923, 49.1535803092, 0.6268337481]
     goal: [66.0, 60.0, -0.8566961161]
     entry_turning_radius_cm: 14.0
-    entry_from_staging: true
-    entry_maximum_cusp_yaw_error_deg: 12.0
-    entry_minimum_initial_reverse_cm: 24.5
-    entry_final_straight_cm: 32.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P7:
     staging: [113.7086859594, 63.9319945741, 0.9758995985]
+    entry_staging: [107.7086859594, 59.9319945741, 0.6268337481]
     goal: [80.0, 71.0, -0.8566961161]
-    entry_turning_radius_cm: 16.0
-    road_attachment_entry_turning_radius_cm: 14.0
-    entry_from_staging: true
-    entry_maximum_cusp_yaw_error_deg: 20.0
-    entry_minimum_initial_reverse_cm: 25.5
-    entry_final_straight_cm: 28.0
+    entry_turning_radius_cm: 14.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P6:
     staging: [126.5332959685, 74.1631612445, 1.0600812967]
+    entry_staging: [120.5332959685, 72.1631612445, 0.7110154463]
     goal: [91.5896969065, 83.1050960723, -0.8597808805]
     entry_turning_radius_cm: 14.0
-    entry_from_staging: true
-    entry_maximum_cusp_yaw_error_deg: 8.0
-    entry_minimum_initial_reverse_cm: 25.5
-    entry_final_straight_cm: 28.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P5:
-    # 삭제된 우측 공간을 사용해 작은 cusp 오차로 차체를 정렬한다.
     staging: [142.0011153837, 88.9636463034, 1.2217304764]
+    entry_staging: [136.0011153837, 86.9636463034, 0.8726646260]
     goal: [108.0, 94.0, -0.8659515842]
     entry_turning_radius_cm: 14.0
-    entry_from_staging: true
-    entry_maximum_cusp_yaw_error_deg: 12.0
-    entry_minimum_initial_reverse_cm: 27.5
-    entry_final_straight_cm: 26.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   C1:
     # 충전 후 공통 도로로 복귀할 때 사용하는 출차 attachment 기준 자세다.
@@ -172,20 +188,40 @@ endpoints:
     - [129.9611951730, 152.3717337149]
     type: charging
   P1:
-    staging: [71.5235898105, 112.7491991003, -2.4521787849]
-    goal: [99.0, 103.0, 2.2602101955]
+    staging: [71.5236, 112.7492, -2.4521787849]
+    entry_staging: [75.5236, 114.7492, -2.8012446353]
+    goal: [98.6142, 102.6820, 2.2602101955]
+    entry_turning_radius_cm: 14.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P2:
-    staging: [57.5235898105, 101.7491991003, -2.4521787849]
-    goal: [85.0, 92.0, 2.2602101955]
+    staging: [57.7891, 101.4271, -2.4521787849]
+    entry_staging: [61.7891, 101.4271, -2.8012446353]
+    goal: [84.2284, 91.3639, 2.2602101955]
+    entry_turning_radius_cm: 14.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P3:
-    staging: [42.5235898105, 90.7491991003, -2.4521787849]
-    goal: [70.0, 81.0, 2.2602101955]
+    staging: [43.4592, 89.6143, -2.4521787849]
+    entry_staging: [47.4592, 89.6143, -2.8012446353]
+    goal: [69.2284, 80.3639, 2.2602101955]
+    entry_turning_radius_cm: 14.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   P4:
-    staging: [30.5235898105, 77.7491991003, -2.4521787849]
-    goal: [58.0, 68.0, 2.2602101955]
+    staging: [29.9338, 78.4646, -2.4521787849]
+    entry_staging: [33.9338, 78.4646, -2.8012446353]
+    goal: [57.6142, 67.6820, 2.2602101955]
+    entry_turning_radius_cm: 14.0
+    entry_approach_turning_radius_cm: 14.0
+    entry_attachment_search_cm: 60.0
+    entry_final_straight_cm: 0.0
     type: parking
   EXIT:
     staging: [23.27120352, 76.89548524, -3.0299]

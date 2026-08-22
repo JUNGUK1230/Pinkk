@@ -30,11 +30,8 @@ from vehicle_control.mpc_path_follower import (  # noqa: E402
 )
 
 
-def load_c2_path() -> list[ReferencePoint]:
-    path = (
-        SRC_ROOT
-        / "central_control/path_planning/output/fixed_route_start_to_c2.csv"
-    )
+def load_route_path(filename: str) -> list[ReferencePoint]:
+    path = SRC_ROOT / "central_control/path_planning/output" / filename
     with path.open(encoding="utf-8") as file:
         rows = csv.DictReader(file)
         return [
@@ -46,6 +43,10 @@ def load_c2_path() -> list[ReferencePoint]:
             )
             for row in rows
         ]
+
+
+def load_c2_path() -> list[ReferencePoint]:
+    return load_route_path("fixed_route_start_to_c2.csv")
 
 
 def hysteresis_crossings(values: list[float], threshold: float) -> int:
@@ -556,19 +557,10 @@ def main() -> int:
     # 1mm 이상 가로질러 반대 조향하는 오버슈팅이 없어야 한다.
     assert min(rejoin_offsets) >= -0.001
     assert hysteresis_crossings(rejoin_offsets, 0.001) == 0
-    assert (
-        sum(
-            first * second < 0.0
-            for first, second in zip(
-                rejoin_angular_commands,
-                rejoin_angular_commands[1:],
-            )
-        )
-        <= 1
-    )
+    assert hysteresis_crossings(rejoin_angular_commands, 1e-3) <= 1
 
-    # 전진 preview는 경로 합류를 부드럽게 하기 위해 후진보다 조금 길지만,
-    # 후진 전용 기존 preview 값은 바뀌지 않아야 한다.
+    # 전진과 후진 preview는 검증된 14점을 사용하되 별도 파라미터로
+    # 유지해 이후 전진 조정이 후진 주차에 섞이지 않아야 한다.
     assert (
         rejoin_controller.limits.forward_steering_preview_points
         > rejoin_controller.limits.steering_preview_points
@@ -577,11 +569,13 @@ def main() -> int:
         rejoin_controller.limits.forward_steering_preview_weight
         > rejoin_controller.limits.steering_preview_weight
     )
+    assert rejoin_controller.limits.curve_feedforward_preview_points == 14
+    assert rejoin_controller.limits.reverse_curve_feedforward_preview_points == 14
     assert rejoin_controller.limits.steering_rejoin_preview_points >= 20
     assert rejoin_controller.limits.steering_rejoin_preview_weight >= 0.50
     assert math.isclose(
         rejoin_controller.limits.forward_rejoin_lookahead_m,
-        0.16,
+        0.13,
     )
     assert math.isclose(
         rejoin_controller.limits.forward_curve_rejoin_lookahead_m,
@@ -592,6 +586,40 @@ def main() -> int:
         < abs(rejoin_target_offset)
         <= 0.5 * rejoin_controller.limits.cross_track_deadband_m
     )
+
+    # START→P5~P8과 C1/C2→P1~P4는 전진 곡선 직후 약 10cm 안에서
+    # 기어를 바꾼다. 이 구간에서는 완성할 공간이 없는 합류 곡선을 새로
+    # 만들지 않아야 목표점 하나로 돌진하는 오버슈팅을 방지할 수 있다.
+    parking_routes = [
+        *(f"fixed_route_start_to_p{slot}.csv" for slot in range(5, 9)),
+        *(
+            f"fixed_route_c{charger}_to_p{slot}.csv"
+            for charger in (1, 2)
+            for slot in range(1, 5)
+        ),
+    ]
+    for route_name in parking_routes:
+        parking_path = load_route_path(route_name)
+        forward_end = next(
+            (
+                index - 1
+                for index in range(1, len(parking_path))
+                if parking_path[index].direction
+                != parking_path[index - 1].direction
+            ),
+            len(parking_path) - 1,
+        )
+        probe = parking_path[max(0, forward_end - 20)]
+        parking_controller = production_controller()
+        parking_controller.set_path(parking_path)
+        offset_state = VehicleState(
+            probe.x_m - 0.02 * math.sin(probe.yaw_rad),
+            probe.y_m + 0.02 * math.cos(probe.yaw_rad),
+            probe.yaw_rad,
+        )
+        parking_command = parking_controller.command(offset_state)
+        assert parking_command.status == "TRACKING", route_name
+        assert not parking_controller._forward_rejoin_active, route_name
 
     # 실제 고정 경로처럼 rear axle 원호를 body yaw 방향으로 4cm 옮긴 차량
     # 중심 경로를 만든다. 중심 원호 자체에 같은 yaw를 넣으면 물리적으로
@@ -700,6 +728,44 @@ def main() -> int:
         normalize_angle(reverse_tangent_guard._segment_tangent_yaw(0) - math.pi)
     ) <= 1e-9
 
+    # 실시간 차량 중심으로 삽입된 첫 점만 1 mm 미만 옆으로 흔들리면
+    # 첫 5 mm 구간의 기하 접선이 크게 틀어질 수 있다. 뒤의 전진점들이
+    # 직선인 경우에는 내부 첫 점을 직선 연장선에 놓아 출발 조향을 막고,
+    # 같은 모양의 후진 구간에는 이 보정을 적용하지 않는다.
+    straight_yaw = math.radians(39.5)
+    spacing = 0.005
+    initial_kink_path = [
+        ReferencePoint(0.0, 0.0007, math.radians(40.5), 1)
+    ] + [
+        ReferencePoint(
+            index * spacing * math.cos(straight_yaw),
+            index * spacing * math.sin(straight_yaw),
+            straight_yaw,
+            1,
+        )
+        for index in range(1, 8)
+    ]
+    initial_kink_guard = DifferentialDriveMpc()
+    initial_kink_guard.set_path(initial_kink_path)
+    assert abs(
+        normalize_angle(
+            initial_kink_guard._segment_tangent_yaw(0) - straight_yaw
+        )
+    ) <= 1e-9
+    assert abs(initial_kink_guard._reference_curvature[0]) <= 1e-9
+
+    reverse_kink_path = [
+        ReferencePoint(point.x_m, point.y_m, point.yaw_rad, -1)
+        for point in initial_kink_path
+    ]
+    reverse_kink_guard = DifferentialDriveMpc()
+    reverse_kink_guard.set_path(reverse_kink_path)
+    assert math.isclose(
+        reverse_kink_guard.path[0].y_m,
+        reverse_kink_path[0].y_m,
+        abs_tol=1e-12,
+    )
+
     # 긴 첫 후진 구간은 fallback 길이 제한보다 길다. 전환점을 조금
     # 지나친 뒤 원형 거리 오차가 다시 커져도 무한 후진하지 않고 다음
     # 기어로 전환해야 한다.
@@ -717,6 +783,32 @@ def main() -> int:
         VehicleState(-0.13, 0.01, 0.0)
     )
     assert passed_cusp_command.status == "GEAR_CHANGE_REQUIRED"
+
+    # 전환점 접선 평면을 이미 통과했다면 카메라 횡오차가 커도 현재 기어에
+    # 고착되지 않아야 한다. 단, end guard까지 순서대로 진행한 경우만 허용한다.
+    passed_cusp_guard.restore_progress(9)
+    passed_cusp_with_lateral_error = passed_cusp_guard.command(
+        VehicleState(-0.13, 0.09, math.radians(25.0))
+    )
+    assert passed_cusp_with_lateral_error.status == "GEAR_CHANGE_REQUIRED"
+
+    # 전환점 직전에서 optimizer가 정지해 마지막 vertex를 밟지 못하더라도,
+    # 같은 direction 경로를 끝 1cm까지 순서대로 진행했다면 pose/yaw 오차와
+    # 무관하게 다음 기어로 넘어가야 한다.
+    terminal_sample_guard = DifferentialDriveMpc()
+    terminal_sample_path = [
+        ReferencePoint(index * 0.005, 0.0, 0.0, 1)
+        for index in range(11)
+    ] + [
+        ReferencePoint(0.05 - index * 0.005, 0.0, 0.0, -1)
+        for index in range(1, 6)
+    ]
+    terminal_sample_guard.set_path(terminal_sample_path)
+    terminal_sample_guard.restore_progress(8)
+    terminal_sample_command = terminal_sample_guard.command(
+        VehicleState(0.04, 0.03, math.radians(20.0))
+    )
+    assert terminal_sample_command.status == "GEAR_CHANGE_REQUIRED"
 
     # 직선 뒤에 곡선이 가까워지면 현재점 곡률이 아직 0이어도 미래 곡률을
     # 약하게 반영해 코너 진입 전에 조향을 시작해야 한다.

@@ -59,6 +59,10 @@ class MpcLimits:
     horizon_steps: int = 10
     forward_speed_mps: float = 0.06
     parking_realign_speed_mps: float = 0.035
+    first_forward_endpoint_slowdown_distance_m: float = 0.12
+    parking_realign_endpoint_slowdown_distance_m: float = 0.06
+    first_forward_endpoint_min_speed_mps: float = 0.024
+    forward_gear_endpoint_min_speed_mps: float = 0.018
     reverse_speed_mps: float = 0.02
     max_forward_speed_mps: float = 0.08
     max_reverse_speed_mps: float = 0.03
@@ -75,9 +79,9 @@ class MpcLimits:
     full_curvature_path_threshold_1pm: float = 6.0
     cross_track_feedback_gain_1pm2: float = 15.0
     forward_cross_track_gain_scale: float = 1.0
-    forward_converging_cross_track_gain_scale: float = 0.8
+    forward_converging_cross_track_gain_scale: float = 0.25
     forward_straight_heading_gain_scale: float = 1.8
-    forward_rejoin_lookahead_m: float = 0.16
+    forward_rejoin_lookahead_m: float = 0.13
     forward_rejoin_max_heading_rad: float = math.radians(15.0)
     forward_curve_rejoin_lookahead_m: float = 0.15
     heading_feedback_gain_1pmprad: float = 4.0
@@ -94,15 +98,15 @@ class MpcLimits:
     heading_recovery_full_curvature_error_rad: float = math.radians(45.0)
     heading_recovery_speed_scale: float = 0.60
     pose_timeout_sec: float = 0.6
+    path_start_max_distance_m: float = 0.15
     goal_position_tolerance_m: float = 0.03
     goal_yaw_tolerance_rad: float = math.radians(8.0)
     gear_position_tolerance_m: float = 0.01
     gear_fallback_position_tolerance_m: float = 0.04
     gear_stall_speed_threshold_mps: float = 0.003
     gear_fallback_max_segment_length_m: float = 0.15
-    gear_passed_endpoint_lateral_tolerance_m: float = 0.06
     gear_transition_end_guard_points: int = 20
-    nearest_forward_window: int = 140
+    nearest_forward_window: int = 12
     nearest_backward_window: int = 4
     # 후진은 기존 가까운 preview를 유지하고 전진에서만 조금 더 앞의
     # 경로 접선을 함께 사용해 한 점을 쫓는 조향을 줄인다.
@@ -114,7 +118,9 @@ class MpcLimits:
     steering_rejoin_full_error_m: float = 0.03
     steering_rejoin_preview_weight: float = 0.65
     curve_feedforward_preview_points: int = 14
+    reverse_curve_feedforward_preview_points: int = 14
     curve_feedforward_gain: float = 0.55
+    forward_large_curve_feedforward_gain: float = 0.42
     curve_feedforward_deadband_1pm: float = 0.5
     curvature_smoothing_points: int = 5
     straight_lookahead_points: int = 4
@@ -127,6 +133,10 @@ class MpcLimits:
             self.dt_sec,
             self.forward_speed_mps,
             self.parking_realign_speed_mps,
+            self.first_forward_endpoint_slowdown_distance_m,
+            self.parking_realign_endpoint_slowdown_distance_m,
+            self.first_forward_endpoint_min_speed_mps,
+            self.forward_gear_endpoint_min_speed_mps,
             self.reverse_speed_mps,
             self.max_forward_speed_mps,
             self.max_reverse_speed_mps,
@@ -161,13 +171,13 @@ class MpcLimits:
             self.heading_recovery_speed_scale,
             self.steering_rejoin_full_error_m,
             self.pose_timeout_sec,
+            self.path_start_max_distance_m,
             self.goal_position_tolerance_m,
             self.goal_yaw_tolerance_rad,
             self.gear_position_tolerance_m,
             self.gear_fallback_position_tolerance_m,
             self.gear_stall_speed_threshold_mps,
             self.gear_fallback_max_segment_length_m,
-            self.gear_passed_endpoint_lateral_tolerance_m,
             self.solver_ftol,
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in positive_values):
@@ -271,11 +281,22 @@ class MpcLimits:
             )
         if self.curve_feedforward_preview_points < 1:
             raise ValueError("curve feed-forward preview points must be positive")
+        if self.reverse_curve_feedforward_preview_points < 1:
+            raise ValueError(
+                "reverse curve feed-forward preview points must be positive"
+            )
         if (
             not math.isfinite(self.curve_feedforward_gain)
             or not 0.0 <= self.curve_feedforward_gain <= 1.0
         ):
             raise ValueError("curve feed-forward gain must be between zero and one")
+        if (
+            not math.isfinite(self.forward_large_curve_feedforward_gain)
+            or not 0.0 <= self.forward_large_curve_feedforward_gain <= 1.0
+        ):
+            raise ValueError(
+                "forward large-curve feed-forward gain must be between zero and one"
+            )
         if (
             not math.isfinite(self.curve_feedforward_deadband_1pm)
             or self.curve_feedforward_deadband_1pm < 0.0
@@ -310,6 +331,34 @@ class MpcLimits:
             raise ValueError("forward reference speed exceeds its limit")
         if self.parking_realign_speed_mps > self.max_forward_speed_mps:
             raise ValueError("parking realign speed exceeds forward limit")
+        if (
+            self.first_forward_endpoint_slowdown_distance_m
+            <= self.gear_position_tolerance_m
+        ):
+            raise ValueError(
+                "first-forward slowdown distance must exceed gear tolerance"
+            )
+        if (
+            self.parking_realign_endpoint_slowdown_distance_m
+            <= self.gear_position_tolerance_m
+        ):
+            raise ValueError(
+                "parking-realign slowdown distance must exceed gear tolerance"
+            )
+        if (
+            self.first_forward_endpoint_min_speed_mps
+            > self.forward_speed_mps
+        ):
+            raise ValueError(
+                "first-forward endpoint speed exceeds forward speed"
+            )
+        if (
+            self.forward_gear_endpoint_min_speed_mps
+            > self.parking_realign_speed_mps
+        ):
+            raise ValueError(
+                "forward gear endpoint speed exceeds parking realign speed"
+            )
         if self.reverse_speed_mps > self.max_reverse_speed_mps:
             raise ValueError("reverse reference speed exceeds its limit")
         if (
@@ -423,6 +472,7 @@ class DifferentialDriveMpc:
                     int(point.direction),
                 )
             )
+        self._straighten_short_initial_forward_connector(normalized)
         self.path = tuple(normalized)
         arc_length = [0.0]
         for first, second in zip(self.path, self.path[1:]):
@@ -501,6 +551,74 @@ class DifferentialDriveMpc:
         self._warm_start = None
         self._reset_forward_rejoin()
 
+    def _straighten_short_initial_forward_connector(
+        self,
+        points: list[ReferencePoint],
+    ) -> None:
+        """Remove a sub-centimetre start kink before an otherwise straight run.
+
+        The live route starts at the detected vehicle centre.  A small camera
+        position error can therefore place only point 0 slightly off the fixed
+        straight lane.  Using point 0 -> point 1 as a tangent turns that
+        sub-millimetre lateral error into a large heading command.  Internally
+        project only that first point onto the continuation of the verified
+        straight line.  Reverse segments and genuine initial curves are left
+        unchanged.
+        """
+        required_points = max(4, self.limits.straight_lookahead_points + 1)
+        stop = min(len(points), required_points)
+        if stop < 4 or points[0].direction < 0:
+            return
+        if any(point.direction != 1 for point in points[:stop]):
+            return
+
+        stable_dx = points[stop - 1].x_m - points[1].x_m
+        stable_dy = points[stop - 1].y_m - points[1].y_m
+        if math.hypot(stable_dx, stable_dy) <= 1e-9:
+            return
+        stable_yaw = math.atan2(stable_dy, stable_dx)
+        angular_tolerance = max(
+            self.limits.heading_feedback_deadband_rad,
+            math.radians(1.5),
+        )
+
+        stable_distances: list[float] = []
+        for first, second in zip(points[1 : stop - 1], points[2:stop]):
+            dx = second.x_m - first.x_m
+            dy = second.y_m - first.y_m
+            distance = math.hypot(dx, dy)
+            if distance <= 1e-9:
+                return
+            segment_yaw = math.atan2(dy, dx)
+            if abs(normalize_angle(segment_yaw - stable_yaw)) > angular_tolerance:
+                return
+            stable_distances.append(distance)
+        if any(
+            abs(normalize_angle(point.yaw_rad - stable_yaw)) > angular_tolerance
+            for point in points[1:stop]
+        ):
+            return
+        if (
+            abs(normalize_angle(points[0].yaw_rad - stable_yaw))
+            > angular_tolerance
+        ):
+            return
+
+        first_distance = math.hypot(
+            points[1].x_m - points[0].x_m,
+            points[1].y_m - points[0].y_m,
+        )
+        nominal_distance = float(np.median(stable_distances))
+        if first_distance <= 1e-9 or first_distance > max(0.015, 2.5 * nominal_distance):
+            return
+
+        points[0] = ReferencePoint(
+            points[1].x_m - first_distance * math.cos(stable_yaw),
+            points[1].y_m - first_distance * math.sin(stable_yaw),
+            normalize_angle(stable_yaw),
+            1,
+        )
+
     def clear_path(self) -> None:
         self.path = ()
         self._arc_length = np.empty(0, dtype=np.float64)
@@ -566,10 +684,19 @@ class DifferentialDriveMpc:
             return self.stop("INVALID_POSE")
 
         if not self._progress_initialized:
-            # MPC를 경로 중간에서 재시작해도 제한된 forward window의 끝점을
-            # 쫓지 않도록 첫 제어에서 현재 direction 구간 전체에 정렬한다.
-            # 이후에는 progress가 경로를 건너뛰지 않도록 기존 window를 사용한다.
+            # 새 고정 경로는 현재 endpoint에서 시작하므로 첫 검색도 제한된
+            # forward window 안에서만 수행한다.
             self.progress_index = self._initial_nearest_index(state)
+            initial_reference = self.path[self.progress_index]
+            initial_distance = math.hypot(
+                initial_reference.x_m - state.x_m,
+                initial_reference.y_m - state.y_m,
+            )
+            if initial_distance > self.limits.path_start_max_distance_m:
+                return self.stop(
+                    f"PATH_START_TOO_FAR_{initial_distance:.3f}m",
+                    clear_rejoin=True,
+                )
             self._progress_initialized = True
         else:
             self.progress_index = self._nearest_index(state)
@@ -585,6 +712,11 @@ class DifferentialDriveMpc:
             segment_end - self.progress_index
             <= self.limits.gear_transition_end_guard_points
         )
+        remaining_segment_arc_m = max(
+            0.0,
+            self._arc_length[segment_end]
+            - self._arc_length[self.progress_index],
+        )
         direction = self.path[self.progress_index].direction
         endpoint_heading = self._segment_tangent_yaw(segment_end)
         endpoint_error_x = state.x_m - endpoint.x_m
@@ -593,11 +725,6 @@ class DifferentialDriveMpc:
             endpoint_error_x * math.cos(endpoint_heading)
             + endpoint_error_y * math.sin(endpoint_heading)
         )
-        endpoint_lateral_error = abs(
-            -math.sin(endpoint_heading) * endpoint_error_x
-            + math.cos(endpoint_heading) * endpoint_error_y
-        )
-
         if (
             endpoint_distance <= self.limits.goal_position_tolerance_m
             and endpoint_yaw_error <= self.limits.goal_yaw_tolerance_rad
@@ -605,30 +732,23 @@ class DifferentialDriveMpc:
         ):
             return self.stop("GOAL_REACHED", clear_rejoin=True)
         if (
-            endpoint_distance <= self.limits.gear_position_tolerance_m
-            and not is_final_segment
-            and near_segment_end
+            not is_final_segment
+            and remaining_segment_arc_m
+            <= self.limits.gear_position_tolerance_m + 1e-9
         ):
+            # 마지막 약 1cm까지 같은 direction 구간을 순서대로 진행했다면
+            # optimizer가 cusp 직전에 0속도로 수렴해도 다음 기어로 넘긴다.
+            # 이 판정은 차량 위치/yaw 오차를 사용하지 않는다.
             return self.stop("GEAR_CHANGE_REQUIRED", clear_rejoin=True)
         if (
             not is_final_segment
             and near_segment_end
             and passed_endpoint_distance >= 0.0
         ):
-            if (
-                endpoint_lateral_error
-                <= self.limits.gear_passed_endpoint_lateral_tolerance_m
-            ):
-                # 전환점을 한 번 지나가면 원형 거리 오차는 다시 커진다.
-                # 이때 기존 로직으로는 현재 기어 명령이 계속 유지되므로,
-                # endpoint 접선 평면 통과를 별도로 검출해 다음 기어로 넘긴다.
-                return self.stop("GEAR_CHANGE_REQUIRED", clear_rejoin=True)
-            # 전환점을 크게 벗어나 통과했으면 잘못된 자세로 다음 기어를
-            # 시작하지 않고 정지한다. 특히 첫 후진의 무한 후진을 막는다.
-            return self.stop(
-                "GEAR_ENDPOINT_PASSED_OFF_PATH",
-                clear_rejoin=True,
-            )
+            # 전환점의 접선 평면을 통과한 뒤에는 원형 거리와 횡오차가
+            # 다시 커질 수 있다. 구간 끝 guard 안까지 순서대로 진행한
+            # 사실을 전환 기준으로 삼고 위치/yaw 오차로 전환을 막지 않는다.
+            return self.stop("GEAR_CHANGE_REQUIRED", clear_rejoin=True)
 
         segment_start = self._segment_start(self.progress_index)
         # 후진-전진-후진으로 구성된 3-point 주차에서 가운데 전진은
@@ -645,6 +765,71 @@ class DifferentialDriveMpc:
             if parking_realign
             else None
         )
+        forward_endpoint_slowdown_m: float | None = None
+        forward_endpoint_base_speed_mps: float | None = None
+        forward_endpoint_min_speed_mps: float | None = None
+        # 첫 후진과 최종 후진 사이의 재전진은 구간 전체가 정렬 동작이다.
+        # 시작부터 실제 경로 선분/접선을 직접 따라 최종 후진축에 합류한다.
+        forward_endpoint_alignment = parking_realign
+        if direction > 0 and not is_final_segment:
+            if segment_start == 0:
+                forward_endpoint_slowdown_m = (
+                    self.limits.first_forward_endpoint_slowdown_distance_m
+                )
+                forward_endpoint_base_speed_mps = self.limits.forward_speed_mps
+                forward_endpoint_min_speed_mps = (
+                    self.limits.first_forward_endpoint_min_speed_mps
+                )
+            elif parking_realign:
+                forward_endpoint_slowdown_m = (
+                    self.limits.parking_realign_endpoint_slowdown_distance_m
+                )
+                forward_endpoint_base_speed_mps = (
+                    self.limits.parking_realign_speed_mps
+                )
+                forward_endpoint_min_speed_mps = (
+                    self.limits.forward_gear_endpoint_min_speed_mps
+                )
+        if (
+            forward_endpoint_slowdown_m is not None
+            and forward_endpoint_base_speed_mps is not None
+            and forward_endpoint_min_speed_mps is not None
+        ):
+            # 첫 전진과 짧은 재전진은 끝점 접근 속도만 각각 낮춘다. 재전진
+            # 마지막의 작은 위치 보정이 한 주기에 큰 횡이동으로 나타나는 것을
+            # 줄이면서 후진 구간의 속도와 조향 계산은 그대로 보존한다.
+            remaining_forward_m = max(
+                0.0,
+                self._arc_length[segment_end]
+                - self._arc_length[self.progress_index],
+            )
+            slowdown_distance_m = forward_endpoint_slowdown_m
+            if remaining_forward_m < slowdown_distance_m:
+                # 마지막 짧은 구간은 새 합류곡선을 만들지 않고 현재 path
+                # 선분과 접선을 직접 따라 전환점까지 자세를 정렬한다.
+                forward_endpoint_alignment = (
+                    forward_endpoint_alignment
+                    or remaining_forward_m
+                    <= min(0.08, slowdown_distance_m)
+                )
+                tolerance_m = self.limits.gear_position_tolerance_m
+                ratio = float(
+                    np.clip(
+                        (remaining_forward_m - tolerance_m)
+                        / max(slowdown_distance_m - tolerance_m, 1e-6),
+                        0.0,
+                        1.0,
+                    )
+                )
+                smooth_ratio = ratio * ratio * (3.0 - 2.0 * ratio)
+                segment_reference_speed_mps = (
+                    forward_endpoint_min_speed_mps
+                    + smooth_ratio
+                    * (
+                        forward_endpoint_base_speed_mps
+                        - forward_endpoint_min_speed_mps
+                    )
+                )
         projection = (
             self._forward_path_projection(state)
             if direction > 0
@@ -688,13 +873,18 @@ class DifferentialDriveMpc:
             <= self.limits.straight_max_curvature_1pm + 1e-9
         )
         if direction > 0 and projection is not None:
-            self._update_forward_rejoin(
-                state,
-                projection,
-                segment_start,
-                segment_end,
-                forward_straight_tracking,
-            )
+            if forward_endpoint_alignment:
+                # 이전에 시작한 긴 합류곡선도 종점 직전에는 끝내고, 남은
+                # 실제 경로의 선과 yaw를 직접 추종한다.
+                self._reset_forward_rejoin()
+            else:
+                self._update_forward_rejoin(
+                    state,
+                    projection,
+                    segment_start,
+                    segment_end,
+                    forward_straight_tracking,
+                )
             rejoin_reference_speed_mps = segment_reference_speed_mps
             if self._forward_rejoin_active:
                 rejoin_reference_speed_mps = (
@@ -802,15 +992,40 @@ class DifferentialDriveMpc:
         anticipated_curvature = self._anticipated_curvature(
             self.progress_index,
             segment_end,
+            (
+                self.limits.curve_feedforward_preview_points
+                if direction > 0
+                else self.limits.reverse_curve_feedforward_preview_points
+            ),
         )
         # 최적화 horizon을 늘려 계산 주기를 늦추지 않고, 가까워지는 곡선의
         # reference curvature의 미래 증가분을 현재 명령에 점진적으로 더한다.
         # 직선에서는 현재·미래가 모두 0이므로 불필요한 조향이 생기지 않고,
         # 횡오차 복귀를 위해 MPC가 만든 조향도 약화시키지 않는다.
         if not (direction > 0 and self._forward_rejoin_active):
-            curvature += self.limits.curve_feedforward_gain * (
+            current_reference_curvature = float(
+                self._reference_curvature[self.progress_index]
+            )
+            feedforward_gain = self.limits.curve_feedforward_gain
+            if direction > 0:
+                # 전진 코너 진입처럼 미래 곡률이 현재보다 같은 방향으로
+                # 커질 때만 큰 곡선 gain을 사용한다. 코너 출구나 S자 전환에서
+                # 반대 조향을 증폭하지 않으며 후진은 기본 gain을 유지한다.
+                same_turn_direction = (
+                    anticipated_curvature * current_reference_curvature >= 0.0
+                )
+                entering_curve = (
+                    abs(anticipated_curvature)
+                    > abs(current_reference_curvature) + 1e-9
+                )
+                if same_turn_direction and entering_curve:
+                    feedforward_gain += curve_ratio * (
+                        self.limits.forward_large_curve_feedforward_gain
+                        - self.limits.curve_feedforward_gain
+                    )
+            curvature += feedforward_gain * (
                 anticipated_curvature
-                - float(self._reference_curvature[self.progress_index])
+                - current_reference_curvature
             )
         nearest = self.path[self.progress_index]
         nearest_yaw = reference_yaw
@@ -955,6 +1170,10 @@ class DifferentialDriveMpc:
             (1.0 - preview_weight) * current_cross_track_error
             + preview_weight * predicted_cross_track_error
         )
+        if forward_endpoint_alignment:
+            # 종점 하나를 향하는 preview 보정 대신 연속 선분 투영 오차를
+            # 사용해 마지막까지 경로 위에 붙은 상태로 이동한다.
+            cross_track_error = current_cross_track_error
         # 상단 카메라 중심 검출의 mm 단위 흔들림을 그대로 고 gain에 넣으면
         # 조향 부호가 매 주기 바뀌며 직선에서 S자로 주행한다. 작은 오차는
         # 무시하고 deadband를 넘은 실제 이탈분에만 연속적으로 보정한다.
@@ -998,26 +1217,39 @@ class DifferentialDriveMpc:
             # MPC 이후의 직접 위치·heading 보정은 모두 끈다.
             forward_cross_track_scale = 0.0
             forward_heading_scale = 0.0
-        elif forward_straight_tracking:
-            if not self._forward_rejoin_active:
-                convergence_ratio = 0.0
-                if effective_cross_track_error * effective_heading_error > 0.0:
-                    convergence_ratio = float(
-                        np.clip(
-                            abs(effective_heading_error)
-                            / max(2.0 * active_heading_deadband, 1e-6),
-                            0.0,
-                            1.0,
-                        )
-                    )
-                forward_cross_track_scale = (
-                    self.limits.forward_cross_track_gain_scale
-                    + convergence_ratio
-                    * (
-                        self.limits.forward_converging_cross_track_gain_scale
-                        - self.limits.forward_cross_track_gain_scale
+        elif direction > 0 and forward_endpoint_alignment:
+            # 기어 전환을 오차로 막지는 않지만, 전환 직전에는 수렴 감쇠로
+            # 위치 보정이 약해지지 않도록 경로선과 접선 보정을 유지한다.
+            forward_cross_track_scale = self.limits.forward_cross_track_gain_scale
+            forward_heading_scale = (
+                self.limits.forward_straight_heading_gain_scale
+                if forward_straight_tracking
+                else 1.0
+            )
+        elif direction > 0:
+            # 차량 heading만 유지해도 횡오차가 감소하는 상태에서는 위치
+            # feedback을 계속 강하게 더하지 않는다. 기존에는 이 감쇠가
+            # 직선에만 적용돼 곡선에서 경로 안쪽으로 수렴하는 중에도 반대
+            # 조향이 생겼다. 경로 곡률과 heading feedback은 그대로 유지한다.
+            convergence_ratio = 0.0
+            if effective_cross_track_error * effective_heading_error > 0.0:
+                convergence_ratio = float(
+                    np.clip(
+                        abs(effective_heading_error)
+                        / max(2.0 * active_heading_deadband, 1e-6),
+                        0.0,
+                        1.0,
                     )
                 )
+            forward_cross_track_scale = (
+                self.limits.forward_cross_track_gain_scale
+                + convergence_ratio
+                * (
+                    self.limits.forward_converging_cross_track_gain_scale
+                    - self.limits.forward_cross_track_gain_scale
+                )
+            )
+            if forward_straight_tracking:
                 forward_heading_scale = (
                     1.0
                     + convergence_ratio
@@ -1351,8 +1583,9 @@ class DifferentialDriveMpc:
             self._forward_rejoin_start_s_m
             + self._forward_rejoin_length_m
         ):
-            # 합류 종점을 지나도 오차가 남으면 아래에서 현재 자세로 새 곡선을
-            # 만들 수 있다. 주기마다 목표를 재생성하지 않는 것이 핵심이다.
+            # 생성 당시 정한 합류 길이를 지나면 정상 경로 추종으로 반드시
+            # 복귀한다. 실차의 mm/deg 잡음 때문에 합류 모드가 고착되면 큰
+            # 곡선 보정과 직접 횡오차 보정이 계속 차단될 수 있다.
             self._reset_forward_rejoin()
         if self._forward_rejoin_active:
             return
@@ -1401,7 +1634,9 @@ class DifferentialDriveMpc:
             self._rear_arc_length[segment_end] - projection.rear_s_m
         )
         if requested_length > remaining_length or requested_length < 0.03:
-            # 기어 전환점 직전에는 불완전한 합류 곡선을 새로 만들지 않는다.
+            # 기어 전환점 직전에는 짧은 잔여거리로 목표점 하나를 향하는
+            # 불완전한 합류 곡선을 만들지 않는다. 현재 경로 접선을 유지해
+            # 다음 기어를 안정된 자세로 시작한다.
             return
         rejoin_length = requested_length
         raw_slope = (
@@ -1555,8 +1790,17 @@ class DifferentialDriveMpc:
 
     def _initial_nearest_index(self, state: VehicleState) -> int:
         segment_end = self._segment_end(self.progress_index)
+        # 새 경로를 처음 받은 순간에도 첫 direction 구간 전체를 검색하면,
+        # 공간상 가까이 지나가는 후반 전진점으로 progress가 바로 건너뛸 수
+        # 있다. 이후 end guard가 만족되면 실제 순서를 주행하지 않았는데도
+        # 다음 후진 구간으로 전환된다. 고정 경로는 현재 차량 pose에서
+        # 시작하므로 일반 최근접 검색과 같은 앞쪽 window만 허용한다.
+        search_end = min(
+            segment_end,
+            self.progress_index + self.limits.nearest_forward_window,
+        )
         return min(
-            range(self.progress_index, segment_end + 1),
+            range(self.progress_index, search_end + 1),
             key=lambda index: (
                 (self.path[index].x_m - state.x_m) ** 2
                 + (self.path[index].y_m - state.y_m) ** 2
@@ -1615,11 +1859,18 @@ class DifferentialDriveMpc:
             tangent_yaw += math.pi
         return normalize_angle(tangent_yaw)
 
-    def _anticipated_curvature(self, start: int, segment_end: int) -> float:
+    def _anticipated_curvature(
+        self,
+        start: int,
+        segment_end: int,
+        preview_points: int | None = None,
+    ) -> float:
         """가까운 미래 곡률을 거리 가중 평균해 코너 선행 조향을 만든다."""
+        if preview_points is None:
+            preview_points = self.limits.curve_feedforward_preview_points
         stop = min(
             segment_end,
-            start + self.limits.curve_feedforward_preview_points,
+            start + preview_points,
         )
         values = self._reference_curvature[start : stop + 1]
         if len(values) == 0:

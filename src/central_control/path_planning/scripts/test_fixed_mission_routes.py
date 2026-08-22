@@ -58,6 +58,111 @@ def _direction_only_path(
     )
 
 
+def _smooth_bezier_path(
+    start: Pose,
+    goal: Pose,
+    direction: int,
+    step_cm: float,
+    start_handle_cm: float,
+    end_handle_cm: float,
+) -> tuple[ReedsSheppPose, ...]:
+    """Sample a zero-end-curvature quintic path between two vehicle poses."""
+    if direction not in (-1, 1):
+        raise ValueError("direction must be -1 or 1")
+    if min(step_cm, start_handle_cm, end_handle_cm) <= 0.0:
+        raise ValueError("Bezier step and handles must be positive")
+
+    travel_sign = float(direction)
+    start_tangent = travel_sign * np.asarray(
+        [math.cos(start[2]), math.sin(start[2])], dtype=np.float64
+    )
+    end_tangent = travel_sign * np.asarray(
+        [math.cos(goal[2]), math.sin(goal[2])], dtype=np.float64
+    )
+    first = np.asarray(start[:2], dtype=np.float64)
+    last = np.asarray(goal[:2], dtype=np.float64)
+    controls = np.asarray(
+        [
+            first,
+            first + start_handle_cm * start_tangent,
+            first + 2.0 * start_handle_cm * start_tangent,
+            last - 2.0 * end_handle_cm * end_tangent,
+            last - end_handle_cm * end_tangent,
+            last,
+        ],
+        dtype=np.float64,
+    )
+    chord_cm = float(np.linalg.norm(last - first))
+    dense_count = max(240, int(math.ceil(chord_cm / step_cm)) * 12)
+    parameter = np.linspace(0.0, 1.0, dense_count + 1)
+    one_minus = 1.0 - parameter
+    basis = np.column_stack(
+        [
+            one_minus**5,
+            5.0 * one_minus**4 * parameter,
+            10.0 * one_minus**3 * parameter**2,
+            10.0 * one_minus**2 * parameter**3,
+            5.0 * one_minus * parameter**4,
+            parameter**5,
+        ]
+    )
+    dense_points = basis @ controls
+    dense_distance = np.concatenate(
+        (
+            np.asarray([0.0]),
+            np.cumsum(np.linalg.norm(np.diff(dense_points, axis=0), axis=1)),
+        )
+    )
+    total_length_cm = float(dense_distance[-1])
+    sample_count = max(1, int(math.ceil(total_length_cm / step_cm)))
+    sample_distance = np.linspace(0.0, total_length_cm, sample_count + 1)
+    sample_parameter = np.interp(sample_distance, dense_distance, parameter)
+
+    poses: list[ReedsSheppPose] = []
+    for index, value in enumerate(sample_parameter):
+        omt = 1.0 - value
+        point_basis = np.asarray(
+            [
+                omt**5,
+                5.0 * omt**4 * value,
+                10.0 * omt**3 * value**2,
+                10.0 * omt**2 * value**3,
+                5.0 * omt * value**4,
+                value**5,
+            ]
+        )
+        derivative_basis = np.asarray(
+            [
+                omt**4,
+                4.0 * omt**3 * value,
+                6.0 * omt**2 * value**2,
+                4.0 * omt * value**3,
+                value**4,
+            ]
+        )
+        point = point_basis @ controls
+        derivative = 5.0 * derivative_basis @ np.diff(controls, axis=0)
+        travel_yaw = math.atan2(float(derivative[1]), float(derivative[0]))
+        vehicle_yaw = travel_yaw if direction > 0 else travel_yaw + math.pi
+        vehicle_yaw = (vehicle_yaw + math.pi) % (2.0 * math.pi) - math.pi
+        if index == 0:
+            point = first
+            vehicle_yaw = start[2]
+        elif index == len(sample_parameter) - 1:
+            point = last
+            vehicle_yaw = goal[2]
+        poses.append(
+            ReedsSheppPose(
+                x_cm=float(point[0]),
+                y_cm=float(point[1]),
+                yaw_rad=float(vehicle_yaw),
+                direction=direction,
+                segment_mode="B",
+            )
+        )
+    return tuple(poses)
+
+
 def _aligned_parking_entry(
     planner,
     start: Pose,
@@ -68,6 +173,7 @@ def _aligned_parking_entry(
     maximum_cusp_yaw_error_deg: float | None = None,
     minimum_initial_reverse_cm: float | None = None,
     cusp_relative_to_alignment: dict[str, float] | None = None,
+    prefer_single_steer_per_gear: bool = False,
 ):
     """칸 밖에서 goal yaw를 완성한 뒤 직선 후진으로만 진입한다."""
     if final_straight_cm <= 0.0:
@@ -178,6 +284,22 @@ def _aligned_parking_entry(
                 if directions[index] != directions[index - 1]
             ]
             gear_switches = len(switch_indices)
+            if prefer_single_steer_per_gear:
+                gear_blocks: list[tuple[int, set[str]]] = []
+                for segment in candidate.segments:
+                    # 0.5 cm보다 짧은 수치상 잔여 원호는 실제 조향 구간으로
+                    # 보지 않는다. 그 이상인 한 기어 구간에서 L/R이 함께
+                    # 나오면 차체가 꼬불꼬불 움직이므로 후보에서 제외한다.
+                    if abs(segment.length_cm) < planner.path_output_step_cm:
+                        continue
+                    if not gear_blocks or gear_blocks[-1][0] != segment.direction:
+                        gear_blocks.append((segment.direction, set()))
+                    gear_blocks[-1][1].add(segment.mode)
+                if any(
+                    "L" in modes and "R" in modes
+                    for _, modes in gear_blocks
+                ):
+                    continue
             if minimum_initial_reverse_cm is not None:
                 first_switch_index = switch_indices[0]
                 initial_reverse_cm = sum(
@@ -530,7 +652,10 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                     1,
                     exit_turning_radius_cm,
                 )
-                if "entry_staging" not in endpoint:
+                if (
+                    "entry_staging" not in endpoint
+                    and "entry_attachment_hint_cm" not in endpoint
+                ):
                     entry_turning_radius_cm = float(
                         endpoint.get(
                             "road_attachment_entry_turning_radius_cm",
@@ -554,6 +679,12 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                         endpoint.get("entry_maximum_cusp_yaw_error_deg"),
                         endpoint.get("entry_minimum_initial_reverse_cm"),
                         endpoint.get("entry_cusp_relative_to_alignment"),
+                        bool(
+                            endpoint.get(
+                                "entry_prefer_single_steer_per_gear",
+                                False,
+                            )
+                        ),
                     )
                 else:
                     # 충전칸 진입은 삭제된 인접 주차면을 활용하는 별도
@@ -574,6 +705,84 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
         if selected_entry:
             entry_connectors[name] = selected_entry
         minimum_index = selected_index + 1
+
+    # 출차 attachment와 주차 진입 attachment가 반드시 같을 필요는 없다.
+    # DD 차량이 더 큰 반경으로 주차할 수 있도록 도로를 몇 cm 더 진행한
+    # 지점에서 maneuver를 시작하되, 출차 경로와 endpoint 검출 기준은
+    # 기존 attachment에 그대로 유지한다.
+    for name in route_order:
+        endpoint = config["endpoints"].get(name)
+        if (
+            endpoint is None
+            or "entry_staging" in endpoint
+            or "entry_attachment_hint_cm" not in endpoint
+            or "goal" not in endpoint
+        ):
+            continue
+        hint = endpoint["entry_attachment_hint_cm"]
+        hint_xy = (float(hint[0]), float(hint[1]))
+        sources = [
+            source
+            for source, targets in config["allowed_transitions"].items()
+            if name in targets
+        ]
+        minimum_entry_index = max(
+            attachment_indices[source]
+            for source in sources
+        )
+        candidates = sorted(
+            range(minimum_entry_index, len(centerline)),
+            key=lambda index: (
+                (float(centerline[index]["x_cm"]) - hint_xy[0]) ** 2
+                + (float(centerline[index]["y_cm"]) - hint_xy[1]) ** 2
+            ),
+        )
+        search_cm = float(
+            endpoint.get(
+                "entry_attachment_search_cm",
+                ENDPOINT_ATTACHMENT_SEARCH_CM,
+            )
+        )
+        goal = _pose(endpoint["goal"])
+        for index in candidates:
+            row = centerline[index]
+            if math.hypot(
+                float(row["x_cm"]) - hint_xy[0],
+                float(row["y_cm"]) - hint_xy[1],
+            ) > search_cm:
+                break
+            attachment = (
+                float(row["x_cm"]),
+                float(row["y_cm"]),
+                float(row["yaw_rad"]),
+            )
+            try:
+                parking_entry = _aligned_parking_entry(
+                    planner,
+                    attachment,
+                    goal,
+                    float(endpoint["entry_turning_radius_cm"]),
+                    float(endpoint.get("entry_final_straight_cm", 0.0)),
+                    endpoint.get("entry_slot_polygon_cm"),
+                    endpoint.get("entry_maximum_cusp_yaw_error_deg"),
+                    endpoint.get("entry_minimum_initial_reverse_cm"),
+                    endpoint.get("entry_cusp_relative_to_alignment"),
+                    bool(
+                        endpoint.get(
+                            "entry_prefer_single_steer_per_gear",
+                            False,
+                        )
+                    ),
+                )
+            except RuntimeError:
+                continue
+            entry_attachment_indices[name] = index
+            entry_connectors[name] = parking_entry
+            break
+        else:
+            raise RuntimeError(
+                f"no curvature-safe entry attachment found for endpoint {name}"
+            )
 
     # 넓어진 충전칸 전면 공간은 공통 도로를 억지로 옮기지 않고,
     # 진입 전용 forward approach + 3-point parking 구간에서만 사용한다.
@@ -602,6 +811,7 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
             endpoint.get("entry_maximum_cusp_yaw_error_deg"),
             endpoint.get("entry_minimum_initial_reverse_cm"),
             endpoint.get("entry_cusp_relative_to_alignment"),
+            bool(endpoint.get("entry_prefer_single_steer_per_gear", False)),
         )
         search_cm = float(
             endpoint.get(
@@ -854,6 +1064,12 @@ def build_route(
                 endpoints[target].get("entry_maximum_cusp_yaw_error_deg"),
                 endpoints[target].get("entry_minimum_initial_reverse_cm"),
                 endpoints[target].get("entry_cusp_relative_to_alignment"),
+                bool(
+                    endpoints[target].get(
+                        "entry_prefer_single_steer_per_gear",
+                        False,
+                    )
+                ),
             )
             rows.extend(
                 {
@@ -907,7 +1123,69 @@ def build_route(
         .get(source, {})
         .get(target)
     )
-    if custom_waypoints is None:
+    smooth_connection = config.get("smooth_road_connections", {}).get(source)
+    smooth_merge_index: int | None = None
+    if smooth_connection is not None:
+        smooth_targets = set(smooth_connection.get("targets", []))
+        merge_name = str(smooth_connection["merge_target"])
+        smooth_merge_index = int(entry_attachment_indices[merge_name])
+        if target not in smooth_targets or smooth_merge_index > target_index:
+            smooth_connection = None
+
+    if custom_waypoints is None and smooth_connection is not None:
+        assert smooth_merge_index is not None
+        source_attachment = centerline[source_index]
+        merge_attachment = centerline[smooth_merge_index]
+        smooth_start = (
+            float(source_attachment["x_cm"]),
+            float(source_attachment["y_cm"]),
+            float(source_attachment["yaw_rad"]),
+        )
+        smooth_goal = (
+            float(merge_attachment["x_cm"]),
+            float(merge_attachment["y_cm"]),
+            float(merge_attachment["yaw_rad"]),
+        )
+        if smooth_connection.get("method") == "direction_only":
+            smooth_poses = _direction_only_path(
+                planner,
+                smooth_start,
+                smooth_goal,
+                1,
+                float(
+                    smooth_connection.get(
+                        "turning_radius_cm",
+                        network["turning_radius_cm"],
+                    )
+                ),
+            ).poses
+        else:
+            smooth_poses = _smooth_bezier_path(
+                smooth_start,
+                smooth_goal,
+                1,
+                float(planner.path_output_step_cm),
+                float(smooth_connection["start_handle_cm"]),
+                float(smooth_connection["end_handle_cm"]),
+            )
+        if not planner.is_path_collision_free(smooth_poses):
+            raise RuntimeError(
+                f"smooth road connection collides: {source} -> {target}"
+            )
+        rows.extend(
+            {
+                "x_cm": pose.x_cm,
+                "y_cm": pose.y_cm,
+                "yaw_rad": pose.yaw_rad,
+                "direction": 1,
+            }
+            for pose in smooth_poses[1:]
+        )
+        rows.extend(
+            dict(row)
+            for row in centerline[smooth_merge_index + 1 : target_index + 1]
+        )
+    elif custom_waypoints is None:
         rows.extend(
             dict(row)
             for row in centerline[source_index + 1 : target_index + 1]
@@ -1021,7 +1299,11 @@ def save_route(
     csv_path = output_dir / f"{stem}.csv"
     center_rows = _vehicle_center_rows(rows, rear_axle_to_center_cm)
     with csv_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["index", "x_cm", "y_cm", "yaw_rad", "direction"])
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["index", "x_cm", "y_cm", "yaw_rad", "direction"],
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(
             {"index": index, **row}
@@ -1083,6 +1365,7 @@ def main() -> int:
                 writer = csv.DictWriter(
                     file,
                     fieldnames=["source", "target", "path_points", "csv_file"],
+                    lineterminator="\n",
                 )
                 writer.writeheader()
                 writer.writerows(manifest_rows)
