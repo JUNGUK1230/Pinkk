@@ -14,7 +14,7 @@ realtime_localization:
   scene_output_path: src/central_control/path_planning/output/live_vision_scene.json
   bev_output_path: src/central_control/path_planning/output/live_camera_bev.png
 
-  # 기본 통합 실행은 파일을 중계하지 않고 경로·pose를 ROS 2 토픽w으로 직접
+  # 기본 통합 실행은 파일을 중계하지 않고 경로·pose를 ROS 2 토픽으로 직접
   # 발행한다. 기존 JSON/PNG 진단이 필요할 때만 true로 바꾼다.
   write_runtime_files: false
   ros_publish_enabled: true
