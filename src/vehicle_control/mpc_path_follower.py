@@ -32,6 +32,7 @@ try:
         MpcWeights,
         ReferencePoint,
         VehicleState,
+        normalize_angle,
     )
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,6 +42,7 @@ except ImportError:
         MpcWeights,
         ReferencePoint,
         VehicleState,
+        normalize_angle,
     )
 
 
@@ -156,6 +158,12 @@ class MpcPathFollower(Node):
         )
         if self._angular_command_sign not in (-1.0, 1.0):
             raise ValueError("angular_command_sign must be -1 or 1")
+        self._angular_command_gain = self._positive_parameter(
+            "angular_command_gain"
+        )
+        self._max_published_angular_speed_radps = self._positive_parameter(
+            "max_published_angular_speed_radps"
+        )
         control_frequency = self._positive_parameter("control_frequency_hz")
 
         trajectory_qos = QoSProfile(
@@ -205,6 +213,7 @@ class MpcPathFollower(Node):
         self._pose_received_after_path = False
         self._path_valid = True
         self._gear_resume_monotonic: float | None = None
+        self._heading_error_latched = False
         self._last_status: str | None = None
         self._last_solve_log_monotonic = 0.0
         self.add_on_set_parameters_callback(self._on_set_parameters)
@@ -243,19 +252,26 @@ class MpcPathFollower(Node):
             "cmd_vel_topic": "/cmd_vel",
             # Pinky 실차 구동계에서 map curvature와 동일한 부호를 사용한다.
             "angular_command_sign": 1.0,
+<<<<<<< Updated upstream
             "scan_topic": "scan",
+=======
+            "angular_command_gain": 1.35,
+            "max_published_angular_speed_radps": 0.35,
+            "scan_topic": "/scan",
+>>>>>>> Stashed changes
             "require_scan": True,
-            "scan_timeout_sec": 0.8,
+            "scan_timeout_sec": 1.2,
             "front_scan_half_angle_deg": 18.0,
             "rear_scan_half_angle_deg": 30.0,
             "front_scan_center_deg": 180.0,
             "rear_scan_center_deg": 0.0,
             "front_stop_distance_m": 0.15,
-            "rear_stop_distance_m": 0.12,
+            "rear_stop_distance_m": 0.05,
             "reject_cmd_vel_conflicts": True,
-            "control_frequency_hz": 4.0,
+            "control_frequency_hz": 5.0,
             "path_timeout_sec": 2.5,
             "gear_pause_sec": 0.7,
+<<<<<<< Updated upstream
             "control_point_offset_m": 0.04,
             "wheel_radius_m": 0.027,
             "wheel_separation_m": 0.0961,
@@ -308,6 +324,33 @@ class MpcPathFollower(Node):
             "gear_passed_endpoint_lateral_tolerance_m": 0.06,
             "gear_transition_end_guard_points": 20,
             "nearest_forward_window": 140,
+=======
+            "dt_sec": 0.20,
+            "horizon_steps": 1,
+            "forward_speed_mps": 0.025,
+            "reverse_speed_mps": 0.015,
+            "max_forward_speed_mps": 0.03,
+            "max_reverse_speed_mps": 0.02,
+            "min_reverse_tracking_speed_mps": 0.002,
+            "max_acceleration_mps2": 0.12,
+            "max_curvature_1pm": 7.0,
+            "max_curvature_rate_1pmps": 8.0,
+            "max_angular_speed_radps": 0.25,
+            "straight_curvature_threshold_1pm": 0.35,
+            "straight_max_curvature_1pm": 2.3,
+            "max_cross_track_correction_curvature_1pm": 4.5,
+            "cross_track_curvature_gain_1pm2": 26.0,
+            "large_cross_track_gain_1pm3": 150.0,
+            "heading_curvature_gain_1pm": 4.0,
+            "near_path_heading_gain_1pm": 5.0,
+            "max_tracking_yaw_error_deg": 25.0,
+            "max_recovery_yaw_error_deg": 45.0,
+            "pose_timeout_sec": 1.0,
+            "goal_position_tolerance_m": 0.040,
+            "goal_yaw_tolerance_deg": 8.0,
+            "goal_slowdown_distance_m": 0.10,
+            "gear_position_tolerance_m": 0.025,
+>>>>>>> Stashed changes
             "nearest_backward_window": 4,
             "steering_preview_points": 6,
             "steering_preview_weight": 0.30,
@@ -324,12 +367,14 @@ class MpcPathFollower(Node):
             "straight_history_points": 12,
             "solver_max_iterations": 45,
             "solver_ftol": 1e-5,
-            "weight_position": 200.0,
-            "weight_yaw": 2.0,
-            "weight_terminal_position": 500.0,
-            "weight_terminal_yaw": 5.0,
-            "weight_speed": 50.0,
-            "weight_curvature": 0.08,
+            "weight_position": 20000.0,
+            "weight_along_track": 150.0,
+            "weight_yaw": 4.0,
+            "weight_reverse_yaw_scale": 10.0,
+            "weight_terminal_position": 2000.0,
+            "weight_terminal_yaw": 12.0,
+            "weight_speed": 2000.0,
+            "weight_curvature": 0.02,
             "weight_speed_rate": 1.0,
             "weight_curvature_rate": 0.04,
         }
@@ -378,6 +423,9 @@ class MpcPathFollower(Node):
             ),
             max_reverse_speed_mps=self._positive_parameter(
                 "max_reverse_speed_mps", overrides
+            ),
+            min_reverse_tracking_speed_mps=self._positive_parameter(
+                "min_reverse_tracking_speed_mps"
             ),
             max_acceleration_mps2=self._positive_parameter(
                 "max_acceleration_mps2", overrides
@@ -474,6 +522,21 @@ class MpcPathFollower(Node):
             minimum_tracking_speed_scale=self._positive_parameter(
                 "minimum_tracking_speed_scale", overrides
             ),
+            max_cross_track_correction_curvature_1pm=self._positive_parameter(
+                "max_cross_track_correction_curvature_1pm"
+            ),
+            cross_track_curvature_gain_1pm2=self._positive_parameter(
+                "cross_track_curvature_gain_1pm2"
+            ),
+            large_cross_track_gain_1pm3=self._positive_parameter(
+                "large_cross_track_gain_1pm3"
+            ),
+            heading_curvature_gain_1pm=self._positive_parameter(
+                "heading_curvature_gain_1pm"
+            ),
+            near_path_heading_gain_1pm=self._positive_parameter(
+                "near_path_heading_gain_1pm"
+            ),
             max_tracking_yaw_error_rad=math.radians(
                 self._positive_parameter("max_tracking_yaw_error_deg", overrides)
             ),
@@ -488,11 +551,21 @@ class MpcPathFollower(Node):
             pose_timeout_sec=self._positive_parameter(
                 "pose_timeout_sec", overrides
             ),
+<<<<<<< Updated upstream
+=======
+            max_recovery_yaw_error_rad=math.radians(
+                self._positive_parameter("max_recovery_yaw_error_deg")
+            ),
+            pose_timeout_sec=self._positive_parameter("pose_timeout_sec"),
+>>>>>>> Stashed changes
             goal_position_tolerance_m=self._positive_parameter(
                 "goal_position_tolerance_m", overrides
             ),
             goal_yaw_tolerance_rad=math.radians(
                 self._positive_parameter("goal_yaw_tolerance_deg", overrides)
+            ),
+            goal_slowdown_distance_m=self._positive_parameter(
+                "goal_slowdown_distance_m"
             ),
             gear_position_tolerance_m=self._positive_parameter(
                 "gear_position_tolerance_m", overrides
@@ -515,9 +588,12 @@ class MpcPathFollower(Node):
                     "gear_transition_end_guard_points", overrides
                 )
             ),
+<<<<<<< Updated upstream
             nearest_forward_window=int(
                 self._parameter_value("nearest_forward_window", overrides)
             ),
+=======
+>>>>>>> Stashed changes
             nearest_backward_window=int(
                 self._parameter_value("nearest_backward_window", overrides)
             ),
@@ -582,8 +658,17 @@ class MpcPathFollower(Node):
         overrides: dict[str, object] | None = None,
     ) -> MpcWeights:
         return MpcWeights(
+<<<<<<< Updated upstream
             position=self._nonnegative_parameter("weight_position", overrides),
             yaw=self._nonnegative_parameter("weight_yaw", overrides),
+=======
+            position=self._nonnegative_parameter("weight_position"),
+            along_track=self._nonnegative_parameter("weight_along_track"),
+            yaw=self._nonnegative_parameter("weight_yaw"),
+            reverse_yaw_scale=self._nonnegative_parameter(
+                "weight_reverse_yaw_scale"
+            ),
+>>>>>>> Stashed changes
             terminal_position=self._nonnegative_parameter(
                 "weight_terminal_position", overrides
             ),
@@ -790,20 +875,25 @@ class MpcPathFollower(Node):
         self._path_signature = signature
         self._pose_received_after_path = False
         self._gear_resume_monotonic = None
+        self._heading_error_latched = False
         self.get_logger().info(
             f"Loaded new MPC path: {len(points)} points, "
             f"direction={points[0].direction}->{points[-1].direction}"
         )
 
     def _path_valid_callback(self, message: Bool) -> None:
+        was_valid = self._path_valid
         self._path_valid = bool(message.data)
         if self._path_valid:
+            if not was_valid:
+                self._heading_error_latched = False
             return
         self._controller.clear_path()
         self._path_signature = None
         self._last_path_monotonic = None
         self._pose_received_after_path = False
         self._gear_resume_monotonic = None
+        self._heading_error_latched = False
         self._publish_zero("PATH_INVALIDATED")
 
     def _decode_trajectory(
@@ -911,12 +1001,26 @@ class MpcPathFollower(Node):
             if not self._controller.advance_gear_segment():
                 self._publish_zero("GEAR_ADVANCE_FAILED")
                 return
+<<<<<<< Updated upstream
             self.get_logger().info(
                 "Advanced gear segment: "
                 f"path_index={self._controller.progress_index}, "
                 f"direction={self._controller.path[self._controller.progress_index].direction}"
+=======
+            direction = self._controller.path[
+                self._controller.progress_index
+            ].direction
+            self.get_logger().info(
+                "Advanced gear segment: "
+                f"direction={direction}, "
+                f"path_index={self._controller.progress_index}"
+>>>>>>> Stashed changes
             )
             self._gear_resume_monotonic = None
+
+        if self._heading_error_latched:
+            self._publish_zero("HEADING_ERROR_LATCHED_RESTART_REQUIRED")
+            return
 
         command = self._controller.command(self._state)
         if command.status == "GEAR_CHANGE_REQUIRED":
@@ -927,6 +1031,24 @@ class MpcPathFollower(Node):
             self._publish_zero("GEAR_PAUSE")
             return
         if command.status != "TRACKING":
+            if (
+                command.status == "HEADING_ERROR_TOO_LARGE"
+                and self._last_status != command.status
+            ):
+                reference = self._controller.path[
+                    self._controller.progress_index
+                ]
+                yaw_error = normalize_angle(
+                    reference.yaw_rad - self._state.yaw_rad
+                )
+                self.get_logger().warning(
+                    "Heading mismatch: "
+                    f"vehicle_yaw={math.degrees(self._state.yaw_rad):.1f}deg, "
+                    f"path_yaw={math.degrees(reference.yaw_rad):.1f}deg, "
+                    f"error={math.degrees(yaw_error):+.1f}deg, "
+                    f"path_index={self._controller.progress_index}"
+                )
+                self._heading_error_latched = True
             self._publish_zero(command.status)
             return
         if (
@@ -950,7 +1072,11 @@ class MpcPathFollower(Node):
 
         message = Twist()
         message.linear.x = command.linear_mps
-        message.angular.z = self._angular_command_sign * command.angular_radps
+        scaled_angular = self._angular_command_gain * command.angular_radps
+        message.angular.z = self._angular_command_sign * max(
+            -self._max_published_angular_speed_radps,
+            min(self._max_published_angular_speed_radps, scaled_angular),
+        )
         self._command_publisher.publish(message)
         self._log_status(command.status)
         if (
@@ -980,9 +1106,14 @@ class MpcPathFollower(Node):
         self._log_status(status)
 
     def _log_status(self, status: str) -> None:
-        if status == self._last_status:
+        category = status
+        if status.startswith("FRONT_OBSTACLE_"):
+            category = "FRONT_OBSTACLE"
+        elif status.startswith("REAR_OBSTACLE_"):
+            category = "REAR_OBSTACLE"
+        if category == self._last_status:
             return
-        self._last_status = status
+        self._last_status = category
         self.get_logger().info(f"MPC status: {status}")
 
 

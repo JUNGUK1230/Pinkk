@@ -48,6 +48,7 @@ class _PathProjection:
 
 @dataclass(frozen=True)
 class MpcLimits:
+<<<<<<< Updated upstream
     # Pose와 reference path가 나타내는 제어점(차량 중심)이 차동구동
     # 회전 중심(rear axle)보다 앞에 있는 거리다.
     control_point_offset_m: float = 0.04
@@ -59,10 +60,17 @@ class MpcLimits:
     horizon_steps: int = 10
     forward_speed_mps: float = 0.06
     parking_realign_speed_mps: float = 0.035
+=======
+    dt_sec: float = 0.20
+    horizon_steps: int = 1
+    forward_speed_mps: float = 0.025
+>>>>>>> Stashed changes
     reverse_speed_mps: float = 0.02
-    max_forward_speed_mps: float = 0.08
+    max_forward_speed_mps: float = 0.03
     max_reverse_speed_mps: float = 0.03
+    min_reverse_tracking_speed_mps: float = 0.002
     max_acceleration_mps2: float = 0.12
+<<<<<<< Updated upstream
     forward_max_acceleration_mps2: float = 0.08
     max_curvature_1pm: float = 1.0 / 0.12
     max_curvature_rate_1pmps: float = 10.0
@@ -103,6 +111,25 @@ class MpcLimits:
     gear_passed_endpoint_lateral_tolerance_m: float = 0.06
     gear_transition_end_guard_points: int = 20
     nearest_forward_window: int = 140
+=======
+    max_curvature_1pm: float = 7.0
+    max_curvature_rate_1pmps: float = 8.0
+    max_angular_speed_radps: float = 0.25
+    straight_curvature_threshold_1pm: float = 0.35
+    straight_max_curvature_1pm: float = 2.3
+    max_cross_track_correction_curvature_1pm: float = 4.5
+    cross_track_curvature_gain_1pm2: float = 26.0
+    large_cross_track_gain_1pm3: float = 150.0
+    heading_curvature_gain_1pm: float = 4.0
+    near_path_heading_gain_1pm: float = 5.0
+    max_tracking_yaw_error_rad: float = math.radians(25.0)
+    max_recovery_yaw_error_rad: float = math.radians(45.0)
+    pose_timeout_sec: float = 0.6
+    goal_position_tolerance_m: float = 0.040
+    goal_yaw_tolerance_rad: float = math.radians(8.0)
+    goal_slowdown_distance_m: float = 0.10
+    gear_position_tolerance_m: float = 0.025
+>>>>>>> Stashed changes
     nearest_backward_window: int = 4
     # 후진은 기존 가까운 preview를 유지하고 전진에서만 조금 더 앞의
     # 경로 접선을 함께 사용해 한 점을 쫓는 조향을 줄인다.
@@ -130,6 +157,7 @@ class MpcLimits:
             self.reverse_speed_mps,
             self.max_forward_speed_mps,
             self.max_reverse_speed_mps,
+            self.min_reverse_tracking_speed_mps,
             self.max_acceleration_mps2,
             self.forward_max_acceleration_mps2,
             self.wheel_radius_m,
@@ -142,6 +170,7 @@ class MpcLimits:
             self.max_lateral_acceleration_mps2,
             self.straight_curvature_threshold_1pm,
             self.straight_max_curvature_1pm,
+<<<<<<< Updated upstream
             self.full_curvature_path_threshold_1pm,
             self.cross_track_deadband_m,
             self.reverse_cross_track_deadband_m,
@@ -160,9 +189,19 @@ class MpcLimits:
             self.heading_recovery_full_curvature_error_rad,
             self.heading_recovery_speed_scale,
             self.steering_rejoin_full_error_m,
+=======
+            self.max_cross_track_correction_curvature_1pm,
+            self.cross_track_curvature_gain_1pm2,
+            self.large_cross_track_gain_1pm3,
+            self.heading_curvature_gain_1pm,
+            self.near_path_heading_gain_1pm,
+            self.max_tracking_yaw_error_rad,
+            self.max_recovery_yaw_error_rad,
+>>>>>>> Stashed changes
             self.pose_timeout_sec,
             self.goal_position_tolerance_m,
             self.goal_yaw_tolerance_rad,
+            self.goal_slowdown_distance_m,
             self.gear_position_tolerance_m,
             self.gear_fallback_position_tolerance_m,
             self.gear_stall_speed_threshold_mps,
@@ -172,6 +211,7 @@ class MpcLimits:
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in positive_values):
             raise ValueError("all MPC limits must be positive and finite")
+<<<<<<< Updated upstream
         if (
             not math.isfinite(self.cross_track_feedback_gain_1pm2)
             or self.cross_track_feedback_gain_1pm2 < 0.0
@@ -229,6 +269,11 @@ class MpcLimits:
         if self.horizon_steps < 2:
             raise ValueError("MPC horizon_steps must be at least 2")
         if self.nearest_forward_window < 1 or self.nearest_backward_window < 0:
+=======
+        if self.horizon_steps < 1:
+            raise ValueError("MPC horizon_steps must be at least 1")
+        if self.nearest_backward_window < 0:
+>>>>>>> Stashed changes
             raise ValueError("MPC nearest-point windows are invalid")
         if self.steering_preview_points < 1:
             raise ValueError("steering preview points must be positive")
@@ -308,8 +353,17 @@ class MpcLimits:
             raise ValueError("MPC solver_max_iterations must be positive")
         if self.forward_speed_mps > self.max_forward_speed_mps:
             raise ValueError("forward reference speed exceeds its limit")
+<<<<<<< Updated upstream
         if self.parking_realign_speed_mps > self.max_forward_speed_mps:
             raise ValueError("parking realign speed exceeds forward limit")
+=======
+        if self.max_recovery_yaw_error_rad < self.max_tracking_yaw_error_rad:
+            raise ValueError("recovery yaw limit must not be below tracking limit")
+        if self.reverse_speed_mps > self.max_reverse_speed_mps:
+            raise ValueError("reverse reference speed exceeds its limit")
+        if self.min_reverse_tracking_speed_mps > self.reverse_speed_mps:
+            raise ValueError("minimum reverse tracking speed exceeds reference")
+>>>>>>> Stashed changes
         if self.reverse_speed_mps > self.max_reverse_speed_mps:
             raise ValueError("reverse reference speed exceeds its limit")
         if (
@@ -323,19 +377,24 @@ class MpcLimits:
 
 @dataclass(frozen=True)
 class MpcWeights:
-    position: float = 200.0
-    yaw: float = 2.0
-    terminal_position: float = 500.0
-    terminal_yaw: float = 5.0
-    speed: float = 50.0
-    curvature: float = 0.08
+    # position은 경로 횡방향(contour) 오차, along_track은 진행방향 오차다.
+    position: float = 20000.0
+    along_track: float = 150.0
+    yaw: float = 4.0
+    reverse_yaw_scale: float = 10.0
+    terminal_position: float = 2000.0
+    terminal_yaw: float = 12.0
+    speed: float = 2000.0
+    curvature: float = 0.02
     speed_rate: float = 1.0
     curvature_rate: float = 0.04
 
     def validate(self) -> None:
         values = (
             self.position,
+            self.along_track,
             self.yaw,
+            self.reverse_yaw_scale,
             self.terminal_position,
             self.terminal_yaw,
             self.speed,
@@ -380,6 +439,7 @@ class DifferentialDriveMpc:
         self.last_speed_mps = 0.0
         self.last_curvature_1pm = 0.0
         self._warm_start: np.ndarray | None = None
+<<<<<<< Updated upstream
         self._reset_forward_rejoin()
 
     def propagate_state(
@@ -404,6 +464,10 @@ class DifferentialDriveMpc:
             + offset * math.sin(next_yaw),
             yaw_rad=next_yaw,
         )
+=======
+        self._progress_initialized = False
+        self._cross_track_recovery_active = False
+>>>>>>> Stashed changes
 
     def set_path(self, points: Sequence[ReferencePoint]) -> None:
         if len(points) < 2:
@@ -499,7 +563,12 @@ class DifferentialDriveMpc:
         self.last_speed_mps = 0.0
         self.last_curvature_1pm = 0.0
         self._warm_start = None
+<<<<<<< Updated upstream
         self._reset_forward_rejoin()
+=======
+        self._progress_initialized = False
+        self._cross_track_recovery_active = False
+>>>>>>> Stashed changes
 
     def clear_path(self) -> None:
         self.path = ()
@@ -512,7 +581,12 @@ class DifferentialDriveMpc:
         self.last_speed_mps = 0.0
         self.last_curvature_1pm = 0.0
         self._warm_start = None
+<<<<<<< Updated upstream
         self._reset_forward_rejoin()
+=======
+        self._progress_initialized = False
+        self._cross_track_recovery_active = False
+>>>>>>> Stashed changes
 
     def restore_progress(self, progress_index: int) -> None:
         """동일 경로 재설정 뒤 저장한 진행도를 복원한다."""
@@ -566,10 +640,20 @@ class DifferentialDriveMpc:
             return self.stop("INVALID_POSE")
 
         if not self._progress_initialized:
+<<<<<<< Updated upstream
             # MPC를 경로 중간에서 재시작해도 제한된 forward window의 끝점을
             # 쫓지 않도록 첫 제어에서 현재 direction 구간 전체에 정렬한다.
             # 이후에는 progress가 경로를 건너뛰지 않도록 기존 window를 사용한다.
             self.progress_index = self._initial_nearest_index(state)
+=======
+            self.progress_index = min(
+                range(len(self.path)),
+                key=lambda index: (
+                    (self.path[index].x_m - state.x_m) ** 2
+                    + (self.path[index].y_m - state.y_m) ** 2
+                ),
+            )
+>>>>>>> Stashed changes
             self._progress_initialized = True
         else:
             self.progress_index = self._nearest_index(state)
@@ -630,6 +714,7 @@ class DifferentialDriveMpc:
                 clear_rejoin=True,
             )
 
+<<<<<<< Updated upstream
         segment_start = self._segment_start(self.progress_index)
         # 후진-전진-후진으로 구성된 3-point 주차에서 가운데 전진은
         # 이동 구간이 아니라 최종 후진축에 자세를 맞추는 정렬 구간이다.
@@ -677,10 +762,34 @@ class DifferentialDriveMpc:
         )
         path_curvature_limit = self._curvature_limit(
             base_references,
+=======
+        direction = self.path[self.progress_index].direction
+        nominal_speed = (
+            self.limits.forward_speed_mps
+            if direction > 0
+            else self.limits.reverse_speed_mps
+        )
+        minimum_tracking_speed = (
+            0.002
+            if direction > 0
+            else self.limits.min_reverse_tracking_speed_mps
+        )
+        reference_speed_magnitude = min(
+            nominal_speed,
+            max(
+                minimum_tracking_speed,
+                nominal_speed
+                * endpoint_distance
+                / self.limits.goal_slowdown_distance_m,
+            ),
+        )
+        references = self._reference_horizon(
+>>>>>>> Stashed changes
             self.progress_index,
             segment_end,
-            direction,
+            reference_speed_magnitude,
         )
+<<<<<<< Updated upstream
         curve_ratio = self._curve_ratio_from_limit(path_curvature_limit)
         forward_straight_tracking = (
             direction > 0
@@ -694,6 +803,44 @@ class DifferentialDriveMpc:
                 segment_start,
                 segment_end,
                 forward_straight_tracking,
+=======
+        tracking_reference_index = min(
+            self.progress_index + 1,
+            segment_end,
+        )
+        current_reference_curvature = float(
+            self._reference_curvature[tracking_reference_index]
+        )
+        curvature_limit = self.limits.max_curvature_1pm
+        reference = self.path[tracking_reference_index]
+        error_x = state.x_m - reference.x_m
+        error_y = state.y_m - reference.y_m
+        cross_track_error = (
+            -math.sin(reference.yaw_rad) * error_x
+            + math.cos(reference.yaw_rad) * error_y
+        )
+        heading_error = normalize_angle(reference.yaw_rad - state.yaw_rad)
+        if abs(cross_track_error) > 0.03:
+            self._cross_track_recovery_active = True
+        elif (
+            abs(cross_track_error) <= 0.005
+            and abs(heading_error)
+            <= self.limits.max_tracking_yaw_error_rad
+        ):
+            self._cross_track_recovery_active = False
+        allowed_yaw_error = (
+            self.limits.max_recovery_yaw_error_rad
+            if self._cross_track_recovery_active
+            else self.limits.max_tracking_yaw_error_rad
+        )
+        if abs(heading_error) > allowed_yaw_error:
+            return self.stop("HEADING_ERROR_TOO_LARGE")
+        self.last_curvature_1pm = float(
+            np.clip(
+                self.last_curvature_1pm,
+                -curvature_limit,
+                curvature_limit,
+>>>>>>> Stashed changes
             )
             rejoin_reference_speed_mps = segment_reference_speed_mps
             if self._forward_rejoin_active:
@@ -770,6 +917,7 @@ class DifferentialDriveMpc:
             direction,
             planned_curvature_rate,
         )
+<<<<<<< Updated upstream
         angular_constraint = NonlinearConstraint(
             self._angular_speed_margin,
             0.0,
@@ -1192,37 +1340,130 @@ class DifferentialDriveMpc:
             # 위치 노이즈나 비홀로노믹 종점 수렴 때문에 기본 전환 반경 바로
             # 밖에서 0속도 해에 굳으면, 충분히 가까울 때만 후진 구간으로 넘긴다.
             return self.stop("GEAR_CHANGE_REQUIRED", clear_rejoin=True)
+=======
+        effective_cross_track_gain = (
+            self.limits.cross_track_curvature_gain_1pm2
+            + self.limits.large_cross_track_gain_1pm3
+            * max(0.0, abs(cross_track_error) - 0.03)
+        )
+        effective_heading_gain = (
+            self.limits.heading_curvature_gain_1pm
+            + self.limits.near_path_heading_gain_1pm
+            * max(0.0, 1.0 - abs(cross_track_error) / 0.08)
+        )
+        desired_correction = (
+            -effective_cross_track_gain * cross_track_error
+            + direction
+            * effective_heading_gain
+            * heading_error
+        )
+        correction_limit = (
+            self.limits.max_cross_track_correction_curvature_1pm
+        )
+        desired_correction = float(
+            np.clip(
+                desired_correction,
+                -correction_limit,
+                correction_limit,
+            )
+        )
+        previous_correction = self._previous_curvature_correction(
+            current_reference_curvature
+        )
+        correction_delta = (
+            self.limits.max_curvature_rate_1pmps * self.limits.dt_sec
+        )
+        correction = float(
+            np.clip(
+                desired_correction,
+                previous_correction - correction_delta,
+                previous_correction + correction_delta,
+            )
+        )
+        curvature = float(
+            np.clip(
+                current_reference_curvature + correction,
+                -curvature_limit,
+                curvature_limit,
+            )
+        )
+        target_speed = (
+            reference_speed_magnitude
+            if direction > 0
+            else -reference_speed_magnitude
+        )
+        speed_delta = (
+            self.limits.max_acceleration_mps2 * self.limits.dt_sec
+        )
+        speed = float(
+            np.clip(
+                target_speed,
+                self.last_speed_mps - speed_delta,
+                self.last_speed_mps + speed_delta,
+            )
+        )
+        if direction > 0:
+            speed = float(
+                np.clip(speed, 0.0, self.limits.max_forward_speed_mps)
+            )
+        else:
+            speed = float(
+                np.clip(
+                    speed,
+                    -self.limits.max_reverse_speed_mps,
+                    -self.limits.min_reverse_tracking_speed_mps,
+                )
+            )
+>>>>>>> Stashed changes
         angular = speed * curvature
-        if abs(angular) > self.limits.max_angular_speed_radps + 1e-6:
-            return self.stop("SOLVER_ANGULAR_LIMIT")
+        if abs(angular) > self.limits.max_angular_speed_radps:
+            angular = math.copysign(
+                self.limits.max_angular_speed_radps,
+                angular,
+            )
+            curvature = angular / speed
 
         self.last_speed_mps = speed
         self.last_curvature_1pm = curvature
-        shifted = np.vstack((controls[1:], controls[-1]))
-        self._warm_start = shifted.reshape(-1)
+        self._warm_start = None
         return MpcCommand(
             linear_mps=speed,
             angular_radps=angular,
             curvature_1pm=curvature,
             progress_index=self.progress_index,
             status="TRACKING",
-            solve_time_sec=solve_time,
-            cost=float(result.fun),
+            solve_time_sec=0.0,
+            cost=(
+                self.weights.position * cross_track_error**2
+                + self.weights.yaw * heading_error**2
+            ),
         )
 
     def _nearest_index(self, state: VehicleState) -> int:
+<<<<<<< Updated upstream
         # 기어가 바뀐 직후에는 cusp 양쪽 점이 거의 같은 위치에 있다.
         # 검색 범위가 이전 direction 구간까지 넘어가면 전진 마지막점을 다시
         # 선택해 후진이 영원히 시작되지 않으므로 현재 segment 안으로 제한한다.
+=======
+        # 기어 전환 뒤에는 이전 direction block의 cusp가 공간상 더 가까워도
+        # 다시 선택하면 안 된다. 현재 block 안에서만 nearest를 탐색한다.
+>>>>>>> Stashed changes
         segment_start = self._segment_start(self.progress_index)
         start = max(
             segment_start,
             self.progress_index - self.limits.nearest_backward_window,
+<<<<<<< Updated upstream
         )
         stop = min(
             self._segment_end(self.progress_index) + 1,
             self.progress_index + self.limits.nearest_forward_window + 1,
+=======
+>>>>>>> Stashed changes
         )
+        # 차량의 현재 위치를 찾는 범위와 제어 lookahead를 혼동하지 않는다.
+        # 현재 direction block 전체에서 가장 가까운 점을 찾은 뒤, 실제
+        # 제어에는 그 바로 다음 한 점만 사용한다.
+        stop = self._segment_end(self.progress_index) + 1
         return min(
             range(start, stop),
             key=lambda index: (
@@ -1231,6 +1472,7 @@ class DifferentialDriveMpc:
             ),
         )
 
+<<<<<<< Updated upstream
     def _forward_path_projection(self, state: VehicleState) -> _PathProjection:
         """전진 rear path 선분에 현재 자세를 투영해 연속 진행도를 만든다."""
         segment_start = self._segment_start(self.progress_index)
@@ -1563,6 +1805,8 @@ class DifferentialDriveMpc:
             ),
         )
 
+=======
+>>>>>>> Stashed changes
     def _segment_start(self, start: int) -> int:
         direction = self.path[start].direction
         index = start
@@ -1633,6 +1877,7 @@ class DifferentialDriveMpc:
         self,
         start: int,
         segment_end: int,
+<<<<<<< Updated upstream
         *,
         start_s_m: float | None = None,
         apply_forward_rejoin: bool = False,
@@ -1668,6 +1913,17 @@ class DifferentialDriveMpc:
             target_s = min(
                 start_s + reference_speed * self.limits.dt_sec * step,
                 self._rear_arc_length[segment_end],
+=======
+        reference_speed_magnitude: float,
+    ) -> tuple[tuple[ReferencePoint, float], ...]:
+        start_s = self._arc_length[start]
+        references: list[tuple[ReferencePoint, float]] = []
+        for step in range(1, self.limits.horizon_steps + 1):
+            target_s = min(
+                start_s
+                + reference_speed_magnitude * self.limits.dt_sec * step,
+                self._arc_length[segment_end],
+>>>>>>> Stashed changes
             )
             if (
                 apply_forward_rejoin
@@ -1745,7 +2001,11 @@ class DifferentialDriveMpc:
         self,
         direction: int,
         references: Sequence[tuple[ReferencePoint, float]],
+<<<<<<< Updated upstream
         curvature_rate_1pmps: float | None = None,
+=======
+        current_reference_curvature: float,
+>>>>>>> Stashed changes
     ) -> np.ndarray:
         if self._warm_start is not None:
             controls = self._warm_start.copy().reshape(-1, 2)
@@ -1774,20 +2034,23 @@ class DifferentialDriveMpc:
             else curvature_rate_1pmps
         ) * self.limits.dt_sec
         previous_speed = self.last_speed_mps
-        previous_curvature = self.last_curvature_1pm
+        previous_correction = self._previous_curvature_correction(
+            current_reference_curvature
+        )
         for index, (_, reference_curvature) in enumerate(references):
             controls[index, 0] = np.clip(
                 controls[index, 0],
                 previous_speed - deceleration_delta,
                 previous_speed + acceleration_delta,
             )
-            controls[index, 1] = np.clip(
-                reference_curvature,
-                previous_curvature - curvature_delta,
-                previous_curvature + curvature_delta,
+            correction = np.clip(
+                0.0,
+                previous_correction - curvature_delta,
+                previous_correction + curvature_delta,
             )
+            controls[index, 1] = reference_curvature + correction
             previous_speed = controls[index, 0]
-            previous_curvature = controls[index, 1]
+            previous_correction = correction
         return controls.reshape(-1)
 
     def _curvature_limit(
@@ -1800,6 +2063,7 @@ class DifferentialDriveMpc:
         # 후진 주차는 실차에서 검증된 기존 최대 곡률을 그대로 사용한다.
         if direction < 0:
             return self.limits.max_curvature_1pm
+<<<<<<< Updated upstream
         near_references = references[
             : min(self.limits.straight_lookahead_points, len(references))
         ]
@@ -1807,6 +2071,12 @@ class DifferentialDriveMpc:
             0,
             progress_index - self.limits.straight_history_points,
         )
+=======
+        # Horizon 안에 코너가 보이면 직선용 3 1/m 제한을 미리 해제한다.
+        # 앞의 네 점만 확인하면 16cm 반경 코너 진입 직후까지 조향이 늦었다.
+        near_references = references
+        recent_start = max(0, progress_index - 12)
+>>>>>>> Stashed changes
         recent_curvature = self._reference_curvature[
             recent_start : progress_index + 1
         ]
@@ -1948,7 +2218,8 @@ class DifferentialDriveMpc:
         if direction > 0:
             speed_lower, speed_upper = 0.0, self.limits.max_forward_speed_mps
         else:
-            speed_lower, speed_upper = -self.limits.max_reverse_speed_mps, 0.0
+            speed_lower = -self.limits.max_reverse_speed_mps
+            speed_upper = -self.limits.min_reverse_tracking_speed_mps
         lower = np.tile(
             (speed_lower, -curvature_limit),
             self.limits.horizon_steps,
@@ -1961,8 +2232,13 @@ class DifferentialDriveMpc:
 
     def _rate_constraint(
         self,
+<<<<<<< Updated upstream
         direction: int,
         curvature_rate_1pmps: float | None = None,
+=======
+        references: Sequence[tuple[ReferencePoint, float]],
+        current_reference_curvature: float,
+>>>>>>> Stashed changes
     ) -> LinearConstraint:
         horizon = self.limits.horizon_steps
         matrix = np.zeros((2 * horizon, 2 * horizon), dtype=np.float64)
@@ -1973,6 +2249,7 @@ class DifferentialDriveMpc:
             if direction > 0
             else self.limits.max_acceleration_mps2
         )
+<<<<<<< Updated upstream
         acceleration_delta = acceleration_limit * self.limits.dt_sec
         deceleration_delta = (
             self.limits.max_acceleration_mps2 * self.limits.dt_sec
@@ -1982,12 +2259,20 @@ class DifferentialDriveMpc:
             if curvature_rate_1pmps is None
             else curvature_rate_1pmps
         ) * self.limits.dt_sec
+=======
+        previous_reference_curvature = current_reference_curvature
+        previous_correction = self._previous_curvature_correction(
+            current_reference_curvature
+        )
+>>>>>>> Stashed changes
         for step in range(horizon):
+            reference_curvature = references[step][1]
             speed_row = 2 * step
             curvature_row = speed_row + 1
             matrix[speed_row, 2 * step] = 1.0
             matrix[curvature_row, 2 * step + 1] = 1.0
             if step == 0:
+<<<<<<< Updated upstream
                 lower[speed_row] = (
                     self.last_speed_mps - deceleration_delta
                 )
@@ -2004,7 +2289,23 @@ class DifferentialDriveMpc:
                 lower[curvature_row], upper[curvature_row] = (
                     -curvature_delta,
                     curvature_delta,
+=======
+                lower[speed_row] = self.last_speed_mps - speed_delta
+                upper[speed_row] = self.last_speed_mps + speed_delta
+                correction_center = reference_curvature + previous_correction
+                lower[curvature_row] = correction_center - curvature_delta
+                upper[curvature_row] = correction_center + curvature_delta
+            else:
+                matrix[speed_row, 2 * (step - 1)] = -1.0
+                matrix[curvature_row, 2 * (step - 1) + 1] = -1.0
+                lower[speed_row], upper[speed_row] = -speed_delta, speed_delta
+                reference_change = (
+                    reference_curvature - previous_reference_curvature
+>>>>>>> Stashed changes
                 )
+                lower[curvature_row] = reference_change - curvature_delta
+                upper[curvature_row] = reference_change + curvature_delta
+            previous_reference_curvature = reference_curvature
         return LinearConstraint(matrix, lower, upper)
 
     def _angular_speed_margin(self, flat_controls: np.ndarray) -> np.ndarray:
@@ -2035,7 +2336,13 @@ class DifferentialDriveMpc:
         state: VehicleState,
         references: Sequence[tuple[ReferencePoint, float]],
         direction: int,
+<<<<<<< Updated upstream
         reference_speed_mps: float | None = None,
+=======
+        reference_speed_magnitude: float,
+        current_reference_curvature: float,
+        horizon_reaches_endpoint: bool,
+>>>>>>> Stashed changes
     ) -> float:
         controls = np.asarray(flat_controls, dtype=np.float64).reshape(-1, 2)
         offset = self.limits.control_point_offset_m
@@ -2046,6 +2353,7 @@ class DifferentialDriveMpc:
         x = state.x_m - offset * math.cos(yaw)
         y = state.y_m - offset * math.sin(yaw)
         reference_speed = (
+<<<<<<< Updated upstream
             (
                 self.limits.forward_speed_mps
                 if direction > 0
@@ -2053,18 +2361,27 @@ class DifferentialDriveMpc:
             )
             if reference_speed_mps is None
             else math.copysign(abs(reference_speed_mps), direction)
+=======
+            reference_speed_magnitude
+            if direction > 0
+            else -reference_speed_magnitude
+>>>>>>> Stashed changes
         )
         cost = 0.0
         previous_speed = self.last_speed_mps
-        previous_curvature = self.last_curvature_1pm
+        previous_curvature_correction = self._previous_curvature_correction(
+            current_reference_curvature
+        )
         for index, ((speed, curvature), reference_data) in enumerate(
             zip(controls, references)
         ):
             reference, reference_curvature = reference_data
+            curvature_correction = curvature - reference_curvature
             angular = speed * curvature
             x += self.limits.dt_sec * speed * math.cos(yaw)
             y += self.limits.dt_sec * speed * math.sin(yaw)
             yaw = normalize_angle(yaw + self.limits.dt_sec * angular)
+<<<<<<< Updated upstream
             if direction > 0:
                 control_x = x + offset * math.cos(yaw)
                 control_y = y + offset * math.sin(yaw)
@@ -2121,19 +2438,62 @@ class DifferentialDriveMpc:
                 )
             else:
                 position_error = error_x**2 + error_y**2
+=======
+            error_x = x - reference.x_m
+            error_y = y - reference.y_m
+            tangent_cos = math.cos(reference.yaw_rad)
+            tangent_sin = math.sin(reference.yaw_rad)
+            along_track_error = (
+                tangent_cos * error_x + tangent_sin * error_y
+            )
+            cross_track_error = (
+                -tangent_sin * error_x + tangent_cos * error_y
+            )
+            yaw_error = normalize_angle(yaw - reference.yaw_rad)
+>>>>>>> Stashed changes
             terminal = index == len(references) - 1
+            if terminal and horizon_reaches_endpoint:
+                position_cost = self.weights.terminal_position * (
+                    cross_track_error**2 + along_track_error**2
+                )
+            else:
+                # 경로점을 직접 쫓지 않고 경로의 접선 방향을 따라가게 한다.
+                # 진행방향 오차보다 횡오차에 더 큰 비용을 주어 좌우 왕복을
+                # 줄이면서도 선을 따라 자연스럽게 전진한다.
+                position_cost = (
+                    self.weights.position * cross_track_error**2
+                    + self.weights.along_track * along_track_error**2
+                )
             cost += (
-                (self.weights.terminal_position if terminal else self.weights.position)
-                * position_error
-                + (self.weights.terminal_yaw if terminal else self.weights.yaw)
+                position_cost
+                + (
+                    self.weights.terminal_yaw
+                    if terminal
+                    else self.weights.yaw
+                )
+                * (self.weights.reverse_yaw_scale if direction < 0 else 1.0)
                 * yaw_error**2
                 + self.weights.speed * (speed - reference_speed) ** 2
                 + self.weights.curvature
-                * (curvature - reference_curvature) ** 2
+                * curvature_correction**2
                 + self.weights.speed_rate * (speed - previous_speed) ** 2
                 + self.weights.curvature_rate
-                * (curvature - previous_curvature) ** 2
+                * (
+                    curvature_correction
+                    - previous_curvature_correction
+                )
+                ** 2
             )
             previous_speed = speed
-            previous_curvature = curvature
+            previous_curvature_correction = curvature_correction
         return float(cost)
+
+    def _previous_curvature_correction(
+        self,
+        current_reference_curvature: float,
+    ) -> float:
+        # 정지 중 curvature는 실제 차체 조향 상태를 뜻하지 않는다. 시작,
+        # 기어 전환, 안전정지 복귀 때는 경로 feed-forward를 바로 적용한다.
+        if abs(self.last_speed_mps) <= 1e-9:
+            return 0.0
+        return self.last_curvature_1pm - current_reference_curvature

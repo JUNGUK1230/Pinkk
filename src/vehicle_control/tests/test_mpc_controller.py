@@ -759,9 +759,13 @@ def main() -> int:
     ) = simulate(
         controller,
         state,
+<<<<<<< Updated upstream
         # Precision tuning deliberately slows down once lateral error exceeds
         # 0.5 cm, so the complete four-segment parking route needs more steps.
         maximum_steps=900,
+=======
+        maximum_steps=600,
+>>>>>>> Stashed changes
     )
     final = path[-1]
     final_error = math.hypot(
@@ -852,6 +856,116 @@ def main() -> int:
         abs(gentle_command.curvature_1pm)
         <= straight_guard.limits.straight_max_curvature_1pm + 1e-6
     )
+
+    # 3cm 횡오차, 카메라 위치 흔들림, 0.3초 구동계 yaw 지연이 있어도
+    # 중심선을 넘나드는 점 추종 진동 없이 한쪽에서 부드럽게 수렴해야 한다.
+    straight_path = [
+        ReferencePoint(index * 0.005, 0.0, 0.0, 1)
+        for index in range(201)
+    ]
+    contour_guard = DifferentialDriveMpc()
+    contour_guard.set_path(straight_path)
+    contour_x, contour_y, contour_yaw = 0.0, 0.03, 0.0
+    actual_angular_speed = 0.0
+    contour_curvatures: list[float] = []
+    for contour_step in range(70):
+        camera_noise = (
+            0.003 * math.sin(contour_step * 2.4)
+            + 0.0015 * math.sin(contour_step * 0.37)
+        )
+        contour_command = contour_guard.command(
+            VehicleState(
+                contour_x,
+                contour_y + camera_noise,
+                contour_yaw,
+            )
+        )
+        assert contour_command.status == "TRACKING"
+        contour_curvatures.append(contour_command.curvature_1pm)
+        dt = contour_guard.limits.dt_sec
+        actuator_alpha = min(1.0, dt / 0.30)
+        actual_angular_speed += actuator_alpha * (
+            1.35 * contour_command.angular_radps - actual_angular_speed
+        )
+        contour_x += (
+            dt * contour_command.linear_mps * math.cos(contour_yaw)
+        )
+        contour_y += (
+            dt * contour_command.linear_mps * math.sin(contour_yaw)
+        )
+        contour_yaw = normalize_angle(
+            contour_yaw + dt * actual_angular_speed
+        )
+        assert contour_y >= -1e-4
+    curvature_sign_changes = sum(
+        first * second < 0.0 and abs(first - second) > 0.20
+        for first, second in zip(
+            contour_curvatures,
+            contour_curvatures[1:],
+        )
+    )
+    assert contour_y <= 0.01
+    assert curvature_sign_changes <= 2
+
+    # 사진처럼 경로에서 13cm 벗어난 경우에는 복귀 모드가 큰 조향을
+    # 허용하되 중심선 반대편으로 넘어가지 않고 1cm 안으로 들어와야 한다.
+    recovery_guard = DifferentialDriveMpc()
+    recovery_guard.set_path(straight_path)
+    recovery_x, recovery_y, recovery_yaw = 0.0, 0.13, 0.0
+    recovery_angular_speed = 0.0
+    for recovery_step in range(100):
+        camera_noise = (
+            0.003 * math.sin(recovery_step * 2.4)
+            + 0.0015 * math.sin(recovery_step * 0.37)
+        )
+        recovery_command = recovery_guard.command(
+            VehicleState(
+                recovery_x,
+                recovery_y + camera_noise,
+                recovery_yaw,
+            )
+        )
+        assert recovery_command.status == "TRACKING"
+        dt = recovery_guard.limits.dt_sec
+        actuator_alpha = min(1.0, dt / 0.30)
+        recovery_angular_speed += actuator_alpha * (
+            1.35 * recovery_command.angular_radps
+            - recovery_angular_speed
+        )
+        recovery_x += (
+            dt * recovery_command.linear_mps * math.cos(recovery_yaw)
+        )
+        recovery_y += (
+            dt * recovery_command.linear_mps * math.sin(recovery_yaw)
+        )
+        recovery_yaw = normalize_angle(
+            recovery_yaw + dt * recovery_angular_speed
+        )
+        assert recovery_y >= -1e-4
+        if recovery_y <= 0.005:
+            break
+    assert recovery_y <= 0.01
+
+    # 카메라 pose가 여러 경로점만큼 이동해도 현재 위치는 따라잡되, 제어
+    # reference 자체는 controller 내부에서 바로 다음 한 점만 사용한다.
+    progress_guard = DifferentialDriveMpc()
+    progress_guard.set_path(straight_path)
+    progress_guard.command(
+        VehicleState(
+            straight_path[0].x_m,
+            straight_path[0].y_m,
+            straight_path[0].yaw_rad,
+        )
+    )
+    progress_guard.command(
+        VehicleState(
+            straight_path[100].x_m,
+            straight_path[100].y_m,
+            straight_path[100].yaw_rad,
+        )
+    )
+    assert abs(progress_guard.progress_index - 100) <= 1
+
     wrong_heading = VehicleState(
         start.x_m,
         start.y_m,
@@ -871,6 +985,130 @@ def main() -> int:
     assert abs(guarded_command.curvature_1pm - previous_curvature) <= (
         guarded_rate * straight_guard.limits.dt_sec + 1e-9
     )
+
+    # 곡률 제한이 큰 코너에서도 heading 오류를 무시하고 다시 출발하면 안 된다.
+    curve_guard = DifferentialDriveMpc()
+    curve_guard.set_path(path)
+    curve_guard.progress_index = 220
+    curve_reference = path[223]
+    curve_wrong_heading = VehicleState(
+        curve_reference.x_m,
+        curve_reference.y_m,
+        normalize_angle(curve_reference.yaw_rad - math.radians(45.0)),
+    )
+    curve_guarded_command = curve_guard.command(curve_wrong_heading)
+    assert curve_guarded_command.status == "HEADING_ERROR_TOO_LARGE"
+    assert curve_guarded_command.linear_mps == 0.0
+
+    # START→C2 첫 16cm 반경 코너 입구에서는 첫 주기에 완화된 변화율
+    # 한계까지 반응하고, 다음 주기에 곡률을 계속 높여야 한다.
+    preview_guard = DifferentialDriveMpc()
+    preview_guard.set_path(path)
+    preview_guard.progress_index = 230
+    corner_entry = path[235]
+    preview_command = preview_guard.command(
+        VehicleState(corner_entry.x_m, corner_entry.y_m, corner_entry.yaw_rad)
+    )
+    assert preview_command.status == "TRACKING"
+    assert preview_command.curvature_1pm >= 1.5
+    next_corner = path[236]
+    next_preview_command = preview_guard.command(
+        VehicleState(next_corner.x_m, next_corner.y_m, next_corner.yaw_rad)
+    )
+    assert next_preview_command.status == "TRACKING"
+    assert next_preview_command.curvature_1pm >= 3.0
+
+    # 전진 cusp에서 정지한 뒤에는 제자리 회전 없이 후진 명령만 내보내 C2
+    # 최종 pose까지 도달해야 한다.
+    reverse_start_index = next(
+        index
+        for index in range(1, len(path))
+        if path[index - 1].direction > 0 and path[index].direction < 0
+    )
+    reverse_controller = DifferentialDriveMpc()
+    reverse_controller.set_path(path)
+    # 전방 장애물에 더 접근하지 않도록 cusp 약 2.5cm 전에서 조기 전환한다.
+    early_gear_index = reverse_start_index - 6
+    reverse_state = VehicleState(
+        path[early_gear_index].x_m,
+        path[early_gear_index].y_m,
+        path[early_gear_index].yaw_rad,
+    )
+    assert (
+        reverse_controller.command(reverse_state).status
+        == "GEAR_CHANGE_REQUIRED"
+    )
+    assert reverse_controller.advance_gear_segment()
+    for reverse_steps in range(300):
+        reverse_command = reverse_controller.command(reverse_state)
+        if reverse_command.status == "GOAL_REACHED":
+            break
+        assert reverse_command.status == "TRACKING"
+        assert reverse_command.linear_mps < 0.0
+        assert abs(reverse_command.angular_radps) > 0.0
+        reverse_state = VehicleState(
+            reverse_state.x_m
+            + reverse_controller.limits.dt_sec
+            * reverse_command.linear_mps
+            * math.cos(reverse_state.yaw_rad),
+            reverse_state.y_m
+            + reverse_controller.limits.dt_sec
+            * reverse_command.linear_mps
+            * math.sin(reverse_state.yaw_rad),
+            normalize_angle(
+                reverse_state.yaw_rad
+                + reverse_controller.limits.dt_sec
+                * reverse_command.angular_radps
+            ),
+        )
+    else:
+        raise AssertionError("reverse-only C2 maneuver did not reach the goal")
+    assert (
+        math.hypot(
+            path[-1].x_m - reverse_state.x_m,
+            path[-1].y_m - reverse_state.y_m,
+        )
+        <= reverse_controller.limits.goal_position_tolerance_m
+    )
+
+    # C2 후진 원호는 20cm 반경이라 기준 곡률 5 1/m 밖에 사용하지 않는다.
+    # 실제 차의 heading이 20도 늦어져도 남은 조향 여유로 복귀해야 한다.
+    lagged_controller = DifferentialDriveMpc()
+    reverse_path = path[reverse_start_index:]
+    lagged_controller.set_path(reverse_path)
+    lagged_reference = reverse_path[12]
+    lagged_state = VehicleState(
+        lagged_reference.x_m,
+        lagged_reference.y_m,
+        normalize_angle(lagged_reference.yaw_rad - math.radians(20.0)),
+    )
+    lagged_initial_error = math.radians(20.0)
+    minimum_lagged_error = lagged_initial_error
+    for lagged_steps in range(300):
+        lagged_command = lagged_controller.command(lagged_state)
+        if lagged_command.status == "GOAL_REACHED":
+            break
+        assert lagged_command.status == "TRACKING"
+        lagged_error = abs(
+            normalize_angle(
+                reverse_path[lagged_command.progress_index].yaw_rad
+                - lagged_state.yaw_rad
+            )
+        )
+        minimum_lagged_error = min(minimum_lagged_error, lagged_error)
+        dt = lagged_controller.limits.dt_sec
+        lagged_state = VehicleState(
+            lagged_state.x_m
+            + dt * lagged_command.linear_mps * math.cos(lagged_state.yaw_rad),
+            lagged_state.y_m
+            + dt * lagged_command.linear_mps * math.sin(lagged_state.yaw_rad),
+            normalize_angle(
+                lagged_state.yaw_rad + dt * lagged_command.angular_radps
+            ),
+        )
+    else:
+        raise AssertionError("lagged reverse C2 maneuver did not reach the goal")
+    assert minimum_lagged_error <= math.radians(5.0)
 
     flat_path = [
         value
@@ -920,7 +1158,11 @@ def main() -> int:
     assert invalid_front is None and invalid_rear is None
 
     nonzero_solves = [value for value in solve_times if value > 0.0]
-    median_solve = statistics.median(nonzero_solves)
+    median_solve = (
+        statistics.median(nonzero_solves)
+        if nonzero_solves
+        else 0.0
+    )
     assert median_solve < controller.limits.dt_sec
     print("Differential-drive MPC START -> C2 simulation passed")
     print(f"Steps: {steps}, gear changes: {gear_changes}")
@@ -931,6 +1173,12 @@ def main() -> int:
         f"Maximum cross-track error: {maximum_cross_track_error * 100.0:.2f} cm"
     )
     print(f"Median solve time: {median_solve * 1000.0:.1f} ms")
+    print(f"Reverse-only C2 maneuver: {reverse_steps} steps")
+    print(
+        "Lagged reverse recovery: "
+        f"{lagged_steps} steps, minimum heading error "
+        f"{math.degrees(minimum_lagged_error):.1f} deg"
+    )
     return 0
 
 
