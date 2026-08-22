@@ -22,6 +22,7 @@ from vehicle_control.fused_pose_estimator import (  # noqa: E402
     motion_heading_correction_allowed,
     motion_heading_correction_enabled,
     odom_delta_to_map,
+    route_heading_correction_locked,
 )
 
 
@@ -124,6 +125,13 @@ def main() -> int:
     assert not motion_heading_correction_allowed(-0.20, 0.05)
     assert not motion_heading_correction_enabled(1, 0.20, 0.05)
     assert motion_heading_correction_enabled(-1, 0.20, 0.05)
+
+    assert route_heading_correction_locked(
+        (1.0, 2.0), (1.20, 2.00), 0.30
+    )
+    assert not route_heading_correction_locked(
+        (1.0, 2.0), (1.30, 2.00), 0.30
+    )
 
     # ROS odom의 전진/좌측 이동량을 시계방향 image-map 축으로 옮긴다.
     # map에서 차량이 아래(+90도)를 볼 때 전진은 +y, 차량 좌측은 +x다.

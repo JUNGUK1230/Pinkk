@@ -87,6 +87,20 @@ def motion_heading_correction_enabled(
     )
 
 
+def route_heading_correction_locked(
+    anchor_position_m: tuple[float, float] | None,
+    current_position_m: tuple[float, float] | None,
+    lock_distance_m: float,
+) -> bool:
+    """경로 yaw로 출발한 직후 LiDAR 절대 yaw 보정을 잠글지 판정한다."""
+    if anchor_position_m is None or current_position_m is None:
+        return False
+    return math.hypot(
+        current_position_m[0] - anchor_position_m[0],
+        current_position_m[1] - anchor_position_m[1],
+    ) < lock_distance_m
+
+
 class FusedPoseEstimator(Node):
     def __init__(self) -> None:
         super().__init__("pinkk_fused_pose_estimator")
@@ -156,6 +170,9 @@ class FusedPoseEstimator(Node):
         )
         self._route_heading_anchor_max_distance_m = self._positive(
             "route_heading_anchor_max_distance_m"
+        )
+        self._route_heading_correction_lock_distance_m = self._positive(
+            "route_heading_correction_lock_distance_m"
         )
         self._heading_reset_position_jump_m = self._positive(
             "heading_reset_position_jump_m"
@@ -279,6 +296,7 @@ class FusedPoseEstimator(Node):
         self._lidar_only_yaw_rad: float | None = None
         self._heading_prior_rad: float | None = None
         self._heading_prior_position_m: tuple[float, float] | None = None
+        self._route_heading_anchor_position_m: tuple[float, float] | None = None
         self._trajectory_signature: tuple[float, ...] | None = None
         self._motion_anchor_m: tuple[float, float] | None = None
         self._motion_yaw_rad: float | None = None
@@ -364,6 +382,10 @@ class FusedPoseEstimator(Node):
             # LiDAR 정합을 수행해 직선 벽의 180도 모호성을 제거한다.
             "initial_search_half_width_deg": 15.0,
             "route_heading_anchor_max_distance_m": 0.15,
+            # 출발 직후에는 route 첫 yaw를 유지한다. 이 거리만큼 이동한 뒤
+            # LiDAR 절대 heading 보정을 허용해 초기 정합의 국소 오차가
+            # 첫 직선에서 조향으로 바뀌지 않게 한다.
+            "route_heading_correction_lock_distance_m": 0.30,
             "lidar_correction_alpha": 0.15,
             "lidar_only_yaw_alpha": 0.35,
             "heading_reset_position_jump_m": 0.20,
@@ -443,6 +465,7 @@ class FusedPoseEstimator(Node):
             self._last_match = None
             self._odom_origin_yaw_rad = None
             self._map_origin_yaw_rad = None
+            self._route_heading_anchor_position_m = None
             self._motion_anchor_m = None
             self._motion_yaw_rad = None
             self._last_motion_heading_monotonic = None
@@ -738,6 +761,7 @@ class FusedPoseEstimator(Node):
         # drift 보정은 허용 오차 안의 LiDAR 정합만 반영한다.
         self._odom_origin_yaw_rad = self._odom_yaw_rad
         self._map_origin_yaw_rad = self._heading_prior_rad
+        self._route_heading_anchor_position_m = self._position_m
         self._log_status(
             "ROUTE_HEADING_INITIALIZED_"
             f"yaw={math.degrees(self._heading_prior_rad):.1f}deg"
@@ -871,6 +895,18 @@ class FusedPoseEstimator(Node):
                     "LIDAR_CORRECTION_REJECTED_"
                     f"error={math.degrees(correction):.1f}deg"
                 )
+                return
+            if route_heading_correction_locked(
+                self._route_heading_anchor_position_m,
+                self._position_m,
+                self._route_heading_correction_lock_distance_m,
+            ):
+                # 시작 pose는 고정 경로의 첫 yaw로 이미 정렬돼 있다. LiDAR
+                # 지도에서 첫 local minimum이 몇 도 비켜도 출발 직선에
+                # 즉시 반영하지 않고, 충분히 이동한 뒤부터 보정한다.
+                self._last_match = match
+                self._last_lidar_heading_monotonic = time.monotonic()
+                self._log_status("LIDAR_CORRECTION_LOCKED_ROUTE_START")
                 return
             self._map_origin_yaw_rad = (
                 self._map_origin_yaw_rad

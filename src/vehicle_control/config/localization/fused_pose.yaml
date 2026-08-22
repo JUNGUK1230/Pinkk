@@ -67,6 +67,9 @@
     # odom 기준을 먼저 잡는다. LiDAR 정합이 탐색 범위 끝의 잘못된 각도를
     # 선택해 출발 직후 급조향하는 현상을 막고 이후 LiDAR 보정은 계속 사용한다.
     route_heading_anchor_max_distance_m: 0.15
+    # 경로 첫 yaw로 출발한 뒤 30cm 동안은 LiDAR yaw 보정을 적용하지 않는다.
+    # 초기 LiDAR 정합의 국소 오차가 첫 직선에서 급조향을 만드는 것을 막는다.
+    route_heading_correction_lock_distance_m: 0.30
     lidar_correction_alpha: 0.15
     lidar_only_yaw_alpha: 0.35
     # e 키로 ego 차량이 바뀌어 카메라 위치가 크게 뛰면 전역 yaw를 다시 찾는다.
