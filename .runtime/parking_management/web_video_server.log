@@ -1,15 +1,11 @@
-[INFO] [1785467288.857774031] [web_video_server]: Loading streamer plugin: web_video_server/stream/h264
-[INFO] [1785467288.922377787] [web_video_server]: Loading streamer plugin: web_video_server/stream/mjpeg
-[INFO] [1785467288.922427050] [web_video_server]: Loading streamer plugin: web_video_server/stream/png
-[INFO] [1785467288.922434534] [web_video_server]: Loading streamer plugin: web_video_server/stream/ros_compressed
-[INFO] [1785467288.922440776] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp8
-[INFO] [1785467288.922447689] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp9
-[INFO] [1785467288.922459812] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/jpeg
-[INFO] [1785467288.922521778] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/png
-[INFO] [1785467288.922527970] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/ros_compressed
-[INFO] [1785467288.922609914] [web_video_server]: Waiting For connections on 0.0.0.0:8080
-[INFO] [1785467291.106747835] [web_video_server]: Handling Request: /stream?topic=/pinkk/localization/image&t=1785467291103
-[INFO] [1785467291.107129944] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/localization/image with QoS profile default
-[INFO] [1785467291.116582842] [web_video_server]: Handling Request: /stream?topic=/pinkk/lidar_map/image&t=1785467291103
-[INFO] [1785467291.116879590] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/lidar_map/image with QoS profile default
-[INFO] [1785467302.771495334] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [1787034549.389114063] [web_video_server]: Loading streamer plugin: web_video_server/stream/h264
+[INFO] [1787034549.452736167] [web_video_server]: Loading streamer plugin: web_video_server/stream/mjpeg
+[INFO] [1787034549.452793614] [web_video_server]: Loading streamer plugin: web_video_server/stream/png
+[INFO] [1787034549.452801929] [web_video_server]: Loading streamer plugin: web_video_server/stream/ros_compressed
+[INFO] [1787034549.452812970] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp8
+[INFO] [1787034549.452820614] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp9
+[INFO] [1787034549.452828759] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/jpeg
+[INFO] [1787034549.452892518] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/png
+[INFO] [1787034549.452901084] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/ros_compressed
+[INFO] [1787034549.452975852] [web_video_server]: Waiting For connections on 0.0.0.0:8080
+[INFO] [1787034552.230518436] [rclcpp]: signal_handler(SIGINT/SIGTERM)

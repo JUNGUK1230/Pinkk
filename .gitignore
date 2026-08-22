@@ -19,6 +19,7 @@ log/
 *.pth
 *.onnx
 *.engine
+*.log
 
 # PyTorch checkpoints are ZIP archives. Ignore accidental manual extraction
 # beside the model file (for example models/best/data/*).
@@ -36,3 +37,7 @@ src/central_control/path_planning/output/live_hybrid_path_camera_bev.csv
 src/central_control/path_planning/output/live_hybrid_path_world_cm.json
 src/central_control/path_planning/output/live_hybrid_planning_status.json
 src/central_control/path_planning/output/live_hybrid_path_on_camera_bev.png
+.runtime/parking_management/web.log
+.runtime/parking_management/rosbridge.log
+.runtime/parking_management/localization.log
+.runtime/parking_management/web_video_server.log

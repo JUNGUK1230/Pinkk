@@ -1,15 +1,5 @@
-[INFO] [launch]: All log files can be found below /home/junguk/.ros/log/2026-07-31-12-08-08-894658-junguk-Cyborg-A15-AI-B2HWFKG-1046682
+[INFO] [launch]: All log files can be found below /home/kukjiho/.ros/log/2026-08-18-15-29-29-220989-kukjiho-Cyborg-A15-AI-B2HWFKG-17798
 [INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [rosbridge_websocket-1]: process started with pid [1046748]
-[INFO] [rosapi_node-2]: process started with pid [1046749]
-[rosbridge_websocket-1] [INFO] [1785467289.388494382] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
-[rosbridge_websocket-1] [INFO] [1785467291.118232254] [rosbridge_websocket]: Calling services in new thread
-[rosbridge_websocket-1] [INFO] [1785467291.118740460] [rosbridge_websocket]: Sending action goals in new thread
-[rosbridge_websocket-1] [INFO] [1785467291.119766309] [rosbridge_websocket]: Client connected. 1 clients total.
-[rosbridge_websocket-1] [INFO] [1785467291.122849718] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky1/battery/percent
-[rosbridge_websocket-1] [INFO] [1785467291.125132291] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky1/battery/voltage
-[rosbridge_websocket-1] [INFO] [1785467291.126940151] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky2/battery/percent
-[rosbridge_websocket-1] [INFO] [1785467291.129310730] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinky2/battery/voltage
-[rosbridge_websocket-1] [INFO] [1785467291.131225551] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinkk/management/status
-[rosbridge_websocket-1] [INFO] [1785467291.132892837] [rosbridge_websocket]: [Client 4c58a07b-1876-4391-a1db-528c2683a5d3] Subscribed to /pinkk/management/events
-[rosbridge_websocket-1] [INFO] [1785467301.355773092] [rosbridge_websocket]: Client disconnected. 0 clients total.
+[INFO] [rosbridge_websocket-1]: process started with pid [17803]
+[INFO] [rosapi_node-2]: process started with pid [17804]
+[rosbridge_websocket-1] [INFO] [1787034569.706177919] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
