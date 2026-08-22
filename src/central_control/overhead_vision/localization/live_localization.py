@@ -281,6 +281,30 @@ class IntegratedPlanningController:
         self._collect_finished()
         if scene.vehicle is None:
             return
+        if self.outcome is not None and self._active_key is not None:
+            trajectory = tuple(getattr(self.outcome, "trajectory", ()))
+            if not trajectory:
+                self.invalidate()
+                return
+            goal = trajectory[-1]
+            goal_distance_cm = math.hypot(
+                float(getattr(goal, "x_cm")) - scene.vehicle.center_cm[0],
+                float(getattr(goal, "y_cm")) - scene.vehicle.center_cm[1],
+            )
+            if goal_distance_cm <= self.completion_radius_cm:
+                self.invalidate()
+                return
+            if route_revision == self._active_key[2]:
+                # 출발 후에는 YOLO/점유 상태가 잠깐 흔들리거나 다른 목표가
+                # 추천돼도 현재 목적지와 trajectory를 유지한다. 운영자의 p/e,
+                # 충전 완료처럼 revision을 올린 명시적 전환만 경로를 바꾼다.
+                return
+        if (
+            self._future is not None
+            and self._active_key is not None
+            and route_revision == self._active_key[2]
+        ):
+            return
         if scene.planning_request is None:
             if (
                 self.outcome is not None
@@ -637,6 +661,7 @@ def build_localizer(
     charge_coordinator = ChargeEpisodeCoordinator(
         tuple(str(slot) for slot in charge_priority_value)
     )
+    vehicle_min_confidence = float(config.get("car_confidence", 0.5))
     return (
         SceneLocalizer(
             tracker,
@@ -646,6 +671,7 @@ def build_localizer(
             target_slot_name=target_slot_name,
             parking_assignment=parking_assignment,
             post_charge_parking_assignment=post_charge_parking_assignment,
+            vehicle_min_confidence=vehicle_min_confidence,
         ),
         transform,
     )
@@ -1189,9 +1215,24 @@ def main() -> int:
             f"got {car_confidence}"
         )
         return 1
+    occupancy_car_confidence = float(
+        config.get("occupancy_car_confidence", config["confidence"])
+    )
+    if (
+        not math.isfinite(occupancy_car_confidence)
+        or not 0.0 <= occupancy_car_confidence <= car_confidence
+    ):
+        print(
+            "ERROR: occupancy_car_confidence must be finite and between 0 "
+            f"and car_confidence ({car_confidence}), "
+            f"got {occupancy_car_confidence}"
+        )
+        return 1
     print(
         "Detection confidence: "
-        f"base={float(config['confidence']):.2f}, car={car_confidence:.2f}"
+        f"base={float(config['confidence']):.2f}, "
+        f"occupancy_car={occupancy_car_confidence:.2f}, "
+        f"ego_car={car_confidence:.2f}"
     )
     if static_bev is None:
         warmup_image = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
@@ -1274,7 +1315,9 @@ def main() -> int:
             )[0]
             detections = detections_from_result(
                 result,
-                minimum_confidence_by_class={"car": car_confidence},
+                minimum_confidence_by_class={
+                    "car": occupancy_car_confidence,
+                },
             )
             scene = localizer.observe(
                 detections,

@@ -532,8 +532,10 @@ class ParkingSlotMap:
         detections: Sequence[Detection],
         image_shape: tuple[int, int],
         excluded_track_ids: set[int] | None = None,
+        forced_occupied_slot_names: set[str] | None = None,
     ) -> tuple[ParkingSlotObservation, ...]:
         excluded_track_ids = excluded_track_ids or set()
+        forced_occupied_slot_names = forced_occupied_slot_names or set()
         height, width = image_shape
         occupancy_mask = np.zeros((height, width), dtype=np.uint8)
         for detection in detections:
@@ -560,6 +562,7 @@ class ParkingSlotMap:
             slot_area = cv2.countNonZero(slot_mask)
             overlap = cv2.bitwise_and(slot_mask, occupancy_mask)
             ratio = cv2.countNonZero(overlap) / max(slot_area, 1)
+            forced_occupied = name in forced_occupied_slot_names
             center = _polygon_center(polygon)
             axis, _ = _principal_axis(polygon)
             axis_yaw = self.transform.axis_yaw_in_lidar(center, axis)
@@ -578,8 +581,12 @@ class ParkingSlotMap:
                     name=name,
                     center_bev_px=center,
                     center_lidar_px=center_lidar,
-                    occupancy_ratio=ratio,
-                    occupied=ratio >= self.occupancy_threshold,
+                    occupancy_ratio=(
+                        max(ratio, self.occupancy_threshold)
+                        if forced_occupied
+                        else ratio
+                    ),
+                    occupied=forced_occupied or ratio >= self.occupancy_threshold,
                     goal_pose_candidates_cm=(goals[0], goals[1]),
                     polygon_bev=polygon,
                 )
@@ -797,7 +804,10 @@ class SceneLocalizer:
         target_slot_name: str | None = None,
         parking_assignment: ParkingAssignmentPolicy | None = None,
         post_charge_parking_assignment: ParkingAssignmentPolicy | None = None,
+        vehicle_min_confidence: float = 0.0,
     ) -> None:
+        if not 0.0 <= vehicle_min_confidence <= 1.0:
+            raise ValueError("vehicle_min_confidence must be in [0, 1]")
         self.tracker = tracker
         self.parking_slots = parking_slots
         self.vehicle_state_manager = vehicle_state_manager or VehicleStateManager(
@@ -810,6 +820,7 @@ class SceneLocalizer:
         # 충전 완료는 YOLO만으로 알 수 없는 외부 이벤트다. 현재는 운영자가
         # space를 눌러 전달하며, 해당 track_id만 P1~P4 대기 주차 단계로 넘긴다.
         self.post_charge_parking_assignment = post_charge_parking_assignment
+        self.vehicle_min_confidence = vehicle_min_confidence
         self._charge_completed_vehicle_ids: set[int] = set()
 
     def select_next_ego(self) -> tuple[bool, str]:
@@ -865,7 +876,21 @@ class SceneLocalizer:
             if observed_at_unix_sec is None
             else observed_at_unix_sec
         )
-        vehicle = self.tracker.update(detections)
+        # 점유 계산은 가림 때문에 confidence가 낮아진 car 후보도 사용한다.
+        # 차량 pose와 운영 상태에는 높은 기준을 통과한 검출만 전달하여 낮은
+        # confidence 후보가 ego 선택이나 제어 좌표로 섞이지 않게 한다.
+        vehicle_detections = tuple(
+            detection
+            for detection in detections
+            if detection.class_name != "car"
+            or detection.confidence >= self.vehicle_min_confidence
+        )
+        vehicle = self.tracker.update(vehicle_detections)
+        tracked_vehicles = self.vehicle_state_manager.observe(
+            vehicle_detections,
+            self.parking_slots,
+            observed_at,
+        )
         excluded_track_ids = (
             {vehicle.track_id}
             if vehicle is not None and vehicle.track_id is not None
@@ -875,11 +900,12 @@ class SceneLocalizer:
             detections,
             image_shape,
             excluded_track_ids=excluded_track_ids,
-        )
-        tracked_vehicles = self.vehicle_state_manager.observe(
-            detections,
-            self.parking_slots,
-            observed_at,
+            forced_occupied_slot_names={
+                tracked.assigned_slot_name
+                for tracked in tracked_vehicles
+                if tracked.state == "charging"
+                and tracked.assigned_slot_name in {"C1", "C2"}
+            },
         )
         charge_assignment = (
             self.charge_coordinator.observe(tracked_vehicles, slots)

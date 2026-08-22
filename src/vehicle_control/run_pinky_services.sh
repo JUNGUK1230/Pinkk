@@ -6,6 +6,10 @@ ROBOT_NAMESPACE="${ROBOT_NAMESPACE:-pinkk/vehicle_1}"
 ROBOT_NAMESPACE="${ROBOT_NAMESPACE#/}"
 PINKY_ROOT="${PINKY_ROOT:-$HOME/pinky_pro}"
 PINKY_CTRL_ROOT="${PINKY_CTRL_ROOT:-$HOME/pinky_ctrl}"
+# base: 모터·LiDAR·배터리만 실행하는 기존 pinky_bringup을 사용한다.
+# ctrl: lane_controller와 EKF까지 포함된 pinky_ctrl bringup을 명시적으로 사용한다.
+# 중앙 MPC와 cmd_vel 충돌을 막기 위해 기본값은 base다.
+PINKY_BRINGUP_MODE="${PINKY_BRINGUP_MODE:-base}"
 LED_NODE="${LED_NODE:-$HOME/pinky_status_led.py}"
 LCD_NODE="${LCD_NODE:-$HOME/pinky_status_lcd.py}"
 PINKY_LCD_FONT="${PINKY_LCD_FONT:-$HOME/pinky_lcd/example/MaruBuri-Bold.ttf}"
@@ -15,10 +19,21 @@ set +u
 source /opt/ros/jazzy/setup.bash
 source "$PINKY_ROOT/install/setup.bash"
 USE_CTRL_BRINGUP=false
-if [[ -f "$PINKY_CTRL_ROOT/install/setup.bash" ]]; then
-    source "$PINKY_CTRL_ROOT/install/setup.bash"
-    USE_CTRL_BRINGUP=true
-fi
+case "$PINKY_BRINGUP_MODE" in
+    base) ;;
+    ctrl)
+        if [[ ! -f "$PINKY_CTRL_ROOT/install/setup.bash" ]]; then
+            echo "ERROR: pinky_ctrl is not installed: $PINKY_CTRL_ROOT" >&2
+            exit 2
+        fi
+        source "$PINKY_CTRL_ROOT/install/setup.bash"
+        USE_CTRL_BRINGUP=true
+        ;;
+    *)
+        echo "ERROR: PINKY_BRINGUP_MODE must be base or ctrl" >&2
+        exit 2
+        ;;
+esac
 set -u
 export ROS_DOMAIN_ID
 # root 권한 LED 노드와 일반 사용자 ROS 노드 사이의 Fast DDS shared-memory
@@ -47,32 +62,36 @@ CONTROLLER_ID="$(printf 'pinky_%02d' "$VEHICLE_NUMBER")"
 HARDWARE_SERIAL="$(printf 'PINKY-%03d' "$VEHICLE_NUMBER")"
 if $USE_CTRL_BRINGUP; then
     BRINGUP_PATTERN='ros2 launch pinky_ctrl bringup_imu.launch.py'
-    LEGACY_BRINGUP_PATTERN='ros2 launch pinky_bringup bringup_robot.launch.xml'
+    ALTERNATE_BRINGUP_PATTERN='ros2 launch pinky_bringup bringup_robot.launch.xml'
 else
     BRINGUP_PATTERN='ros2 launch pinky_bringup bringup_robot.launch.xml'
-    LEGACY_BRINGUP_PATTERN=''
+    ALTERNATE_BRINGUP_PATTERN='ros2 launch pinky_ctrl bringup_imu.launch.py'
 fi
 
-# 예전 launch는 namespace 인자를 선언하지 않아 /battery/*를 발행한다.
-# 동시에 남아 있으면 센서와 모터 장치를 중복 점유하므로 먼저 종료한다.
-legacy_bringup_pids=()
-if [[ -n "$LEGACY_BRINGUP_PATTERN" ]]; then
-    mapfile -t legacy_bringup_pids < <(
-        pgrep -f "$LEGACY_BRINGUP_PATTERN" || true
+# 선택하지 않은 bringup이 남아 있으면 모터·LiDAR 장치를 중복 점유하고
+# lane_controller가 cmd_vel을 발행할 수 있으므로 먼저 완전히 종료한다.
+alternate_bringup_pids=()
+if [[ -n "$ALTERNATE_BRINGUP_PATTERN" ]]; then
+    mapfile -t alternate_bringup_pids < <(
+        pgrep -f "$ALTERNATE_BRINGUP_PATTERN" || true
     )
 fi
-if ((${#legacy_bringup_pids[@]} > 0)); then
-    echo "Stopping legacy non-namespaced Pinky bringup."
-    kill -TERM "${legacy_bringup_pids[@]}" 2>/dev/null || true
+if ((${#alternate_bringup_pids[@]} > 0)); then
+    echo "Stopping alternate Pinky bringup: $ALTERNATE_BRINGUP_PATTERN"
+    kill -TERM "${alternate_bringup_pids[@]}" 2>/dev/null || true
     sleep 2
-    mapfile -t legacy_bringup_pids < <(
-        pgrep -f "$LEGACY_BRINGUP_PATTERN" || true
+    mapfile -t alternate_bringup_pids < <(
+        pgrep -f "$ALTERNATE_BRINGUP_PATTERN" || true
     )
-    ((${#legacy_bringup_pids[@]} == 0)) \
-        || kill -KILL "${legacy_bringup_pids[@]}" 2>/dev/null \
+    ((${#alternate_bringup_pids[@]} == 0)) \
+        || kill -KILL "${alternate_bringup_pids[@]}" 2>/dev/null \
         || true
-    pkill -TERM -f '/pinky_bringup/lib/pinky_bringup/' \
-        2>/dev/null || true
+    if $USE_CTRL_BRINGUP; then
+        pkill -TERM -f '/pinky_bringup/lib/pinky_bringup/' \
+            2>/dev/null || true
+    else
+        pkill -TERM -f '/pinky_ctrl/lib/' 2>/dev/null || true
+    fi
     pkill -TERM -f '/sllidar_ros2/lib/sllidar_ros2/sllidar_node' \
         2>/dev/null || true
 fi

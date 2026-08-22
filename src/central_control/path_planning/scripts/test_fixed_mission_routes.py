@@ -17,7 +17,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.extend((str(SCRIPT_DIR), str(PROJECT_ROOT / "src")))
 
 from plan_from_live_vision import load_planner_stack  # noqa: E402
-from reeds_shepp import ReedsSheppPlanner  # noqa: E402
+from reeds_shepp import ReedsSheppPlanner, ReedsSheppPose  # noqa: E402
 
 
 Pose = tuple[float, float, float]
@@ -66,6 +66,8 @@ def _aligned_parking_entry(
     final_straight_cm: float,
     slot_polygon_cm: list[list[float]] | None = None,
     maximum_cusp_yaw_error_deg: float | None = None,
+    minimum_initial_reverse_cm: float | None = None,
+    cusp_relative_to_alignment: dict[str, float] | None = None,
 ):
     """칸 밖에서 goal yaw를 완성한 뒤 직선 후진으로만 진입한다."""
     if final_straight_cm <= 0.0:
@@ -84,14 +86,50 @@ def _aligned_parking_entry(
         goal[1] + final_straight_cm * math.sin(goal[2]),
         goal[2],
     )
-    reeds_shepp = ReedsSheppPlanner(
-        turning_radius_cm,
-        planner.path_output_step_cm,
-    )
-    candidates = []
-    for candidate in reeds_shepp.iter_candidates(start, alignment):
-        if not candidate.poses or not planner.is_path_collision_free(candidate.poses):
-            continue
+    alignment_poses = None
+    if cusp_relative_to_alignment is not None:
+        longitudinal_cm = float(
+            cusp_relative_to_alignment["longitudinal_cm"]
+        )
+        lateral_cm = float(cusp_relative_to_alignment["lateral_cm"])
+        yaw_offset_rad = math.radians(
+            float(cusp_relative_to_alignment["yaw_offset_deg"])
+        )
+        tangent_x = math.cos(goal[2])
+        tangent_y = math.sin(goal[2])
+        normal_x = -tangent_y
+        normal_y = tangent_x
+        cusp = (
+            alignment[0]
+            + longitudinal_cm * tangent_x
+            + lateral_cm * normal_x,
+            alignment[1]
+            + longitudinal_cm * tangent_y
+            + lateral_cm * normal_y,
+            goal[2] + yaw_offset_rad,
+        )
+        initial_reverse = _direction_only_path(
+            planner, start, cusp, -1, turning_radius_cm
+        )
+        forward_alignment = _direction_only_path(
+            planner, cusp, alignment, 1, turning_radius_cm
+        )
+        if (
+            minimum_initial_reverse_cm is not None
+            and initial_reverse.total_length_cm + 1e-6
+            < minimum_initial_reverse_cm
+        ):
+            raise RuntimeError("configured initial reverse is too short")
+        if (
+            maximum_cusp_yaw_error_deg is not None
+            and abs(math.degrees(yaw_offset_rad))
+            > maximum_cusp_yaw_error_deg
+        ):
+            raise RuntimeError("configured cusp yaw error is too large")
+        alignment_poses = [
+            *initial_reverse.poses,
+            *forward_alignment.poses,
+        ]
         if slot_polygon_cm and any(
             _point_in_convex_polygon(
                 (
@@ -102,45 +140,93 @@ def _aligned_parking_entry(
                 ),
                 slot_polygon_cm,
             )
-            for pose in candidate.poses
+            for pose in alignment_poses
         ):
-            # 정렬 maneuver 중 후미가 먼저 칸에 들어가는 후보는 버린다.
-            # slot 진입은 goal yaw가 고정된 마지막 직선에서만 허용한다.
-            continue
-        directions = [pose.direction for pose in candidate.poses]
-        # 통로에서 먼저 후진해 차체를 정렬하고, 짧게 전진해 alignment
-        # 자세를 완성한다. 이후 마지막 직선 후진과 합쳐 3-point 진입이 된다.
-        if directions[0] != -1 or directions[-1] != 1:
-            continue
-        switch_indices = [
-            index
-            for index in range(1, len(directions))
-            if directions[index] != directions[index - 1]
-        ]
-        gear_switches = len(switch_indices)
-        if maximum_cusp_yaw_error_deg is not None:
-            cusp = candidate.poses[switch_indices[0]]
-            cusp_yaw_error = abs(
-                (cusp.yaw_rad - goal[2] + math.pi)
-                % (2.0 * math.pi)
-                - math.pi
-            )
-            if cusp_yaw_error > math.radians(maximum_cusp_yaw_error_deg):
-                continue
-        candidates.append((gear_switches, candidate.total_length_cm, candidate))
-    if not candidates:
-        raise RuntimeError(
-            "no collision-free parking alignment path before slot entry"
+            raise RuntimeError("configured parking alignment enters the slot early")
+    else:
+        reeds_shepp = ReedsSheppPlanner(
+            turning_radius_cm,
+            planner.path_output_step_cm,
         )
-    _, _, alignment_path = min(candidates, key=lambda item: (item[0], item[1]))
-    final_reverse = _direction_only_path(
-        planner,
-        alignment,
-        goal,
-        -1,
-        turning_radius_cm,
+        candidates = []
+        for candidate in reeds_shepp.iter_candidates(start, alignment):
+            if not candidate.poses or not planner.is_path_collision_free(candidate.poses):
+                continue
+            if slot_polygon_cm and any(
+                _point_in_convex_polygon(
+                    (
+                        pose.x_cm
+                        - planner.rear_overhang_cm * math.cos(pose.yaw_rad),
+                        pose.y_cm
+                        - planner.rear_overhang_cm * math.sin(pose.yaw_rad),
+                    ),
+                    slot_polygon_cm,
+                )
+                for pose in candidate.poses
+            ):
+                # 정렬 maneuver 중 후미가 먼저 칸에 들어가는 후보는 버린다.
+                # slot 진입은 goal yaw가 고정된 마지막 직선에서만 허용한다.
+                continue
+            directions = [pose.direction for pose in candidate.poses]
+            # 통로에서 먼저 후진해 차체를 정렬하고, 짧게 전진해 alignment
+            # 자세를 완성한다. 이후 마지막 직선 후진과 합쳐 3-point 진입이 된다.
+            if directions[0] != -1 or directions[-1] != 1:
+                continue
+            switch_indices = [
+                index
+                for index in range(1, len(directions))
+                if directions[index] != directions[index - 1]
+            ]
+            gear_switches = len(switch_indices)
+            if minimum_initial_reverse_cm is not None:
+                first_switch_index = switch_indices[0]
+                initial_reverse_cm = sum(
+                    math.hypot(
+                        candidate.poses[index].x_cm
+                        - candidate.poses[index - 1].x_cm,
+                        candidate.poses[index].y_cm
+                        - candidate.poses[index - 1].y_cm,
+                    )
+                    for index in range(1, first_switch_index)
+                )
+                if initial_reverse_cm + 1e-6 < minimum_initial_reverse_cm:
+                    continue
+            if maximum_cusp_yaw_error_deg is not None:
+                cusp = candidate.poses[switch_indices[0]]
+                cusp_yaw_error = abs(
+                    (cusp.yaw_rad - goal[2] + math.pi)
+                    % (2.0 * math.pi)
+                    - math.pi
+                )
+                if cusp_yaw_error > math.radians(maximum_cusp_yaw_error_deg):
+                    continue
+            candidates.append((gear_switches, candidate.total_length_cm, candidate))
+        if not candidates:
+            raise RuntimeError(
+                "no collision-free parking alignment path before slot entry"
+            )
+        _, _, alignment_path = min(candidates, key=lambda item: (item[0], item[1]))
+        alignment_poses = list(alignment_path.poses)
+    sample_count = max(
+        1,
+        int(math.ceil(final_straight_cm / planner.path_output_step_cm)),
     )
-    return [*alignment_path.poses, *final_reverse.poses[1:]]
+    final_reverse = tuple(
+        ReedsSheppPose(
+            x_cm=alignment[0] + (goal[0] - alignment[0]) * index / sample_count,
+            y_cm=alignment[1] + (goal[1] - alignment[1]) * index / sample_count,
+            yaw_rad=goal[2],
+            direction=-1,
+            segment_mode="S",
+        )
+        for index in range(sample_count + 1)
+    )
+    if not planner.is_path_collision_free(final_reverse):
+        raise RuntimeError("final aligned reverse collides with the map")
+    # 기어 전환 pose는 같은 좌표에서 direction만 바뀐 행으로 보존한다.
+    # 이를 제거하면 첫 0.5 cm가 이전 전진 구간에 포함되어 마지막 직선
+    # 후진 길이가 설정값보다 짧아지고 제어기의 기어 전환점도 흐려진다.
+    return [*alignment_poses, *final_reverse]
 
 
 def _point_in_convex_polygon(
@@ -177,6 +263,8 @@ def _validate_final_straight(
             raise RuntimeError(
                 f"final parking segment is not reverse: {source} -> {target}"
             )
+        if int(previous["direction"]) != int(current["direction"]):
+            break
         yaw_error = abs(
             (float(current["yaw_rad"]) - goal[2] + math.pi)
             % (2.0 * math.pi)
@@ -445,8 +533,11 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                 if "entry_staging" not in endpoint:
                     entry_turning_radius_cm = float(
                         endpoint.get(
-                            "entry_turning_radius_cm",
-                            turning_radius_cm,
+                            "road_attachment_entry_turning_radius_cm",
+                            endpoint.get(
+                                "entry_turning_radius_cm",
+                                turning_radius_cm,
+                            ),
                         )
                     )
                     selected_entry = _aligned_parking_entry(
@@ -454,9 +545,15 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                         attachment,
                         goal,
                         entry_turning_radius_cm,
-                        float(endpoint.get("entry_final_straight_cm", 0.0)),
+                        (
+                            0.0
+                            if bool(endpoint.get("entry_from_staging", False))
+                            else float(endpoint.get("entry_final_straight_cm", 0.0))
+                        ),
                         endpoint.get("entry_slot_polygon_cm"),
                         endpoint.get("entry_maximum_cusp_yaw_error_deg"),
+                        endpoint.get("entry_minimum_initial_reverse_cm"),
+                        endpoint.get("entry_cusp_relative_to_alignment"),
                     )
                 else:
                     # 충전칸 진입은 삭제된 인접 주차면을 활용하는 별도
@@ -503,6 +600,8 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
             float(endpoint.get("entry_final_straight_cm", 0.0)),
             endpoint.get("entry_slot_polygon_cm"),
             endpoint.get("entry_maximum_cusp_yaw_error_deg"),
+            endpoint.get("entry_minimum_initial_reverse_cm"),
+            endpoint.get("entry_cusp_relative_to_alignment"),
         )
         search_cm = float(
             endpoint.get(
@@ -510,12 +609,28 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                 ENDPOINT_ATTACHMENT_SEARCH_CM,
             )
         )
+        attachment_hint = endpoint.get("entry_attachment_hint_cm")
+        attachment_target = (
+            (float(attachment_hint[0]), float(attachment_hint[1]))
+            if attachment_hint is not None
+            else entry_staging[:2]
+        )
         candidates = sorted(
             range(minimum_entry_index, maximum_entry_index + 1),
             key=lambda index: (
-                (float(centerline[index]["x_cm"]) - entry_staging[0]) ** 2
-                + (float(centerline[index]["y_cm"]) - entry_staging[1]) ** 2
+                (float(centerline[index]["x_cm"]) - attachment_target[0]) ** 2
+                + (float(centerline[index]["y_cm"]) - attachment_target[1]) ** 2
             ),
+        )
+        approach_final_straight_cm = float(
+            endpoint.get("entry_approach_final_straight_cm", 0.0)
+        )
+        approach_goal = (
+            entry_staging[0]
+            - approach_final_straight_cm * math.cos(entry_staging[2]),
+            entry_staging[1]
+            - approach_final_straight_cm * math.sin(entry_staging[2]),
+            entry_staging[2],
         )
         for index in candidates:
             row = centerline[index]
@@ -524,7 +639,7 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                 float(row["y_cm"]) - entry_staging[1],
             )
             if distance > search_cm:
-                break
+                continue
             attachment = (
                 float(row["x_cm"]),
                 float(row["y_cm"]),
@@ -534,7 +649,7 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                 approach = _direction_only_path(
                     planner,
                     attachment,
-                    entry_staging,
+                    approach_goal,
                     1,
                     float(
                         endpoint.get(
@@ -543,11 +658,39 @@ def _build_road_network(config: dict, planner) -> dict[str, object]:
                         )
                     ),
                 )
+                straight_sample_count = max(
+                    1,
+                    int(
+                        math.ceil(
+                            approach_final_straight_cm
+                            / planner.path_output_step_cm
+                        )
+                    ),
+                )
+                final_approach_straight = tuple(
+                    ReedsSheppPose(
+                        x_cm=approach_goal[0]
+                        + (entry_staging[0] - approach_goal[0])
+                        * sample_index
+                        / straight_sample_count,
+                        y_cm=approach_goal[1]
+                        + (entry_staging[1] - approach_goal[1])
+                        * sample_index
+                        / straight_sample_count,
+                        yaw_rad=entry_staging[2],
+                        direction=1,
+                        segment_mode="S",
+                    )
+                    for sample_index in range(straight_sample_count + 1)
+                )
+                if not planner.is_path_collision_free(final_approach_straight):
+                    continue
             except RuntimeError:
                 continue
             entry_attachment_indices[name] = index
             entry_connectors[name] = [
                 *approach.poses,
+                *final_approach_straight[1:],
                 *parking_entry[1:],
             ]
             break
@@ -632,19 +775,23 @@ def build_route(
     target_index = int(entry_attachment_indices[target])
     rows: list[dict] = []
 
-    # START에서 출발하는 경로는 목표 staging에서 공통 도로를 끝낸다.
-    # 이렇게 해야 C1/C2를 지나 다음 구간으로 향하는 원호가 목표 주차 진입
-    # pose를 잘라내지 않으며, 기존의 검증된 후진 주차 연결을 그대로 쓸 수 있다.
-    if (
-        source == config["route_order"][0]
-        and "entry_staging" not in endpoints[target]
-    ):
+    # 3-point 주차 endpoint는 도로 attachment와 주차 maneuver를 분리한다.
+    # 도로는 목표 staging에서 정확히 끝내고, 그 뒤에 endpoint별
+    # 후진-전진 정렬-직선 후진 구간을 붙여 공통 도로 선택을 흔들지 않는다.
+    if bool(endpoints[target].get("entry_from_staging", False)):
         custom_waypoints = (
             config.get("route_waypoint_sequences", {})
             .get(source, {})
             .get(target)
         )
-        road_waypoints = [_pose(endpoints[source]["staging"])]
+        source_attachment = centerline[source_index]
+        road_waypoints = [
+            (
+                float(source_attachment["x_cm"]),
+                float(source_attachment["y_cm"]),
+                float(source_attachment["yaw_rad"]),
+            )
+        ]
         if custom_waypoints is not None:
             road_waypoints.extend(_pose(values) for values in custom_waypoints)
         else:
@@ -670,12 +817,26 @@ def build_route(
                 float(local_corner_radii.get(name, network["turning_radius_cm"]))
                 for name in waypoint_names
             ]
-        rows = _rounded_centerline(
+        road_rows = _rounded_centerline(
             road_waypoints,
             float(network["turning_radius_cm"]),
             float(planner.path_output_step_cm),
             waypoint_radii,
         )
+        if "goal" in endpoints[source]:
+            forward_exit = exit_connectors[source]
+            rows.extend(
+                {
+                    "x_cm": pose.x_cm,
+                    "y_cm": pose.y_cm,
+                    "yaw_rad": pose.yaw_rad,
+                    "direction": 1,
+                }
+                for pose in forward_exit.poses
+            )
+            rows.extend(dict(row) for row in road_rows[1:])
+        else:
+            rows = road_rows
         if "goal" in endpoints[target]:
             entry_turning_radius_cm = float(
                 endpoints[target].get(
@@ -691,6 +852,8 @@ def build_route(
                 float(endpoints[target].get("entry_final_straight_cm", 0.0)),
                 endpoints[target].get("entry_slot_polygon_cm"),
                 endpoints[target].get("entry_maximum_cusp_yaw_error_deg"),
+                endpoints[target].get("entry_minimum_initial_reverse_cm"),
+                endpoints[target].get("entry_cusp_relative_to_alignment"),
             )
             rows.extend(
                 {
@@ -739,10 +902,56 @@ def build_route(
     else:
         rows.append(dict(centerline[source_index]))
 
-    rows.extend(
-        dict(row)
-        for row in centerline[source_index + 1 : target_index + 1]
+    custom_waypoints = (
+        config.get("route_waypoint_sequences", {})
+        .get(source, {})
+        .get(target)
     )
+    if custom_waypoints is None:
+        rows.extend(
+            dict(row)
+            for row in centerline[source_index + 1 : target_index + 1]
+        )
+    else:
+        source_attachment = centerline[source_index]
+        merge_point = (
+            config.get("route_waypoint_merge_points", {})
+            .get(source, {})
+            .get(target)
+        )
+        merge_index = target_index
+        if merge_point is not None:
+            merge_pose = _pose([*merge_point, 0.0]) if len(merge_point) == 2 else _pose(merge_point)
+            merge_index = min(
+                range(source_index, target_index + 1),
+                key=lambda index: (
+                    (float(centerline[index]["x_cm"]) - merge_pose[0]) ** 2
+                    + (float(centerline[index]["y_cm"]) - merge_pose[1]) ** 2
+                ),
+            )
+        target_attachment = centerline[merge_index]
+        custom_road_rows = _rounded_centerline(
+            [
+                (
+                    float(source_attachment["x_cm"]),
+                    float(source_attachment["y_cm"]),
+                    float(source_attachment["yaw_rad"]),
+                ),
+                *(_pose(values) for values in custom_waypoints),
+                (
+                    float(target_attachment["x_cm"]),
+                    float(target_attachment["y_cm"]),
+                    float(target_attachment["yaw_rad"]),
+                ),
+            ],
+            float(network["turning_radius_cm"]),
+            float(planner.path_output_step_cm),
+        )
+        rows.extend(dict(row) for row in custom_road_rows[1:])
+        rows.extend(
+            dict(row)
+            for row in centerline[merge_index + 1 : target_index + 1]
+        )
 
     if "goal" in endpoints[target]:
         entry_poses = entry_connectors[target]

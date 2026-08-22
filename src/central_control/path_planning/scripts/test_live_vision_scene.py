@@ -228,6 +228,80 @@ def main() -> int:
         assert grazing_scene.planning_request is not None
         assert grazing_scene.planning_request.slot_name == "C2"
 
+        # 가림으로 confidence가 낮아진 car 후보는 점유에는 사용하지만,
+        # 0.50 미만이면 ego pose나 tracked vehicle 상태에는 사용하지 않는다.
+        low_confidence_car = detection(
+            (1200.0, 600.0),
+            0.35,
+            100.0,
+            70.0,
+            track_id=32,
+        )
+        low_confidence_scene = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(1200.0, 600.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            parking,
+            vehicle_min_confidence=0.50,
+        ).observe(
+            [low_confidence_car],
+            (800, 1600),
+            frame_index=9,
+            observed_at_unix_sec=100.2,
+        )
+        low_confidence_c2 = next(
+            slot for slot in low_confidence_scene.parking_slots if slot.name == "C2"
+        )
+        assert low_confidence_c2.occupied
+        assert low_confidence_scene.vehicle is None
+        assert not low_confidence_scene.tracked_vehicles
+
+        # 정상 confidence로 충전칸 안에서 확인된 차량은 ego 마스크가 점유
+        # 계산에서 제외되더라도 charging record의 TTL 동안 OCC를 유지한다.
+        charging_state_manager = VehicleStateManager(
+            transform,
+            track_ttl_sec=0.5,
+        )
+        charging_localizer = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(1200.0, 600.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            parking,
+            vehicle_state_manager=charging_state_manager,
+            vehicle_min_confidence=0.50,
+        )
+        charging_car = detection(
+            (1200.0, 600.0), 0.95, 100.0, 70.0, track_id=33
+        )
+        charging_scene = charging_localizer.observe(
+            [charging_car],
+            (800, 1600),
+            frame_index=10,
+            observed_at_unix_sec=100.3,
+        )
+        assert next(
+            slot for slot in charging_scene.parking_slots if slot.name == "C2"
+        ).occupied
+        briefly_hidden_scene = charging_localizer.observe(
+            [],
+            (800, 1600),
+            frame_index=11,
+            observed_at_unix_sec=100.5,
+        )
+        assert next(
+            slot for slot in briefly_hidden_scene.parking_slots if slot.name == "C2"
+        ).occupied
+
         # dummy가 주차칸을 덮으면 차량으로 추적하지는 않지만 점유물로 처리해
         # 해당 칸으로 경로를 만들지 않는다. tracker ID가 ego와 우연히 같아도
         # dummy는 ego 점유 제외 규칙의 영향을 받지 않아야 한다.

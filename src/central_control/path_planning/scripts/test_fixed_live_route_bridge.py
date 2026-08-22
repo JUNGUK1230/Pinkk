@@ -83,6 +83,25 @@ def main() -> int:
     assert not scheduler.due(11.3, has_route=False)
     assert scheduler.due(11.4, has_route=True)
 
+    # 출발 후 점유 판정이 흔들려 다른 목표가 추천돼도 현재 route revision이
+    # 유지되는 동안에는 이미 발행한 목적지와 경로를 교체하면 안 된다.
+    locked_controller = IntegratedPlanningController(selector)
+    locked_controller.outcome = outcome
+    locked_controller._active_key = (1, "C2", 0)
+    moving_scene = SimpleNamespace(
+        vehicle=SimpleNamespace(
+            track_id=1,
+            center_cm=start[:2],
+            yaw_rad=float(start[2]),
+        ),
+        planning_request=SimpleNamespace(slot_name="C1"),
+    )
+    locked_controller.update(moving_scene, route_revision=0)
+    assert locked_controller.outcome is outcome
+    assert locked_controller._active_key == (1, "C2", 0)
+    assert locked_controller._future is None
+    locked_controller.close()
+
     # 다른 차량의 충전 배정 C2를 C1에 있는 ego의 다음 목표로 표시하면
     # 안 된다. C1/C2의 유효한 다음 목표는 P1~P4뿐이다.
     c1_vehicle = SimpleNamespace(

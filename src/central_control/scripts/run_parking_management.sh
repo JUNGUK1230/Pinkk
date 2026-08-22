@@ -159,6 +159,14 @@ start_remote_pinky() {
         -o ServerAliveInterval=2 -o ServerAliveCountMax=3 \
         "$PROJECT_ROOT/src/vehicle_control/run_pinky_services.sh" \
         "$host:/home/pinky/run_pinky_services.sh"
+    scp -q -o BatchMode=yes -o ConnectTimeout=5 \
+        -o ServerAliveInterval=2 -o ServerAliveCountMax=3 \
+        "$PROJECT_ROOT/src/vehicle_control/pinky_bringup_namespaced.launch.xml" \
+        "$host:/home/pinky/pinky_pro/install/pinky_bringup/share/pinky_bringup/launch/bringup_robot.launch.xml"
+    scp -q -o BatchMode=yes -o ConnectTimeout=5 \
+        -o ServerAliveInterval=2 -o ServerAliveCountMax=3 \
+        "$PROJECT_ROOT/src/vehicle_control/pinky_bringup_namespaced.launch.xml" \
+        "$host:/home/pinky/pinky_pro/src/pinky_pro/pinky_bringup/launch/bringup_robot.launch.xml"
     ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
         "chmod 755 /home/pinky/pinky_status_led.py /home/pinky/pinky_status_lcd.py /home/pinky/run_pinky_services.sh && nohup setsid -f env ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh $namespace >/home/pinky/pinkk_services_$controller_id.log 2>&1 </dev/null" \
         >"$LOG_DIR/${controller_id}_bringup.log" 2>&1

@@ -27,24 +27,47 @@ source "$PROJECT_ROOT/install/setup.bash"
 set -u
 
 cleanup() {
-    trap - INT TERM EXIT
+    trap - HUP INT TERM EXIT
+    echo
+    echo "Stopping vehicle controller: $VEHICLE_ID"
+    # ros2 CLI wrapper만 종료하면 실제 Python node가 고아 프로세스로 남는다.
+    # 각 node를 별도 session으로 시작하고 process group 전체에 TERM을 보낸다.
     for pid in "${CHILD_PIDS[@]}"; do
-        kill -TERM "$pid" 2>/dev/null || true
+        kill -TERM -- "-$pid" 2>/dev/null || true
+    done
+
+    # 정상 shutdown 동안 MPC가 마지막 0속도 명령을 발행할 시간을 준다.
+    for _ in {1..30}; do
+        any_alive=false
+        for pid in "${CHILD_PIDS[@]}"; do
+            if kill -0 -- "-$pid" 2>/dev/null; then
+                any_alive=true
+                break
+            fi
+        done
+        "$any_alive" || break
+        sleep 0.1
+    done
+
+    # DDS 또는 ros2 wrapper가 종료를 막아도 스크립트가 wait에서 무한히
+    # 멈추지 않도록 남은 process group만 최종 정리한다.
+    for pid in "${CHILD_PIDS[@]}"; do
+        kill -KILL -- "-$pid" 2>/dev/null || true
     done
     wait "${CHILD_PIDS[@]}" 2>/dev/null || true
 }
-trap cleanup INT TERM EXIT
+trap cleanup HUP INT TERM EXIT
 
 echo "Starting vehicle controller: $VEHICLE_ID"
 echo "ROS namespace: $VEHICLE_NAMESPACE"
 
-ros2 run pinkk fused_pose_estimator \
+setsid ros2 run pinkk fused_pose_estimator \
     --ros-args \
     -r "__ns:=$VEHICLE_NAMESPACE" \
     --params-file "$FUSED_CONFIG" &
 CHILD_PIDS+=("$!")
 
-ros2 run pinkk mpc_path_follower \
+setsid ros2 run pinkk mpc_path_follower \
     --ros-args \
     -r "__ns:=$VEHICLE_NAMESPACE" \
     --params-file "$MPC_CONFIG" &

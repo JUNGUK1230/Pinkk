@@ -199,6 +199,14 @@ Pinky에서 다음과 같이 합니다.
 ROS_DOMAIN_ID=36 ~/run_pinky_services.sh
 ```
 
+기본 실행은 `pinky_bringup`의 모터·LiDAR·배터리만 시작하며
+`lane_controller_node`는 실행하지 않는다. 중앙 MPC 대신 기존
+`pinky_ctrl` 제어 스택을 의도적으로 사용할 때만 다음처럼 명시한다.
+
+```bash
+PINKY_BRINGUP_MODE=ctrl ROS_DOMAIN_ID=36 ~/run_pinky_services.sh
+```
+
 서비스를 직접 시험하려면 다음 명령을 사용합니다.
 
 ```bash

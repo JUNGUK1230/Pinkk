@@ -263,18 +263,28 @@ class MpcPathFollower(Node):
             "dt_sec": 0.25,
             "horizon_steps": 10,
             "forward_speed_mps": 0.06,
+            "parking_realign_speed_mps": 0.035,
             "reverse_speed_mps": 0.02,
             "max_forward_speed_mps": 0.08,
             "max_reverse_speed_mps": 0.03,
             "max_acceleration_mps2": 0.12,
-            "forward_max_acceleration_mps2": 0.12,
+            "forward_max_acceleration_mps2": 0.08,
             "max_curvature_1pm": 1.0 / 0.12,
             "max_curvature_rate_1pmps": 10.0,
+            "straight_curvature_rate_1pmps": 6.0,
+            "curvature_rate_speed_reduction": 0.25,
             "max_angular_speed_radps": 0.40,
+            "max_lateral_acceleration_mps2": 0.015,
             "straight_curvature_threshold_1pm": 0.35,
             "straight_max_curvature_1pm": 3.0,
+            "full_curvature_path_threshold_1pm": 6.0,
             "cross_track_feedback_gain_1pm2": 15.0,
             "forward_cross_track_gain_scale": 1.0,
+            "forward_converging_cross_track_gain_scale": 0.8,
+            "forward_straight_heading_gain_scale": 1.8,
+            "forward_rejoin_lookahead_m": 0.16,
+            "forward_rejoin_max_heading_deg": 15.0,
+            "forward_curve_rejoin_lookahead_m": 0.15,
             "heading_feedback_gain_1pmprad": 4.0,
             "heading_feedback_deadband_deg": 2.0,
             "reverse_cross_track_deadband_m": 0.006,
@@ -301,6 +311,8 @@ class MpcPathFollower(Node):
             "nearest_backward_window": 4,
             "steering_preview_points": 6,
             "steering_preview_weight": 0.30,
+            "forward_steering_preview_points": 6,
+            "forward_steering_preview_weight": 0.30,
             "steering_rejoin_preview_points": 12,
             "steering_rejoin_full_error_m": 0.03,
             "steering_rejoin_preview_weight": 0.65,
@@ -310,7 +322,6 @@ class MpcPathFollower(Node):
             "curvature_smoothing_points": 5,
             "straight_lookahead_points": 4,
             "straight_history_points": 12,
-            "straight_end_guard_points": 30,
             "solver_max_iterations": 45,
             "solver_ftol": 1e-5,
             "weight_position": 200.0,
@@ -356,6 +367,9 @@ class MpcPathFollower(Node):
             forward_speed_mps=self._positive_parameter(
                 "forward_speed_mps", overrides
             ),
+            parking_realign_speed_mps=self._positive_parameter(
+                "parking_realign_speed_mps", overrides
+            ),
             reverse_speed_mps=self._positive_parameter(
                 "reverse_speed_mps", overrides
             ),
@@ -377,8 +391,17 @@ class MpcPathFollower(Node):
             max_curvature_rate_1pmps=self._positive_parameter(
                 "max_curvature_rate_1pmps", overrides
             ),
+            straight_curvature_rate_1pmps=self._positive_parameter(
+                "straight_curvature_rate_1pmps", overrides
+            ),
+            curvature_rate_speed_reduction=self._nonnegative_parameter(
+                "curvature_rate_speed_reduction", overrides
+            ),
             max_angular_speed_radps=self._positive_parameter(
                 "max_angular_speed_radps", overrides
+            ),
+            max_lateral_acceleration_mps2=self._positive_parameter(
+                "max_lateral_acceleration_mps2", overrides
             ),
             straight_curvature_threshold_1pm=self._positive_parameter(
                 "straight_curvature_threshold_1pm", overrides
@@ -386,11 +409,31 @@ class MpcPathFollower(Node):
             straight_max_curvature_1pm=self._positive_parameter(
                 "straight_max_curvature_1pm", overrides
             ),
+            full_curvature_path_threshold_1pm=self._positive_parameter(
+                "full_curvature_path_threshold_1pm", overrides
+            ),
             cross_track_feedback_gain_1pm2=self._nonnegative_parameter(
                 "cross_track_feedback_gain_1pm2", overrides
             ),
             forward_cross_track_gain_scale=self._positive_parameter(
                 "forward_cross_track_gain_scale", overrides
+            ),
+            forward_converging_cross_track_gain_scale=self._positive_parameter(
+                "forward_converging_cross_track_gain_scale", overrides
+            ),
+            forward_straight_heading_gain_scale=self._positive_parameter(
+                "forward_straight_heading_gain_scale", overrides
+            ),
+            forward_rejoin_lookahead_m=self._positive_parameter(
+                "forward_rejoin_lookahead_m", overrides
+            ),
+            forward_rejoin_max_heading_rad=math.radians(
+                self._positive_parameter(
+                    "forward_rejoin_max_heading_deg", overrides
+                )
+            ),
+            forward_curve_rejoin_lookahead_m=self._positive_parameter(
+                "forward_curve_rejoin_lookahead_m", overrides
             ),
             heading_feedback_gain_1pmprad=self._nonnegative_parameter(
                 "heading_feedback_gain_1pmprad", overrides
@@ -484,6 +527,16 @@ class MpcPathFollower(Node):
             steering_preview_weight=self._nonnegative_parameter(
                 "steering_preview_weight", overrides
             ),
+            forward_steering_preview_points=int(
+                self._parameter_value(
+                    "forward_steering_preview_points",
+                    overrides,
+                )
+            ),
+            forward_steering_preview_weight=self._nonnegative_parameter(
+                "forward_steering_preview_weight",
+                overrides,
+            ),
             steering_rejoin_preview_points=int(
                 self._parameter_value(
                     "steering_rejoin_preview_points", overrides
@@ -517,9 +570,6 @@ class MpcPathFollower(Node):
             ),
             straight_history_points=int(
                 self._parameter_value("straight_history_points", overrides)
-            ),
-            straight_end_guard_points=int(
-                self._parameter_value("straight_end_guard_points", overrides)
             ),
             solver_max_iterations=int(
                 self._parameter_value("solver_max_iterations", overrides)
