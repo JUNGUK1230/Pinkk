@@ -1,0 +1,13 @@
+vehicles:
+  vehicle_1:
+    vehicle_id: vehicle_1
+    ros_namespace: /pinkk/vehicle_1
+    controller_id: pinky_01
+    hardware_serial: PINKY-001
+    display_name: 차량 1
+  vehicle_2:
+    vehicle_id: vehicle_2
+    ros_namespace: /pinkk/vehicle_2
+    controller_id: pinky_02
+    hardware_serial: PINKY-002
+    display_name: 차량 2

@@ -1,0 +1,112 @@
+realtime_localization:
+  # LiDAR-camera identity가 아직 확정되지 않았을 때만 쓰는 안전 fallback이다.
+  # 정상 운용에서는 최초 ego 매칭 및 웹 요청의 vehicle_id로 자동 전환된다.
+  vehicle_id: vehicle_2
+  model_path: src/central_control/models/best.pt
+  calibration_path: src/central_control/camera_tools/first_map/camera_calibration.npz
+  homography_path: src/central_control/camera_tools/first_map/bev_homography.npz
+  registration_path: src/central_control/camera_tools/first_map/camera_to_lidar_rigid_registration.npz
+  parking_slots_path: src/central_control/config/map/parking_slots_bev.json
+  parking_points_path: src/central_control/config/map/parking_points.json
+  fixed_route_config_path: src/central_control/path_planning/config/fixed_mission_routes.yaml
+  fixed_route_directory: src/central_control/path_planning/output
+  vehicle_config_path: src/central_control/path_planning/config/vehicle_config.yaml
+  scene_output_path: src/central_control/path_planning/output/live_vision_scene.json
+  bev_output_path: src/central_control/path_planning/output/live_camera_bev.png
+
+  # 기본 통합 실행은 파일을 중계하지 않고 경로·pose를 ROS 2 토픽으로 직접
+  # 발행한다. 기존 JSON/PNG 진단이 필요할 때만 true로 바꾼다.
+  write_runtime_files: false
+  ros_publish_enabled: true
+  # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
+  ros_image_topic: /pinkk/localization/image
+  ros_lidar_image_topic: /pinkk/lidar_map/image
+  ros_management_status_topic: /pinkk/management/status
+  lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
+  # 두 차량 namespace의 scan을 카메라 차량 후보 주변에서 x/y/yaw 정합해
+  # ByteTrack track_id와 영속 vehicle_id를 자동 연결한다.
+  lidar_association_period_sec: 0.75
+  lidar_scan_timeout_sec: 1.5
+  lidar_position_search_half_width_m: 0.25
+  lidar_maximum_match_score_m: 0.08
+  lidar_minimum_assignment_margin_m: 0.01
+  lidar_required_confirmations: 2
+  # 새 경로는 즉시 발행하고, 제어기가 놓치지 않도록 같은 경로를 이 주기로
+  # 재발행한다. 경로가 무효화되거나 목표가 바뀌면 이전 경로 발행은 중단한다.
+  route_republish_period_sec: 1.0
+  # 차체가 주차칸에 일부 겹친 것만으로 경로를 지우지 않고, 고정 경로의 실제
+  # 마지막 rear-axle 점에 이 거리 이내로 도착했을 때만 완료 처리한다.
+  route_completion_radius_cm: 3.0
+
+  # 2026-07-27 확인: 상단 USB Camera는 /dev/video3 (1920x1080 MJPG)다.
+  # USB 재연결 후 번호가 달라지면 `v4l2-ctl --list-devices`로 다시 확인한다.
+  camera_id: 2
+  camera_width: 1920
+  camera_height: 1080
+  camera_fps: 30
+  camera_fourcc: MJPG
+  # YOLO가 카메라 FPS보다 느려도 과거 프레임을 순서대로 처리하지 않는다.
+  camera_buffer_size: 1
+
+  # 현재 학습·검증 해상도를 유지한다. 화면의 capture age가 계속 크면
+  # 정확도를 현장 검증한 뒤 960으로 낮추는 것을 다음 최적화로 검토한다.
+  inference_imgsz: 1600   
+  inference_device: 0
+  # ByteTrack은 car mask의 프레임 간 ID를 유지한다. ego는 처음 선택된 ID만
+  # 따르므로 다른 차량과 가까워져도 planner start가 바뀌지 않는다.
+  tracker_config: bytetrack.yaml
+  # 가림으로 검출이 잠시 사라져도 이 시간 동안은 같은 차량 상태를 유지한다.
+  vehicle_track_ttl_sec: 2.0
+  # 충전칸이 비면 먼저 들어온 entry/대기 차량을 선택하며 C2를 우선 사용한다.
+  charge_slot_priority: [C2, C1]
+  latency_warning_ms: 150.0
+
+  confidence: 0.25
+  # 가려진 차량은 confidence가 낮아지므로 주차칸 점유 계산에는 공통 0.25
+  # 기준의 car 후보도 사용한다. 아래 0.50 기준은 ego pose/차량 상태에만
+  # 적용되어 낮은 confidence 후보가 차량 제어 좌표로 섞이지 않는다.
+  occupancy_car_confidence: 0.25
+  car_confidence: 0.50
+  iou: 0.45
+  occupancy_threshold: 0.10
+  output_every_n_frames: 1
+
+  # 현재 에피소드: 재정렬된 상단 P5~P8 주차 후 충전 구역으로 이동한다.
+  # C2가 비어 있으면 C2만 계획하고, C2가 점유됐을 때만 C1로 대체한다.
+  parking_assignment:
+    # START 차량은 C2/C1이 모두 점유됐을 때 아래 대기칸 정책으로 fallback한다.
+    active_phase: entry_to_parking
+    phases:
+      entry_to_parking:
+        reference_point: entrance
+        # 거리 계산이 아니라 운영 우선순위를 그대로 적용한다.
+        allowed_slots: [P5, P6, P7, P8]
+        preference: ordered
+        candidate_limit: 4
+      parking_to_charge:
+        # ordered 정책에서는 reference_point를 거리 계산에 사용하지 않는다.
+        reference_point: entrance
+        allowed_slots: [C2, C1]
+        preference: ordered
+        candidate_limit: 2
+      charge_to_exit:
+        reference_point: exit
+        allowed_slots: [P1, P2, P3, P4]
+        preference: nearest
+        candidate_limit: 4
+
+  # 특정 칸을 강제하려면 이름을 넣는다. 현재는 자동 배정을 사용한다.
+  target_slot_name: null
+
+  # 여러 car가 보일 때 ego를 구분하려면 실제 초기 BEV 중심을 [x, y]로 입력한다.
+  # null이면 첫 프레임에서 confidence가 가장 높은 car를 표시하지만 planning_ready=false이다.
+  initial_ego_center_bev_px: null
+
+  # null이면 fixed_mission_routes.yaml의 START yaw를 자동 사용한다. 주차면에
+  # 있을 때는 해당 slot goal yaw가 자동 적용되므로 front 클릭이 필요 없다.
+  initial_ego_yaw_deg: null
+
+  position_filter_alpha: 0.5
+  yaw_filter_alpha: 0.35
+  max_center_jump_px: 250.0
+  minimum_mask_elongation: 1.05

@@ -1,6 +1,19 @@
+# Python virtual environments and locally installed libraries
 .venv/
+venv/
+.env/
+env/
+site-packages/
+*.dist-info/
+
+# Python caches and build outputs
 __pycache__/
 .pytest_cache/
+build/
+install/
+log/
+.runtime/
+*.egg-info/
 *.py[cod]
 
 # 로컬 ROS 2/colcon 생성물. 실제 워크스페이스 산출물은 소스 저장소에 포함하지 않는다.
@@ -12,3 +25,29 @@ __pycache__/
 /ros2_ws/build/
 /ros2_ws/install/
 /ros2_ws/log/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.log
+
+# PyTorch checkpoints are ZIP archives. Ignore accidental manual extraction
+# beside the model file (for example models/best/data/*).
+src/central_control/models/best/
+
+# Camera BEV recordings and extracted CVAT datasets are generated locally.
+src/central_control/camera_tools/first_map/bev_recordings/
+src/central_control/camera_tools/first_map/bev_dataset/
+
+# 상단 카메라·자동 planner가 원자적으로 갱신하는 런타임 결과.
+src/central_control/path_planning/output/live_vision_scene.json
+src/central_control/path_planning/output/live_camera_bev.png
+src/central_control/path_planning/output/live_hybrid_path_world_cm.csv
+src/central_control/path_planning/output/live_hybrid_path_camera_bev.csv
+src/central_control/path_planning/output/live_hybrid_path_world_cm.json
+src/central_control/path_planning/output/live_hybrid_planning_status.json
+src/central_control/path_planning/output/live_hybrid_path_on_camera_bev.png
+.runtime/parking_management/web.log
+.runtime/parking_management/rosbridge.log
+.runtime/parking_management/localization.log
+.runtime/parking_management/web_video_server.log

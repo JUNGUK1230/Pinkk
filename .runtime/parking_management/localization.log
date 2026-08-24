@@ -1,0 +1,1161 @@
+[WARN] [1787561377.734280275] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
+[WARN] [1787561377.734308018] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
+QFontDatabase: Cannot find font directory /home/junguk/PINKK/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/junguk/PINKK/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/junguk/PINKK/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/junguk/PINKK/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/junguk/PINKK/.venv/lib/python3.12/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+[INFO] [1787561389.104722442] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=entry
+Opened overhead camera: 1920x1080 @ 30.0 FPS, latest-frame buffer request=1 accepted=True
+Loaded YOLO segmentation: /home/junguk/PINKK/src/central_control/models/best.pt names={0: 'car', 1: 'dummy'}
+Runtime path/scene files: disabled (direct ROS topics only)
+Direct ROS topics: /pinkk/vehicle_2/localization_pose, /pinkk/vehicle_2/path, /pinkk/vehicle_2/trajectory, /pinkk/vehicle_2/path_valid
+Parking assignment: entry_to_parking, ordered from (100.0, 120.0), slots=['P5', 'P6', 'P7', 'P8']
+Automatic vehicle selection enabled | SPACE: charge complete | q/ESC: quit
+Fixed route publish: immediate + every 1.00 sec
+Detection confidence: base=0.25, occupancy_car=0.25, ego_car=0.50
+YOLO warm-up complete: imgsz=1600, device=0
+Frame 65: ego vehicle selection is ambiguous
+  Ego vehicle center: (66.05, 23.87) cm, id=8, yaw=37.1 deg, conf=0.93, ambiguous=True
+  Route context: START -> WAIT
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Live timing: capture_age=116.9 ms, dropped_for_freshness=0
+Frame 82: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.91) cm, id=8, yaw=17.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05948411125377, 23.914858557200365, 0.3048665387022407), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=41.8 ms, dropped_for_freshness=1
+Frame 97: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08762789967341, 23.940825393914164, 0.3276004997304036), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=73.6 ms, dropped_for_freshness=1
+Frame 113: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.93) cm, id=8, yaw=17.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06564131111736, 23.928253372432422, 0.3007447274459718), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=49.2 ms, dropped_for_freshness=1
+Frame 127: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=17.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0852785008442, 23.924342559547956, 0.3083576137724222), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=124.2 ms, dropped_for_freshness=1
+Frame 143: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.93) cm, id=8, yaw=19.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06801768156761, 23.9330470833977, 0.34098762739630706), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=77.7 ms, dropped_for_freshness=3
+Frame 158: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=17.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06875712619578, 23.921522715181027, 0.30711162409362647), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=104.3 ms, dropped_for_freshness=4
+Automatic ROS path target: vehicle_2 command=entry -> /pinkk/vehicle_2/trajectory
+Frame 174: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=17.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07295732069346, 23.913764195961036, 0.3100907620089366), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=96.8 ms, dropped_for_freshness=5
+Frame 189: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.93) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06064400362, 23.927748614377748, 0.31835241913516255), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=98.9 ms, dropped_for_freshness=6
+Frame 205: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=20.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07308498823667, 23.900433783309555, 0.3566211665489023), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=75.0 ms, dropped_for_freshness=7
+Frame 220: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.10, 23.93) cm, id=8, yaw=17.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0953048144578, 23.927037325295995, 0.3128391269439028), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=117.3 ms, dropped_for_freshness=8
+Frame 236: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.95) cm, id=8, yaw=16.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08013747062438, 23.94844107656885, 0.28592318303837505), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=99.7 ms, dropped_for_freshness=8
+Frame 251: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=17.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0755426760357, 23.925639983396376, 0.31306955709748463), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=98.4 ms, dropped_for_freshness=8
+Frame 266: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.90) cm, id=8, yaw=16.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)[INFO] [1787561398.517989256] [pinkk_live_planning_bridge]: Selected path target: vehicle_2 -> vehicle_1 (/pinkk/vehicle_1)
+[INFO] [1787561398.519893186] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_1 command=entry
+[INFO] [1787561404.971871683] [pinkk_live_planning_bridge]: Selected path target: vehicle_1 -> vehicle_2 (/pinkk/vehicle_2)
+[INFO] [1787561404.973886561] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=entry
+[INFO] [1787561406.301703791] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=charge
+[INFO] [1787561408.386984227] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=entry
+
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06329757328439, 23.901269714118694, 0.288702255507018), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=110.6 ms, dropped_for_freshness=8
+Frame 282: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.92) cm, id=8, yaw=19.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05834923806813, 23.91689476638522, 0.34422896683135606), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=75.0 ms, dropped_for_freshness=9
+Frame 298: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=16.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08923233479648, 23.921434690710754, 0.28566733569711733), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=48.9 ms, dropped_for_freshness=10
+Automatic ROS path target: vehicle_1 command=entry -> /pinkk/vehicle_1/trajectory
+Frame 313: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=17.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08410278573182, 23.9232087566879, 0.3085988099366106), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=66.3 ms, dropped_for_freshness=11
+Frame 329: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07611473131719, 23.907140737021983, 0.3272805686596212), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=51.2 ms, dropped_for_freshness=13
+Frame 344: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=19.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.065933160131, 23.89715749278759, 0.3473856004315641), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=128.2 ms, dropped_for_freshness=13
+Frame 360: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.90) cm, id=8, yaw=18.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05726910608956, 23.896498064015784, 0.32283584129888165), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=105.5 ms, dropped_for_freshness=14
+Frame 376: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=17.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08118024496461, 23.92237460060673, 0.3077600852045439), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=81.1 ms, dropped_for_freshness=15
+Frame 391: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.91) cm, id=8, yaw=20.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06423310306153, 23.91390443857134, 0.35245853173595254), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=116.1 ms, dropped_for_freshness=16
+Automatic ROS path target: vehicle_2 command=entry -> /pinkk/vehicle_2/trajectory
+Frame 407: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=16.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07139439976918, 23.923624936157076, 0.2953134396680892), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=78.6 ms, dropped_for_freshness=19
+Automatic ROS path target: vehicle_2 command=charge -> /pinkk/vehicle_2/trajectory
+Frame 422: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.93) cm, id=8, yaw=18.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08557299380853, 23.929564950855656, 0.3205445678057801), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=99.2 ms, dropped_for_freshness=19
+Frame 438: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.90) cm, id=8, yaw=19.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07552515970629, 23.90395802865257, 0.34321645187444627), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=95.7 ms, dropped_for_freshness=21
+Automatic ROS path target: vehicle_2 command=entry -> /pinkk/vehicle_2/trajectory
+Frame 454: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=17.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06696805073918, 23.920670193493727, 0.3023726758055303), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=82.8 ms, dropped_for_freshness=23
+Frame 470: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0821592679484, 23.924707889886452, 0.3262916990662523), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=75.7 ms, dropped_for_freshness=24
+Frame 486: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=16.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07267179302072, 23.922660256768584, 0.2792326188427321), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=53.5 ms, dropped_for_freshness=26
+Frame 501: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.91) cm, id=8, yaw=17.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09157956972993, 23.91223674051676, 0.31032942725088963), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=94.3 ms, dropped_for_freshness=26
+Frame 516: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.89) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06507375983969, 23.893862460444524, 0.327233125204073), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=102.5 ms, dropped_for_freshness=27
+Frame 531: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=18.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07036496815076, 23.914196948461186, 0.3290473034100674), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=119.8 ms, dropped_for_freshness=28
+Frame 547: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=19.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06746160584673, 23.898336071833377, 0.3378352760180423), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=109.7 ms, dropped_for_freshness=29
+Frame 568: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=18.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07546711806022, 23.9183323980586, 0.3139059595928222), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=81.2 ms, dropped_for_freshness=35
+Frame 588: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.90) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06020756969497, 23.903572396376294, 0.3176239339807996), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=116.3 ms, dropped_for_freshness=41
+Frame 609: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=17.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08683031039597, 23.941614369306038, 0.3021240797399183), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=67.6 ms, dropped_for_freshness=49
+Frame 629: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.88) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06837975143232, 23.883638130488247, 0.32806029044102303), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=70.2 ms, dropped_for_freshness=55
+Frame 649: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.05, 23.91) cm, id=8, yaw=16.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.04843425801526, 23.914377186537873, 0.28810757005100385), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=84.3 ms, dropped_for_freshness=60
+Frame 670: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=17.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08151156019207, 23.923280471648074, 0.29612792684363143), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=118.3 ms, dropped_for_freshness=66
+Frame 692: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.91) cm, id=8, yaw=18.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06412313215085, 23.911901136902426, 0.31344218596046636), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=57.7 ms, dropped_for_freshness=73
+Frame 712: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.05, 23.92) cm, id=8, yaw=20.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05384384338493, 23.915320767110057, 0.3483810867119961), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=82.2 ms, dropped_for_freshness=79
+Frame 732: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=20.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0667678594834, 23.89544379201011, 0.3618771387251942), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=116.6 ms, dropped_for_freshness=85
+Frame 754: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=19.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07519349552467, 23.90892818722418, 0.33892470066215363), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=82.1 ms, dropped_for_freshness=93
+Frame 775: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.91) cm, id=8, yaw=18.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06033676304034, 23.909914358210834, 0.315947558228582), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=80.7 ms, dropped_for_freshness=100
+Frame 796: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.90) cm, id=8, yaw=17.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0772047602402, 23.89554515500053, 0.3014353889490744), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=122.8 ms, dropped_for_freshness=107
+Frame 817: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0721846690793, 23.912302853464183, 0.32716083531564166), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=75.9 ms, dropped_for_freshness=115
+Frame 838: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=16.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09080261831625, 23.920447588964013, 0.2887043918844663), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=94.9 ms, dropped_for_freshness=121
+Frame 859: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=16.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08757218227018, 23.937371700420595, 0.2902572791446709), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=61.2 ms, dropped_for_freshness=127
+Frame 879: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07970860494947, 23.916559369871457, 0.3268247771401529), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=110.3 ms, dropped_for_freshness=132
+Frame 900: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.10, 23.92) cm, id=8, yaw=16.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09606524155127, 23.916577974358724, 0.28182187707650463), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=71.0 ms, dropped_for_freshness=138
+Frame 921: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.90) cm, id=8, yaw=18.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05812341605304, 23.90291466627041, 0.3185753812563106), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=83.5 ms, dropped_for_freshness=145
+Frame 941: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.89) cm, id=8, yaw=18.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0688477140326, 23.89358068738522, 0.3157745114629673), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=116.9 ms, dropped_for_freshness=150
+Frame 962: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.90) cm, id=8, yaw=15.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07817357412294, 23.90235403274373, 0.2781807317243361), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=61.4 ms, dropped_for_freshness=157
+Frame 983: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.94) cm, id=8, yaw=17.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08047307528994, 23.939574086646065, 0.3095671484076652), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=89.5 ms, dropped_for_freshness=163
+Frame 1003: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=17.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08067801739371, 23.91490185132155, 0.3089760469051166), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=91.3 ms, dropped_for_freshness=169
+Frame 1023: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06781161688578, 23.90441882864817, 0.32571795695497663), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=134.9 ms, dropped_for_freshness=175
+Frame 1044: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=19.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07216737920302, 23.90916418108789, 0.3365286319348213), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=53.5 ms, dropped_for_freshness=182
+Frame 1064: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=19.9 deg, conf=0.94, ambiguous=False[INFO] [1787561447.217195912] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=entry
+
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06904114505265, 23.906057810785633, 0.34727960306021544), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=75.1 ms, dropped_for_freshness=188
+Frame 1084: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.94) cm, id=8, yaw=17.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08007918715901, 23.942205352709298, 0.30420732537390993), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=67.3 ms, dropped_for_freshness=194
+Frame 1104: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=17.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07522484965304, 23.91273325674984, 0.30298641549128513), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=124.6 ms, dropped_for_freshness=199
+Frame 1125: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=16.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07854357838627, 23.910248734122153, 0.29225808152403676), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=91.9 ms, dropped_for_freshness=206
+Frame 1146: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=17.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06960386549179, 23.915904622249528, 0.31095452975333915), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=67.9 ms, dropped_for_freshness=213
+Frame 1166: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=18.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06951755118179, 23.91133818555938, 0.3195016225617273), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=94.1 ms, dropped_for_freshness=219
+Frame 1187: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=20.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07780344113247, 23.908145585755193, 0.35068459085328874), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=73.6 ms, dropped_for_freshness=225
+Automatic ROS path target: vehicle_2 command=entry -> /pinkk/vehicle_2/trajectory
+Frame 1208: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.93) cm, id=8, yaw=17.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09431533926504, 23.926655491605686, 0.3063450335142428), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=56.7 ms, dropped_for_freshness=230
+Frame 1228: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=16.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07167024341935, 23.909539906497468, 0.2904585072978634), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=98.9 ms, dropped_for_freshness=234
+Frame 1249: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=16.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06941643843929, 23.8951493133147, 0.2822882385298877), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=80.3 ms, dropped_for_freshness=240
+Frame 1269: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=20.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07222942735125, 23.904243779142163, 0.34961824860454627), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=80.4 ms, dropped_for_freshness=246
+Frame 1290: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=17.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06846330432646, 23.898978237016077, 0.30541223795705275), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=116.1 ms, dropped_for_freshness=253
+Frame 1311: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=20.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06569315783695, 23.912984837089038, 0.3592494037339713), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=60.1 ms, dropped_for_freshness=259
+Frame 1332: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.94) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07551150400221, 23.93706707553062, 0.3286661517751308), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=54.5 ms, dropped_for_freshness=266
+Frame 1352: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=17.8 deg, conf=0.93, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)[INFO] [1787561460.094234740] [pinkk_live_planning_bridge]: Accepted automatic path target: vehicle_2 command=replan
+
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06814577649337, 23.90972793481804, 0.3106828733305367), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=73.9 ms, dropped_for_freshness=272
+Frame 1372: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=20.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07318282222847, 23.903351574393707, 0.35730145161631066), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=128.9 ms, dropped_for_freshness=278
+Frame 1393: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07672454297492, 23.9079870807748, 0.32896129296927334), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=65.7 ms, dropped_for_freshness=285
+Frame 1414: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=18.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06920062321457, 23.90221515110237, 0.3251024689158619), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=100.7 ms, dropped_for_freshness=292
+Frame 1435: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=19.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08636280617756, 23.918158690638958, 0.33833305473408615), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=72.3 ms, dropped_for_freshness=299
+Automatic ROS path target: vehicle_2 command=replan -> /pinkk/vehicle_2/trajectory
+Frame 1456: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=18.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0829501429515, 23.932661268494698, 0.31996952787104327), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=90.1 ms, dropped_for_freshness=305
+Frame 1476: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=17.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09108335763467, 23.920591978802012, 0.2982453180781599), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=115.7 ms, dropped_for_freshness=310
+Frame 1497: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.91) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05916950178359, 23.908475359305008, 0.3285912707552554), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=72.2 ms, dropped_for_freshness=316
+Frame 1517: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.93) cm, id=8, yaw=17.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08802869530422, 23.92604562593799, 0.3022925078126528), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=78.6 ms, dropped_for_freshness=321
+Frame 1537: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0795289351764, 23.91884023711891, 0.3168141325059395), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=86.0 ms, dropped_for_freshness=326
+Frame 1557: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.94) cm, id=8, yaw=19.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06720711413965, 23.939249309774077, 0.33179590929331804), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=106.7 ms, dropped_for_freshness=329
+Frame 1579: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=17.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06824862017359, 23.923637328404972, 0.29953692897565176), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=60.2 ms, dropped_for_freshness=335
+Frame 1599: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=16.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09141205894787, 23.939522112464953, 0.2846035826904463), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=84.3 ms, dropped_for_freshness=341
+Frame 1619: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.93) cm, id=8, yaw=17.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08840986450049, 23.925696512106697, 0.30972330940370085), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=94.5 ms, dropped_for_freshness=346
+Frame 1640: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07065671448251, 23.919901190903133, 0.32808738681622174), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=72.6 ms, dropped_for_freshness=351
+Frame 1661: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=17.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07511951226793, 23.931159137696167, 0.30678669234754397), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=77.5 ms, dropped_for_freshness=357
+Frame 1679: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=18.5 deg, conf=0.93, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08828448283862, 23.91629576155941, 0.32234010769790444), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=50.1 ms, dropped_for_freshness=360
+Frame 1694: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.90) cm, id=8, yaw=18.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05671823472498, 23.904162270797894, 0.3242393121684919), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=79.4 ms, dropped_for_freshness=360
+Frame 1710: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=16.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09137641969167, 23.938433211217678, 0.2793634406998624), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=72.4 ms, dropped_for_freshness=362
+Frame 1725: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.10, 23.93) cm, id=8, yaw=18.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0953950912669, 23.92788387987529, 0.3194590622869855), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=114.0 ms, dropped_for_freshness=363
+Frame 1741: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=16.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08178946972447, 23.924493779422342, 0.287773290546264), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=83.6 ms, dropped_for_freshness=364
+Frame 1757: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.91) cm, id=8, yaw=20.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09231337653675, 23.91440952325473, 0.3548273951338303), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=56.8 ms, dropped_for_freshness=365
+Frame 1772: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.05, 23.89) cm, id=8, yaw=18.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05366247879523, 23.892290967103897, 0.3235696112861044), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=110.1 ms, dropped_for_freshness=365
+Frame 1788: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=18.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06838151507873, 23.916397344520394, 0.32639889305968417), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=81.9 ms, dropped_for_freshness=366
+Frame 1804: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.94) cm, id=8, yaw=21.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07501297458285, 23.93697769857835, 0.37220675535852266), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=53.3 ms, dropped_for_freshness=367
+Frame 1819: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.93) cm, id=8, yaw=19.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07424120389729, 23.931233705185278, 0.33610105205201357), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=110.0 ms, dropped_for_freshness=367
+Frame 1835: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.92) cm, id=8, yaw=19.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08381283985052, 23.92013880862721, 0.33087920170180274), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=91.7 ms, dropped_for_freshness=368
+Frame 1851: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=23.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06938051254635, 23.92229561806742, 0.4027471319210085), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=65.0 ms, dropped_for_freshness=369
+Frame 1866: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.92) cm, id=8, yaw=19.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06174446700393, 23.915032887436134, 0.34493585446288044), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=102.1 ms, dropped_for_freshness=369
+Frame 1881: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=18.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08196330001587, 23.913705865501782, 0.3277189859871923), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=105.3 ms, dropped_for_freshness=370
+Frame 1896: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=17.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08408210516413, 23.92612428566767, 0.30441498269241896), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=117.3 ms, dropped_for_freshness=370
+Frame 1912: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.90) cm, id=8, yaw=17.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07093704370722, 23.90374938714232, 0.3022268967756938), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=86.9 ms, dropped_for_freshness=371
+Frame 1927: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.92) cm, id=8, yaw=18.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09117092232111, 23.916082237642023, 0.3247931471937342), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=118.0 ms, dropped_for_freshness=371
+Frame 1943: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=16.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07505459261198, 23.908964803859735, 0.29175268219587114), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=56.7 ms, dropped_for_freshness=372
+Frame 1959: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=19.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07627984791412, 23.907491191979037, 0.3432895116848824), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=49.7 ms, dropped_for_freshness=373
+Frame 1974: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=17.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08073692504102, 23.93148692772786, 0.3046958548891183), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=51.0 ms, dropped_for_freshness=374
+Frame 1989: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=17.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08104089214585, 23.906449813839306, 0.3006899807941039), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=95.8 ms, dropped_for_freshness=374
+Frame 2005: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.94) cm, id=8, yaw=16.5 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07844581512337, 23.939077608969605, 0.2876113839273371), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=88.9 ms, dropped_for_freshness=374
+Frame 2021: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=20.3 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06853395341498, 23.91467847869173, 0.3546341478135888), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=43.7 ms, dropped_for_freshness=374
+Frame 2036: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.89) cm, id=8, yaw=16.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06592391101785, 23.88775734430562, 0.2940127682789542), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=48.4 ms, dropped_for_freshness=374
+Frame 2051: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.93) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06638889070256, 23.92711616525274, 0.31702087579030014), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=50.5 ms, dropped_for_freshness=374
+Frame 2067: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.97) cm, id=8, yaw=18.9 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.09075660899244, 23.96689645397243, 0.3291024175619355), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=42.1 ms, dropped_for_freshness=374
+Frame 2083: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.05, 23.93) cm, id=8, yaw=19.8 deg, conf=0.93, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05118169598005, 23.93251805365214, 0.3459510195388651), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=44.5 ms, dropped_for_freshness=375
+Frame 2098: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=19.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06857838881008, 23.917262304315223, 0.3427607956572887), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=53.6 ms, dropped_for_freshness=375
+Frame 2114: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.91) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08314701953653, 23.913921637589024, 0.318095810951724), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=43.0 ms, dropped_for_freshness=375
+Frame 2130: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.06, 23.94) cm, id=8, yaw=16.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06149899153439, 23.93664497759426, 0.29218514352376435), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=45.3 ms, dropped_for_freshness=375
+Frame 2145: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.95) cm, id=8, yaw=18.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07892689979616, 23.94685783172813, 0.314677551757935), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=55.1 ms, dropped_for_freshness=375
+Frame 2161: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.95) cm, id=8, yaw=17.6 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06566449612544, 23.947605538543435, 0.3078655347874455), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=45.3 ms, dropped_for_freshness=375
+Frame 2176: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.91) cm, id=8, yaw=18.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07205210348948, 23.911869816112034, 0.3174085619907965), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=46.2 ms, dropped_for_freshness=375
+Frame 2192: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.94) cm, id=8, yaw=18.4 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.0684552975798, 23.944788079937386, 0.321526066357003), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=48.3 ms, dropped_for_freshness=375
+Frame 2208: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.05, 23.92) cm, id=8, yaw=19.1 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.05471750714608, 23.916003455421507, 0.3325000440946613), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=46.0 ms, dropped_for_freshness=375
+Frame 2223: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.92) cm, id=8, yaw=19.2 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.07215835704775, 23.91566243026329, 0.3348515391115656), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=47.1 ms, dropped_for_freshness=375
+Frame 2239: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.07, 23.93) cm, id=8, yaw=18.0 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.06861666378198, 23.927808949460044, 0.3142535816928893), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=44.5 ms, dropped_for_freshness=375
+Frame 2254: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.09, 23.94) cm, id=8, yaw=16.7 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08960754073563, 23.93533586808308, 0.29103093229486543), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=60.4 ms, dropped_for_freshness=375
+Frame 2270: planning input ready (entry_to_parking)
+  Ego vehicle center: (66.08, 23.93) cm, id=8, yaw=17.8 deg, conf=0.94, ambiguous=False
+  Route context: START -> P6
+  Parking slots: 2/10 free
+  Tracked vehicles: id=8:entry_or_transit(-,live), id=9:charging(C2,live)
+  Charge assignment: id=8 -> waiting (waiting_for_charge_slot)
+  Selected P6: start=(66.08412248794713, 23.929204337487707, 0.3111767175610609), goal=(96.01147398832114, 79.52729723778933, -0.7821604755692171)
+  Assignment candidates: P6
+  Live timing: capture_age=43.9 ms, dropped_for_freshness=375
+ERROR: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130

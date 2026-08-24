@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+
+<launch>
+    <arg name="namespace" default="pinkk/vehicle_1"/>
+    <arg name="vehicle_id" default="vehicle_1"/>
+    <arg name="controller_id" default="pinky_01"/>
+    <arg name="hardware_serial" default="PINKY-001"/>
+    <arg name="use_sim_time" default="False"/>
+    <arg name="wheel_radius" default="0.027"/>
+    <arg name="wheel_separation" default="0.0961"/>
+
+    <!-- 포함된 launch도 namespace 인자를 사용하므로 바깥 group에서 다시
+         push하지 않는다. 각 구성 요소에 namespace를 정확히 한 번만 준다. -->
+    <include file="$(find-pkg-share pinky_description)/launch/upload_robot.launch.py">
+        <arg name="namespace" value="$(var namespace)"/>
+        <arg name="use_sim_time" value="$(var use_sim_time)"/>
+    </include>
+
+    <!-- Pinky별 sllidar launch 버전의 namespace 처리 차이를 피하기 위해
+         노드를 직접 실행하고 명시적인 단일 namespace를 적용한다. -->
+    <node pkg="sllidar_ros2" exec="sllidar_node" name="sllidar_node"
+          namespace="$(var namespace)" output="screen">
+        <param name="channel_type" value="serial"/>
+        <param name="serial_port" value="/dev/ttyS0"/>
+        <param name="serial_baudrate" value="460800"/>
+        <param name="frame_id" value="rplidar_link"/>
+        <param name="inverted" value="false"/>
+        <param name="angle_compensate" value="true"/>
+        <param name="scan_mode" value="DenseBoost"/>
+    </node>
+
+    <node pkg="pinky_bringup" exec="bringup" namespace="$(var namespace)">
+        <param from="$(find-pkg-share pinky_bringup)/config/pinky_params.yaml"/>
+        <param name="vehicle_id" value="$(var vehicle_id)"/>
+        <param name="controller_id" value="$(var controller_id)"/>
+        <param name="hardware_serial" value="$(var hardware_serial)"/>
+        <param name="wheel_radius" value="$(var wheel_radius)"/>
+        <param name="wheel_separation" value="$(var wheel_separation)"/>
+    </node>
+
+    <node pkg="pinky_bringup" exec="battery_publisher"
+          namespace="$(var namespace)"/>
+</launch>

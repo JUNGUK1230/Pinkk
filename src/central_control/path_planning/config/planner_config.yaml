@@ -1,0 +1,79 @@
+planner:
+  type: hybrid_astar
+  resolution_cm: 1.0
+  obstacle_threshold: 50
+  allow_diagonal: true
+  prevent_corner_cutting: true
+
+hybrid_astar:
+  # 회전된 12 x 10 cm 차량 footprint 자체로 실제 벽 충돌을 검사한다.
+  # 좁은 주차면 시험에서는 추가 obstacle 팽창 없이 실차 외곽만 적용한다.
+  footprint_safety_margin_cm: 0.0
+  yaw_resolution_deg: 10.0
+  # 탐색은 3 cm primitive로 유지하고, 제어용 결과만 0.5 cm 간격으로 재샘플링한다.
+  path_output_step_cm: 0.5
+  motion_step_cm: 3.0
+  steer_set_deg:
+    - -30.0
+    - -25.0
+    - -20.0
+    - -15.0
+    - -10.0
+    - -5.0
+    - 0.0
+    - 5.0
+    - 10.0
+    - 15.0
+    - 20.0
+    - 25.0
+    - 30.0
+  # 3 cm primitive 경계에서 한 번에 변할 수 있는 최대 가상 조향각
+  max_steer_change_deg: 10.0
+  allow_reverse: true
+  # 7개 조향 상태 탐색이 실제 지도에서 안정적으로 완료되도록 여유를 둔다.
+  timeout_sec: 10.0
+  # timeout과 별도로 비정상 상태공간 폭증을 차단하는 후보당 상한
+  max_expanded_nodes: 50000
+  goal_tolerance_cm: 4.0
+  goal_yaw_tolerance_deg: 15.0
+  # 목표 30 cm 이내에서 충돌 없는 Reeds-Shepp 경로로 정확한 goal pose 연결을 시도한다.
+  analytic_expansion_enabled: true
+  analytic_expansion_distance_cm: 30.0
+  # 막힌 goal 근처에서 모든 노드마다 expensive analytic 후보를 만들지 않는다.
+  analytic_expansion_interval_nodes: 20
+  analytic_max_candidates: 12
+  # 12 cm 물리 한계보다 완만한 16 cm analytic 곡선을 만들기 위한 여유값
+  analytic_turning_radius_margin_cm: 4.0
+  path_smoothing_enabled: true
+  # 장거리 경로에서도 조향 변화가 완만해지도록 control knot을 넓힌다.
+  smoothing_knot_spacing_cm: 6.0
+
+cost:
+  reverse_penalty: 1.5
+  gear_switch_penalty: 5.0
+  steer_penalty: 0.2
+  steer_change_penalty: 0.5
+
+trajectory_profile:
+  # PinkyPro 실차 초기 시험용 보수적 저속 설정
+  max_forward_speed_mps: 0.05
+  max_reverse_speed_mps: 0.03
+  min_curve_forward_speed_mps: 0.02
+  min_curve_reverse_speed_mps: 0.015
+  # PinkyPro controller의 실제 각속도 상한.
+  max_angular_speed_radps: 0.4
+  max_acceleration_mps2: 0.05
+  max_deceleration_mps2: 0.05
+
+trajectory_validation:
+  # 0.5 cm 출력에서 정상 최대 yaw 변화(약 2 deg)보다 여유 있게 설정한다.
+  max_yaw_change_deg: 5.0
+  max_motion_heading_error_deg: 5.0
+  steering_rate_tolerance_deg: 0.1
+  # rad 기준 약 0.000115 deg의 부동소수점 비교 여유다.
+  numeric_tolerance: 0.000002
+
+# 상단 카메라에서 자동 생성하는 실제 주차 경로의 종단 maneuver 조건.
+# 일반 클릭 Hybrid A* 테스트에는 강제하지 않고 live planner에서만 적용한다.
+automatic_parking:
+  required_final_direction: -1

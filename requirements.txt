@@ -1,6 +1,9 @@
 numpy
 opencv-contrib-python==4.12.0.88
+# Ubuntu의 ROS/Matplotlib 바이너리는 NumPy 1.x ABI로 빌드되어 있습니다.
+numpy<2
+opencv-python
 PyYAML
-ultralytics
+Flask>=3.0,<4
 scipy
 typeguard

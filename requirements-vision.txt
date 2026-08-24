@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# YOLO 영상 분석을 사용할 때만 설치합니다.
+ultralytics
+
+# Ultralytics ByteTrack의 프레임 간 차량 ID matching 의존성
+lap>=0.5.12
