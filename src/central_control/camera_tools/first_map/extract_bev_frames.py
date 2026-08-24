@@ -4,8 +4,9 @@ By default, this script selects the newest video in ``bev_recordings`` and
 extracts up to 1500 frames spread across the whole recording.
 
 Run:
-    cd ~/PINKK/src/central_control/camera_tools/first_map
-    /usr/bin/python3 extract_bev_frames.py --count 1500
+    .venv/bin/python \
+        src/central_control/camera_tools/first_map/extract_bev_frames.py \
+        --count 1500
 """
 
 import argparse
@@ -35,10 +36,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--count",
         type=int,
-        default=100,
+        default=1500,
         help="Maximum number of frames to extract (default: 1500).",
     )
-    parser.add_argument(z
+    parser.add_argument(
         "--output-dir",
         type=Path,
         help="Output folder. Default: bev_dataset/cvat_images/<video_name>.",

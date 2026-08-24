@@ -1,8 +1,7 @@
 """Capture and save a calibrated 1600x800 Camera BEV image.
 
 Run:
-    cd ~/PINKK/src/central_control/camera_tools/first_map
-    python3 capture_camera_bev.py
+    .venv/bin/python src/central_control/camera_tools/first_map/capture_camera_bev.py
 
 Keys:
     s: save the current BEV as camera_bev.png

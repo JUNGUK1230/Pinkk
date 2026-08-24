@@ -58,6 +58,38 @@ STATIC_PARAMETERS = frozenset(
 )
 
 
+def resolve_tuning_path(value: str | Path) -> Path:
+    """Resolve a tuning file independently of the caller's working directory."""
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+
+    candidates = [Path.cwd() / path]
+    source_root = Path(__file__).resolve().parents[2]
+    candidates.append(source_root / path)
+
+    try:
+        from ament_index_python.packages import get_package_share_directory
+
+        share_root = Path(get_package_share_directory("pinkk"))
+        source_prefix = ("src", "vehicle_control", "config")
+        if path.parts[: len(source_prefix)] == source_prefix:
+            candidates.append(
+                share_root
+                / "config"
+                / "vehicle_control"
+                / Path(*path.parts[len(source_prefix) :])
+            )
+        candidates.append(share_root / path)
+    except (ImportError, LookupError):
+        pass
+
+    return next(
+        (candidate for candidate in candidates if candidate.is_file()),
+        candidates[0],
+    )
+
+
 def trajectory_signature(data: Sequence[float]) -> bytes:
     """동일 경로 주기 발행이 MPC progress를 초기화하지 않게 식별한다."""
     digest = hashlib.blake2b(digest_size=16)
@@ -214,9 +246,7 @@ class MpcPathFollower(Node):
         self._last_tracking_log_monotonic = 0.0
         self.add_on_set_parameters_callback(self._on_set_parameters)
         tuning_file = str(self.get_parameter("tuning_file").value)
-        self._tuning_path = Path(tuning_file).expanduser()
-        if not self._tuning_path.is_absolute():
-            self._tuning_path = Path.cwd() / self._tuning_path
+        self._tuning_path = resolve_tuning_path(tuning_file)
         self._auto_reload_tuning = bool(
             self.get_parameter("auto_reload_tuning").value
         )

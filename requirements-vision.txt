@@ -1,10 +1,5 @@
 -r requirements.txt
 
-# CUDA 패키지를 내려받지 않는 CPU 전용 PyTorch입니다.
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.13.0+cpu
-torchvision==0.28.0+cpu
-
 # YOLO 영상 분석을 사용할 때만 설치합니다.
 ultralytics
 

@@ -1,0 +1,6 @@
+-r requirements-vision.txt
+
+# NVIDIA CUDA를 사용하지 않는 PC에서만 이 파일을 설치합니다.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu

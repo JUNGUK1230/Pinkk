@@ -58,8 +58,8 @@ signed 횡오차와 heading 오차 크기에 비례해 추가 곡률을 계산�
   경로 무효화 또는 MPC 재시작 전에는 자동 재출발하지 않음
 - 동일 경로의 주기 재발행은 기존 progress를 초기화하지 않음
 - 새 경로에서만 MPC progress와 warm start 초기화
-- MPC를 staging에서 재시작하면 첫 pose에 한해 전체 경로의 nearest point를
-  찾아 전진 구간을 다시 주행하지 않고 현재 cusp에서 후진을 재개
+- 새 경로의 첫 pose가 source endpoint의 forward window 밖이면
+  `PATH_START_TOO_FAR`로 정지해 경로 중간에서 잘못 재개하지 않음
 - 전진→후진 전환 뒤 nearest-point 탐색을 후진 direction block 안으로 제한해
   공간상 가까운 전진 cusp로 되돌아가지 않음
 - 상단 카메라에서 ego 차량 경로가 무효화되면 해당 차량의
@@ -71,7 +71,6 @@ signed 횡오차와 heading 오차 크기에 비례해 추가 곡률을 계산�
 ## 오프라인 검사
 
 ```bash
-cd ~/PINKK
 .venv/bin/python src/vehicle_control/tests/test_mpc_controller.py
 ```
 
@@ -94,20 +93,12 @@ ros2 launch pinky_bringup bringup_robot.launch.xml
 MPC를 함께 실행하며, 둘 중 하나가 종료되면 나머지도 종료합니다.
 
 ```bash
-cd ~/PINKK
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
 ./src/vehicle_control/run_vehicle_controller.sh vehicle_1
 ```
 
 별도 터미널에서 차량 2도 실행합니다.
 
 ```bash
-cd ~/PINKK
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
 ./src/vehicle_control/run_vehicle_controller.sh vehicle_2
 ```
 
@@ -163,7 +154,7 @@ obstacle, pose/scan timeout 또는 heading 오류에서는 설정과 관계없�
 ## 현재 제한
 
 이 1차 버전은 장애물을 MPC 최적화 문제에 포함하지 않지만 차량별 `scan`의 차체
-전방 18°, 후방 30° sector에 대해 각각 15cm/5cm 비상정지를 적용합니다.
+전방 18°, 후방 30° sector에 대해 설정 파일의 거리 기준으로 비상정지를 적용합니다.
 Pinky URDF의 LiDAR 180° 장착 방향도 반영합니다. 기존 차량 안전 계층을
 유지하고, 첫 실차 연결에서는 각 차량의 `heading_diagnostics`와 실제 차체
 방향을 대조해야 합니다.

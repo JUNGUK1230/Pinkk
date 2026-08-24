@@ -1,8 +1,7 @@
 """Record lens-corrected Camera BEV video for YOLO dataset collection.
 
 Run:
-    cd ~/PINKK/src/central_control/camera_tools/first_map
-    /usr/bin/python3 capture_bev_image.py
+    .venv/bin/python src/central_control/camera_tools/first_map/capture_bev_image.py
 
 Controls:
     SPACE: start or stop BEV-only video recording

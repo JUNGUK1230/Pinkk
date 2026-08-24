@@ -25,7 +25,10 @@ from overhead_vision.localization.scene_localizer import (  # noqa: E402
     VehicleStateManager,
     save_scene_observation,
 )
-from overhead_vision.localization.live_localization import _draw_continuous_path  # noqa: E402
+from overhead_vision.localization.live_localization import (  # noqa: E402
+    _draw_continuous_path,
+    draw_runtime_hud,
+)
 from vision_scene_input import (  # noqa: E402
     VisionSceneUnavailable,
     load_vision_planning_request,
@@ -811,6 +814,21 @@ def main() -> int:
         )
         assert skipped == 0
         assert np.count_nonzero(line_image[:, :, 2]) > 0
+
+        hud_source = np.full((240, 640, 3), 80, dtype=np.uint8)
+        hud = draw_runtime_hud(
+            hud_source,
+            (
+                (
+                    "VEHICLE vehicle_1 | NAMESPACE /pinkk/vehicle_1",
+                    (0, 255, 255),
+                ),
+                ("IDENTITY track=7", (0, 220, 255)),
+            ),
+        )
+        assert hud.shape == hud_source.shape
+        assert not np.array_equal(hud, hud_source)
+        assert np.all(hud_source == 80), "HUD must not mutate its source image"
 
         ambiguous_path = temporary / "ambiguous_scene.json"
         save_scene_observation(ambiguous_scene, ambiguous_path)

@@ -15,7 +15,7 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 |---|---|
 | `config/fixed_mission_routes.yaml` | 고정 yaw, 도로 중심선, endpoint pose와 허용 이동 관계를 정의합니다. 모든 좌표는 `lidar_map_cm` 기준입니다. |
 | `src/fixed_route_selector.py` | 현재 차량 중심 pose를 `START`/주차면으로 분류하고 해당 CSV 전체를 불러옵니다. |
-| `scripts/test_fixed_mission_routes.py` | 허용된 32개 경로를 생성하거나 충돌 여부를 검사합니다. |
+| `scripts/test_fixed_mission_routes.py` | 허용된 26개 경로를 생성하거나 충돌 여부를 검사합니다. |
 | `scripts/test_fixed_route_selector.py` | 현재 section 판별과 CSV 선택을 회귀 검사합니다. |
 | `scripts/test_fixed_live_route_bridge.py` | YOLO scene의 현재 위치·목표가 올바른 고정 경로로 연결되는지 검사합니다. |
 | `output/fixed_route_manifest.csv` | source/target별 CSV 이름과 point 수를 정리합니다. |
@@ -47,20 +47,18 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 차량 설정의 최대 조향각 30도 이내인지 확인합니다.
 
 ```bash
-cd ~/PINKK/src/central_control/path_planning
-
-# 허용된 32개 CSV와 manifest 다시 생성
-python3 scripts/test_fixed_mission_routes.py --generate-all
+# 허용된 26개 CSV와 manifest 다시 생성
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_mission_routes.py --generate-all
 
 # 파일을 덮어쓰지 않고 모든 경로 검사
-python3 scripts/test_fixed_mission_routes.py --check-all
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_mission_routes.py --check-all
 
 # 개별 경로 생성
-python3 scripts/test_fixed_mission_routes.py --source START --target C2
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_mission_routes.py --source START --target C2
 
 # section 선택 및 실시간 연결 회귀 검사
-python3 scripts/test_fixed_route_selector.py
-python3 scripts/test_fixed_live_route_bridge.py
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_route_selector.py
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_live_route_bridge.py
 ```
 
 PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
@@ -88,12 +86,36 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 `route_republish_period_sec` 주기로 동일 경로를 반복 발행합니다. 기본값은
 1초입니다. 목표 변경이나 경로 무효화 시 이전 경로 재발행은 즉시 중단됩니다.
 
+경로 생성기는 등록된 모든 차량의 publisher를 시작할 때 생성합니다. 최초
+LiDAR-camera identity가 확정되면 현재 ego track에 대응하는 vehicle namespace를
+자동 선택합니다. 이후 웹 요청에 포함된 `vehicle_id`에 따라 대상 차량과 camera
+ego를 함께 자동 전환합니다. 화면의 `VEHICLE`, `NAMESPACE`, `IDENTITY`, `TOPIC`
+행에서 현재 선택과 자동 매칭 상태를 확인할 수 있습니다. 설정의 `vehicle_id`와
+실행 인자 `--vehicle-id`는 identity 확정 전 화면에 표시할 fallback일 뿐입니다.
+
+일반 운용에서는 키를 누를 필요가 없습니다. 경로 생성기가
+`/pinkk/web/control` (`std_msgs/String`)을 구독하며 관리자웹 또는 사용자웹의
+`entry`, `exit`, `charge`, `replan` 요청에 포함된 `vehicle_id`를 검증한 뒤 해당
+차량을 자동 선택합니다. `robot_id`, `controller_id`, `hardware_serial`,
+`ros_namespace`가 함께 전달된 경우 차량 레지스트리와 하나라도 다르면 요청을
+무시합니다. `1`/`2` 및 `e` 수동 선택은 제거되어 운용자가 누를 필요가 없습니다.
+
+두 차량이 카메라에 함께 보이면 경로 생성기는 `/pinkk/vehicle_1/scan`과
+`/pinkk/vehicle_2/scan`을 각각 공용 LiDAR 지도에 정합합니다. 카메라 검출 위치
+주변 25cm에서 LiDAR x/y/yaw를 coarse-to-fine으로 찾은 뒤 두 차량과 camera
+track의 전체 정합 비용이 가장 낮은 일대일 조합을 선택합니다. 두 번 연속 같은
+결과이고 정합 오차와 2순위 조합 간 margin이 설정 기준을 통과해야 identity를
+확정합니다. 확정 전에는 잘못된 차량으로 움직이지 않도록 pose와 trajectory를
+발행하지 않습니다. 이 LiDAR x/y는 차량 identity 확인에 사용하며 실제 MPC pose는
+기존과 동일하게 카메라 x/y와 LiDAR/odom yaw 융합 결과를 사용합니다.
+
 발행 토픽:
 
-- `/pinkk/vehicle_pose`: `geometry_msgs/PoseStamped`, 현재 차량 중심 pose
-- `/pinkk/planned_path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
-- `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
+- `/pinkk/vehicle_N/localization_pose`: `geometry_msgs/PoseStamped`, 현재 차량 중심 pose
+- `/pinkk/vehicle_N/path`: `nav_msgs/Path`, m 단위, `lidar_map` frame
+- `/pinkk/vehicle_N/trajectory`: `std_msgs/Float64MultiArray`
   (`x_m, y_m, yaw_rad, direction`)
+- `/pinkk/vehicle_N/path_valid`: `std_msgs/Bool`
 
 ## 레거시·오프라인 진단
 

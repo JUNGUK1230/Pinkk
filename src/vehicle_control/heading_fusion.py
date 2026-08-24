@@ -64,6 +64,16 @@ class HeadingMatch:
     point_count: int
 
 
+@dataclass(frozen=True)
+class PoseMatch:
+    position_x_m: float
+    position_y_m: float
+    yaw_rad: float
+    score_m: float
+    distinct_margin_m: float
+    point_count: int
+
+
 class LidarMapHeadingMatcher:
     """고정 위치에서 scan endpoint와 occupancy wall의 거리를 최소화한다.
 
@@ -226,6 +236,133 @@ class LidarMapHeadingMatcher:
             distinct_margin_m=float(margin),
             point_count=int(count),
         )
+
+    def match_pose_near(
+        self,
+        initial_x_m: float,
+        initial_y_m: float,
+        scan_points: np.ndarray,
+        position_half_width_m: float = 0.25,
+        coarse_position_step_m: float = 0.05,
+        coarse_yaw_step_deg: float = 10.0,
+        refine_position_half_width_m: float = 0.06,
+        refine_position_step_m: float = 0.01,
+        refine_yaw_half_width_deg: float = 6.0,
+        refine_yaw_step_deg: float = 0.5,
+    ) -> PoseMatch | None:
+        """카메라 후보 주변에서 LiDAR만으로 x/y/yaw pose를 재정합한다."""
+        numeric = (
+            initial_x_m,
+            initial_y_m,
+            position_half_width_m,
+            coarse_position_step_m,
+            coarse_yaw_step_deg,
+            refine_position_half_width_m,
+            refine_position_step_m,
+            refine_yaw_half_width_deg,
+            refine_yaw_step_deg,
+        )
+        if any(not math.isfinite(float(value)) for value in numeric):
+            raise ValueError("pose search parameters must be finite")
+        if any(float(value) <= 0.0 for value in numeric[2:]):
+            raise ValueError("pose search ranges and steps must be positive")
+        if (
+            scan_points.ndim != 2
+            or scan_points.shape[1:] != (2,)
+            or len(scan_points) < self.minimum_points
+        ):
+            return None
+
+        coarse_offsets = np.arange(
+            -position_half_width_m,
+            position_half_width_m + 0.5 * coarse_position_step_m,
+            coarse_position_step_m,
+            dtype=np.float64,
+        )
+        coarse_headings = np.radians(
+            np.arange(-180.0, 180.0, coarse_yaw_step_deg, dtype=np.float64)
+        )
+        coarse_candidates = self._rank_poses(
+            float(initial_x_m),
+            float(initial_y_m),
+            coarse_offsets,
+            coarse_offsets,
+            scan_points,
+            coarse_headings,
+        )
+        if not coarse_candidates:
+            return None
+        _, coarse_x, coarse_y, coarse_yaw, _ = coarse_candidates[0]
+
+        refine_offsets = np.arange(
+            -refine_position_half_width_m,
+            refine_position_half_width_m + 0.5 * refine_position_step_m,
+            refine_position_step_m,
+            dtype=np.float64,
+        )
+        yaw_offsets = np.arange(
+            -refine_yaw_half_width_deg,
+            refine_yaw_half_width_deg + 0.5 * refine_yaw_step_deg,
+            refine_yaw_step_deg,
+            dtype=np.float64,
+        )
+        refine_headings = np.asarray(
+            [
+                normalize_angle(coarse_yaw + math.radians(float(offset)))
+                for offset in yaw_offsets
+            ],
+            dtype=np.float64,
+        )
+        refined = self._rank_poses(
+            coarse_x,
+            coarse_y,
+            refine_offsets,
+            refine_offsets,
+            scan_points,
+            refine_headings,
+        )
+        if not refined:
+            return None
+        best_score, best_x, best_y, best_yaw, count = refined[0]
+        distinct_scores = [
+            score
+            for score, x_m, y_m, yaw_rad, _ in refined[1:]
+            if math.hypot(x_m - best_x, y_m - best_y) >= 0.04
+            or abs(angle_difference(yaw_rad, best_yaw)) >= math.radians(5.0)
+        ]
+        margin = min(distinct_scores) - best_score if distinct_scores else 0.0
+        return PoseMatch(
+            position_x_m=float(best_x),
+            position_y_m=float(best_y),
+            yaw_rad=normalize_angle(best_yaw),
+            score_m=float(best_score),
+            distinct_margin_m=float(margin),
+            point_count=int(count),
+        )
+
+    def _rank_poses(
+        self,
+        center_x_m: float,
+        center_y_m: float,
+        x_offsets_m: np.ndarray,
+        y_offsets_m: np.ndarray,
+        scan_points: np.ndarray,
+        headings: np.ndarray,
+    ) -> list[tuple[float, float, float, float, int]]:
+        ranked: list[tuple[float, float, float, float, int]] = []
+        for y_offset in y_offsets_m:
+            for x_offset in x_offsets_m:
+                x_m = center_x_m + float(x_offset)
+                y_m = center_y_m + float(y_offset)
+                for score, yaw_rad, count in self._rank(
+                    x_m,
+                    y_m,
+                    scan_points,
+                    headings,
+                ):
+                    ranked.append((score, x_m, y_m, yaw_rad, count))
+        ranked.sort(key=lambda item: item[0])
+        return ranked
 
     def _rank(
         self,

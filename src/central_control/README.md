@@ -10,8 +10,7 @@ ROS 2 토픽으로 전달하는 중앙제어 모듈입니다. 실시간 운행�
 기준 환경은 Ubuntu 24.04, Python 3.12, ROS 2 Jazzy입니다.
 
 ```bash
-cd ~/PINKK
-python3 -m venv .venv
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
@@ -35,15 +34,14 @@ src/central_control/camera_tools/first_map/my_test_map0710.png
 
 ## 고정 경로 준비
 
-운영 경로는 `path_planning/output/fixed_route_*_to_*.csv` 32개입니다. 경로
+운영 경로는 `path_planning/output/fixed_route_*_to_*.csv` 26개입니다. 경로
 설정이나 주차장 구조를 변경한 경우에만 다시 생성합니다.
 
 ```bash
-cd ~/PINKK/src/central_control/path_planning
-python3 scripts/test_fixed_mission_routes.py --generate-all
-python3 scripts/test_fixed_mission_routes.py --check-all
-python3 scripts/test_fixed_route_selector.py
-python3 scripts/test_fixed_live_route_bridge.py
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_mission_routes.py --generate-all
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_mission_routes.py --check-all
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_route_selector.py
+.venv/bin/python src/central_control/path_planning/scripts/test_fixed_live_route_bridge.py
 ```
 
 허용 이동 관계는 다음과 같습니다.
@@ -59,7 +57,6 @@ python3 scripts/test_fixed_live_route_bridge.py
 ## 실시간 실행
 
 ```bash
-cd ~/PINKK
 source /opt/ros/jazzy/setup.bash
 .venv/bin/python -m src.central_control.overhead_vision.localization.live_localization
 ```
@@ -71,10 +68,11 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 
 창 조작:
 
-- `e`: 현재 ego 차량을 화면의 다음 ByteTrack ID 차량으로 전환
 - `SPACE`: C1/C2 충전 완료 처리 후 P1~P4 목표 배정
-- `p`: 현재 운행 단계의 고정 경로 다시 선택
 - `q` 또는 `ESC`: 종료
+
+운영 차량은 LiDAR-camera identity와 `/pinkk/web/control` 요청의 `vehicle_id`로
+자동 선택합니다.
 
 heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`/`x` 키는 없습니다.
 
@@ -83,10 +81,10 @@ heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`
 - `/pinkk/vehicle_N/localization_pose`: `geometry_msgs/PoseStamped`, 차량별로 확정한
   차체 중심 x/y와 LiDAR map 좌표계의 측정 yaw
 - `/pinkk/vehicle_N/path`: `nav_msgs/Path`, m 단위, 차량별 map frame
-- `/pinkk/planned_trajectory`: `std_msgs/Float64MultiArray`
-- `/pinkk/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
+- `/pinkk/vehicle_N/trajectory`: `std_msgs/Float64MultiArray`
+- `/pinkk/vehicle_N/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
 
-`/pinkk/planned_trajectory`의 point 필드는 다음 네 개뿐입니다.
+`/pinkk/vehicle_N/trajectory`의 point 필드는 다음 네 개뿐입니다.
 
 ```text
 x_m, y_m, yaw_rad, direction
@@ -125,8 +123,8 @@ scene/BEV 파일이 필요한 진단 상황에서만 사용합니다.
 ## Camera BEV 다시 저장
 
 ```bash
-cd ~/PINKK/src/central_control/camera_tools/first_map
-~/PINKK/.venv/bin/python capture_camera_bev.py
+.venv/bin/python \
+  src/central_control/camera_tools/first_map/capture_camera_bev.py
 ```
 
 `s`를 누르면 `camera_bev.png`를 저장하고 `q` 또는 `ESC`로 종료합니다.

@@ -152,11 +152,36 @@ class PinkyStatusLcd(Node):
         self._last_lcd_key = lcd_key
 
     def destroy_node(self) -> bool:
-        self._lcd.close()
+        self._clear_lcd()
         return super().destroy_node()
+
+    def _clear_lcd(self) -> None:
+        from PIL import Image
+
+        try:
+            self._lcd.img_show(Image.new("RGB", (320, 240), color=(0, 0, 0)))
+            self._lcd.set_backlight(0)
+        finally:
+            self._lcd.close()
+
+
+def clear_lcd_once() -> None:
+    """남은 LCD 프로세스가 강제 종료된 경우에도 화면을 확실히 끈다."""
+    from PIL import Image
+    from pinky_lcd import LCD
+
+    lcd = LCD()
+    try:
+        lcd.img_show(Image.new("RGB", (320, 240), color=(0, 0, 0)))
+        lcd.set_backlight(0)
+    finally:
+        lcd.close()
 
 
 def main() -> None:
+    if "--clear-only" in os.sys.argv[1:]:
+        clear_lcd_once()
+        return
     rclpy.init()
     node = PinkyStatusLcd()
     try:

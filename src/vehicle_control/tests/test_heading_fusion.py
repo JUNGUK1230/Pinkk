@@ -74,6 +74,20 @@ def main() -> int:
         assert match.score_m < 0.01
         assert match.distinct_margin_m > 0.0005
 
+        pose_match = matcher.match_pose_near(
+            position[0] + 0.14,
+            position[1] - 0.11,
+            vehicle_points,
+            position_half_width_m=0.20,
+        )
+        assert pose_match is not None
+        assert math.hypot(
+            pose_match.position_x_m - position[0],
+            pose_match.position_y_m - position[1],
+        ) < 0.025
+        assert abs(angle_difference(pose_match.yaw_rad, expected_yaw)) < math.radians(1.0)
+        assert pose_match.score_m < 0.015
+
         scan_points = matcher.scan_points(
             [1.0, 1.0],
             angle_min=0.0,

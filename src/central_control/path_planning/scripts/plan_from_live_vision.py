@@ -954,7 +954,7 @@ def draw_live_path_overlay(
     cv2.putText(
         canvas,
         f"frame={frame_index} slot={slot_name} | path=red start=green goal=blue",
-        (20, 35),
+        (20, max(30, canvas.shape[0] - 20)),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.75,
         (0, 255, 255),

@@ -8,6 +8,9 @@ ROS_PC_IP="${ROS_PC_IP:-$(hostname -I | awk '{print $1}')}"
 PINKY1_HOST="${PINKY1_HOST:-${PINKY_HOST:-pinky@192.168.0.99}}"
 # PINKY_02는 192.168.0.103을 기본 주소로 사용한다.
 PINKY2_HOST="${PINKY2_HOST:-pinky@192.168.0.103}"
+ROS_AUTOMATIC_DISCOVERY_RANGE="${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+ROS_STATIC_PEERS="${ROS_STATIC_PEERS:-${PINKY1_HOST##*@};${PINKY2_HOST##*@}}"
+RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 LOG_DIR="$PROJECT_ROOT/.runtime/parking_management"
 WITH_PINKY=true
 WITHOUT_CAMERA=false
@@ -69,6 +72,10 @@ set +u
 source "$ROS_SETUP"
 set -u
 export ROS_DOMAIN_ID
+export ROS_AUTOMATIC_DISCOVERY_RANGE
+export ROS_STATIC_PEERS
+export RMW_IMPLEMENTATION
+export ROS_LOCALHOST_ONLY=0
 mkdir -p "$LOG_DIR"
 cd "$PROJECT_ROOT"
 
@@ -84,14 +91,14 @@ require_free_port() {
 }
 
 cleanup() {
-    trap - INT TERM EXIT
+    trap - HUP INT TERM EXIT
     echo
     echo "Stopping parking management services..."
     for target in "${REMOTE_PINKY_TARGETS[@]}"; do
         host="${target%%|*}"
         namespace="${target#*|}"
         ssh -o BatchMode=yes -o ConnectTimeout=3 "$host" \
-            "pid=\$(pgrep -f \"^bash /home/pinky/run_pinky_services.sh $namespace\$\" | head -n 1); [[ -z \"\$pid\" ]] || kill -TERM \"\$pid\"" \
+            "env -u ROS_NAMESPACE ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh --stop" \
             >/dev/null 2>&1 || true
     done
     for pid in "${CHILD_PIDS[@]}"; do
@@ -99,10 +106,21 @@ cleanup() {
         # Stop the entire group so ROS launch children cannot keep ports open.
         kill -TERM -- "-$pid" 2>/dev/null || true
     done
-    wait "${CHILD_PIDS[@]}" 2>/dev/null || true
+    for _ in {1..30}; do
+        any_alive=false
+        for pid in "${CHILD_PIDS[@]}"; do
+            if kill -0 -- "-$pid" 2>/dev/null; then
+                any_alive=true
+                break
+            fi
+        done
+        $any_alive || break
+        sleep 0.1
+    done
     for pid in "${CHILD_PIDS[@]}"; do
         kill -KILL -- "-$pid" 2>/dev/null || true
     done
+    wait "${CHILD_PIDS[@]}" 2>/dev/null || true
 }
 
 require_free_port 8000
@@ -110,31 +128,7 @@ require_free_port 9090
 if ! $WITHOUT_CAMERA; then
     require_free_port 8080
 fi
-trap cleanup INT TERM EXIT
-
-if ! $WITHOUT_CAMERA; then
-    setsid ros2 run web_video_server web_video_server \
-        >"$LOG_DIR/web_video_server.log" 2>&1 &
-    CHILD_PIDS+=("$!")
-fi
-
-setsid ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
-    >"$LOG_DIR/rosbridge.log" 2>&1 &
-CHILD_PIDS+=("$!")
-
-setsid python3 "$PROJECT_ROOT/src/central_control/scripts/serve_parking_management.py" \
-    --port 8000 \
-    --directory "$PROJECT_ROOT/src/central_control/parking_management_web" \
-    --vehicle-config "$PROJECT_ROOT/src/central_control/config/vehicles.yaml" \
-    >"$LOG_DIR/web.log" 2>&1 &
-CHILD_PIDS+=("$!")
-
-if ! $WITHOUT_CAMERA; then
-    setsid "$PROJECT_ROOT/.venv/bin/python" -m \
-        src.central_control.overhead_vision.localization.live_localization \
-        >"$LOG_DIR/localization.log" 2>&1 &
-    CHILD_PIDS+=("$!")
-fi
+trap cleanup HUP INT TERM EXIT
 
 start_remote_pinky() {
     local host="$1"
@@ -167,15 +161,93 @@ start_remote_pinky() {
         -o ServerAliveInterval=2 -o ServerAliveCountMax=3 \
         "$PROJECT_ROOT/src/vehicle_control/pinky_bringup_namespaced.launch.xml" \
         "$host:/home/pinky/pinky_pro/src/pinky_pro/pinky_bringup/launch/bringup_robot.launch.xml"
-    ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
-        "chmod 755 /home/pinky/pinky_status_led.py /home/pinky/pinky_status_lcd.py /home/pinky/run_pinky_services.sh && nohup setsid -f env ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh $namespace >/home/pinky/pinkk_services_$controller_id.log 2>&1 </dev/null" \
-        >"$LOG_DIR/${controller_id}_bringup.log" 2>&1
     REMOTE_PINKY_TARGETS+=("$host|$namespace")
+    ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
+        "chmod 755 /home/pinky/pinky_status_led.py /home/pinky/pinky_status_lcd.py /home/pinky/run_pinky_services.sh; env -u ROS_NAMESPACE ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh --stop" \
+        >"$LOG_DIR/${controller_id}_bringup.log" 2>&1
+    setsid ssh -T \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o ServerAliveInterval=10 \
+        -o ServerAliveCountMax=6 \
+        "$host" \
+        "exec env -u ROS_NAMESPACE ROS_LOCALHOST_ONLY=0 ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROS_AUTOMATIC_DISCOVERY_RANGE=$ROS_AUTOMATIC_DISCOVERY_RANGE ROS_STATIC_PEERS='$ROS_PC_IP' RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS=UDPv4 ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh $namespace" \
+        >>"$LOG_DIR/${controller_id}_bringup.log" 2>&1 &
+    CHILD_PIDS+=("$!")
+}
+
+publisher_count() {
+    ros2 topic info "$1" 2>/dev/null \
+        | awk '/Publisher count:/ {print $3}' \
+        || true
+}
+
+wait_for_vehicle_topics() {
+    local all_ready
+    local topic
+    local count
+    echo "Waiting for Pinky battery and LiDAR publishers via static DDS peers..."
+    # Wi-Fi를 바꾼 뒤 남은 ros2 daemon이 이전 인터페이스를 계속 사용하지
+    # 않도록 현재 discovery 환경으로 다시 시작한다.
+    ros2 daemon stop >/dev/null 2>&1 || true
+    for _ in {1..40}; do
+        all_ready=true
+        for topic in \
+            /pinkk/vehicle_1/battery/percent \
+            /pinkk/vehicle_1/scan \
+            /pinkk/vehicle_2/battery/percent \
+            /pinkk/vehicle_2/scan; do
+            count="$(publisher_count "$topic")"
+            if [[ ! "${count:-0}" =~ ^[1-9][0-9]*$ ]]; then
+                all_ready=false
+                break
+            fi
+        done
+        if $all_ready; then
+            echo "Both Pinky vehicles are visible on their battery and scan topics."
+            return 0
+        fi
+        sleep 1
+    done
+    echo "ERROR: Pinky ROS topics were not discovered within 40 seconds." >&2
+    for topic in \
+        /pinkk/vehicle_1/battery/percent \
+        /pinkk/vehicle_1/scan \
+        /pinkk/vehicle_2/battery/percent \
+        /pinkk/vehicle_2/scan; do
+        echo "  $topic publishers=$(publisher_count "$topic")" >&2
+    done
+    return 1
 }
 
 if $WITH_PINKY; then
     start_remote_pinky "$PINKY1_HOST" pinkk/vehicle_1 pinky_01
     start_remote_pinky "$PINKY2_HOST" pinkk/vehicle_2 pinky_02
+    wait_for_vehicle_topics
+fi
+
+if ! $WITHOUT_CAMERA; then
+    setsid ros2 run web_video_server web_video_server \
+        >"$LOG_DIR/web_video_server.log" 2>&1 &
+    CHILD_PIDS+=("$!")
+fi
+
+setsid ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+    >"$LOG_DIR/rosbridge.log" 2>&1 &
+CHILD_PIDS+=("$!")
+
+setsid python3 "$PROJECT_ROOT/src/central_control/scripts/serve_parking_management.py" \
+    --port 8000 \
+    --directory "$PROJECT_ROOT/src/central_control/parking_management_web" \
+    --vehicle-config "$PROJECT_ROOT/src/central_control/config/vehicles.yaml" \
+    >"$LOG_DIR/web.log" 2>&1 &
+CHILD_PIDS+=("$!")
+
+if ! $WITHOUT_CAMERA; then
+    setsid "$PROJECT_ROOT/.venv/bin/python" -m \
+        src.central_control.overhead_vision.localization.live_localization \
+        >"$LOG_DIR/localization.log" 2>&1 &
+    CHILD_PIDS+=("$!")
 fi
 
 sleep 2

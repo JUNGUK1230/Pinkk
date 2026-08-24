@@ -50,8 +50,6 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'central_control = central_control.main:main',
-            'pid_path_follower = vehicle_control.pid_path_follower:main',
             'mpc_path_follower = vehicle_control.mpc_path_follower:main',
             'fused_pose_estimator = vehicle_control.fused_pose_estimator:main',
             'pinky_status_led = vehicle_control.pinky_status_led:main',

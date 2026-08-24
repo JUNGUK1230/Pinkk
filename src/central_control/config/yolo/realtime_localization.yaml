@@ -1,6 +1,6 @@
 realtime_localization:
-  # 영속 차량 ID다. ByteTrack track_id와 혼용하지 않는다. 차량 2 관제 인스턴스는
-  # vehicle_2로 설정하며 ROS 출력이 /pinkk/vehicle_2/*로 자동 분리된다.
+  # LiDAR-camera identity가 아직 확정되지 않았을 때만 쓰는 안전 fallback이다.
+  # 정상 운용에서는 최초 ego 매칭 및 웹 요청의 vehicle_id로 자동 전환된다.
   vehicle_id: vehicle_2
   model_path: src/central_control/models/best.pt
   calibration_path: src/central_control/camera_tools/first_map/camera_calibration.npz
@@ -23,6 +23,14 @@ realtime_localization:
   ros_lidar_image_topic: /pinkk/lidar_map/image
   ros_management_status_topic: /pinkk/management/status
   lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
+  # 두 차량 namespace의 scan을 카메라 차량 후보 주변에서 x/y/yaw 정합해
+  # ByteTrack track_id와 영속 vehicle_id를 자동 연결한다.
+  lidar_association_period_sec: 0.75
+  lidar_scan_timeout_sec: 1.5
+  lidar_position_search_half_width_m: 0.25
+  lidar_maximum_match_score_m: 0.08
+  lidar_minimum_assignment_margin_m: 0.01
+  lidar_required_confirmations: 2
   # 새 경로는 즉시 발행하고, 제어기가 놓치지 않도록 같은 경로를 이 주기로
   # 재발행한다. 경로가 무효화되거나 목표가 바뀌면 이전 경로 발행은 중단한다.
   route_republish_period_sec: 1.0

@@ -361,6 +361,19 @@ class EgoVehicleTracker:
         self.absolute_heading_resolved = self.initial_yaw_rad is not None
         return True, f"Ego vehicle switched: track_id={previous} -> {selected}"
 
+    def select_ego(self, track_id: int) -> bool:
+        """LiDAR-camera identity가 확정한 visible track을 ego로 선택한다."""
+        selected = int(track_id)
+        if selected not in self.visible_track_ids:
+            return False
+        if selected == self.ego_track_id:
+            return False
+        self.ego_track_id = selected
+        self.previous_center_bev = None
+        self.previous_yaw_rad = self.initial_yaw_rad
+        self.absolute_heading_resolved = self.initial_yaw_rad is not None
+        return True
+
     def update(self, detections: Sequence[Detection]) -> VehicleObservation | None:
         car_detections = [item for item in detections if item.class_name == "car"]
         self.visible_track_ids = tuple(
@@ -832,6 +845,13 @@ class SceneLocalizer:
         ):
             self.charge_coordinator.select_vehicle(self.tracker.ego_track_id)
         return changed, message
+
+    def select_ego(self, track_id: int) -> bool:
+        """센서 identity 결과에 따라 경로 생성용 ego를 자동 선택한다."""
+        changed = self.tracker.select_ego(track_id)
+        if changed and self.charge_coordinator is not None:
+            self.charge_coordinator.select_vehicle(track_id)
+        return changed
 
     def complete_charging(
         self,

@@ -1,7 +1,6 @@
 """상단 USB Camera BEV에서 차량 pose와 주차면 좌표를 실시간 생성한다.
 
 실행:
-    cd ~/PINKK
     .venv/bin/python -m src.central_control.overhead_vision.localization.live_localization
 
 저장된 BEV 한 장 테스트:
@@ -83,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         help="Disable direct ROS 2 topic publishing for image-only diagnostics.",
     )
     parser.add_argument("--max-frames", type=int)
+    parser.add_argument(
+        "--vehicle-id",
+        choices=("vehicle_1", "vehicle_2"),
+        help="Initial vehicle receiving pose and trajectory topics.",
+    )
     parser.add_argument(
         "--initial-ego-center",
         type=float,
@@ -845,41 +849,42 @@ def draw_scene(
             2,
             cv2.LINE_AA,
         )
-    cv2.putText(
-        canvas,
-        f"planning_ready={scene.planning_ready} | {scene.status}",
-        (20, 35),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (0, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-    current_section, route_target = route_context(scene, route_selector)
-    cv2.putText(
-        canvas,
-        f"CURRENT SECTION: {current_section}  ->  TARGET: {route_target}",
-        (20, 65),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.72,
-        (0, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-    if scene.charge_assignment is not None:
-        assignment = scene.charge_assignment
+    return canvas
+
+
+def draw_runtime_hud(
+    image: np.ndarray,
+    lines: Sequence[tuple[str, tuple[int, int, int]]],
+) -> np.ndarray:
+    """배경과 외곽선 없이 상태 문구를 고정 행에 한 번만 그린다."""
+    if not lines:
+        return image
+    canvas = image.copy()
+    _, width = canvas.shape[:2]
+    panel_x, panel_y = 12, 12
+    line_height = 28
+    panel_width = min(1040, max(300, width - panel_x * 2))
+    max_text_width = panel_width - 24
+    for index, (label, color) in enumerate(lines):
+        fitted = str(label)
+        while fitted and cv2.getTextSize(
+            fitted,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            1,
+        )[0][0] > max_text_width:
+            fitted = fitted[:-1]
+        if fitted != label:
+            fitted = fitted.rstrip() + "..."
+        origin = (panel_x + 12, panel_y + 22 + index * line_height)
         cv2.putText(
             canvas,
-            (
-                f"charge: id={assignment.vehicle_track_id} -> "
-                f"{assignment.target_slot_name or 'WAIT'} "
-                f"({assignment.status})"
-            ),
-            (20, 125),
+            fitted,
+            origin,
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.62,
-            (255, 0, 255),
-            2,
+            0.55,
+            color,
+            1,
             cv2.LINE_AA,
         )
     return canvas
@@ -1089,6 +1094,8 @@ def main() -> int:
         from ultralytics import YOLO
 
         config = load_config(args.config)
+        if args.vehicle_id is not None:
+            config["vehicle_id"] = args.vehicle_id
         if args.initial_ego_center is not None:
             config["initial_ego_center_bev_px"] = list(args.initial_ego_center)
         camera_matrix, dist_coeffs, homography, bev_width, bev_height = (
@@ -1107,6 +1114,7 @@ def main() -> int:
         ros_publish_enabled = (
             not args.no_ros and bool(config.get("ros_publish_enabled", True))
         )
+        lidar_map_path = resolve_path(str(config["lidar_map_path"]))
         ros_publisher = (
             DirectRosPublisher(
                 vehicle_id=str(config.get("vehicle_id", "vehicle_1")),
@@ -1122,13 +1130,31 @@ def main() -> int:
                         "/pinkk/management/status",
                     )
                 ),
+                lidar_map_path=lidar_map_path,
                 lidar_resolution_cm=transform.resolution_cm,
+                lidar_association_period_sec=float(
+                    config.get("lidar_association_period_sec", 0.75)
+                ),
+                lidar_scan_timeout_sec=float(
+                    config.get("lidar_scan_timeout_sec", 1.5)
+                ),
+                lidar_position_search_half_width_m=float(
+                    config.get("lidar_position_search_half_width_m", 0.25)
+                ),
+                lidar_maximum_match_score_m=float(
+                    config.get("lidar_maximum_match_score_m", 0.08)
+                ),
+                lidar_minimum_assignment_margin_m=float(
+                    config.get("lidar_minimum_assignment_margin_m", 0.01)
+                ),
+                lidar_required_confirmations=int(
+                    config.get("lidar_required_confirmations", 2)
+                ),
                 operational_space_polygons=load_operational_space_polygons(config),
             )
             if ros_publish_enabled
             else None
         )
-        lidar_map_path = resolve_path(str(config["lidar_map_path"]))
         lidar_map = cv2.imread(str(lidar_map_path), cv2.IMREAD_GRAYSCALE)
         if lidar_map is None:
             raise FileNotFoundError(f"LiDAR map image not found: {lidar_map_path}")
@@ -1186,7 +1212,7 @@ def main() -> int:
             f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
             f"slots={list(policy.allowed_slots)}"
         )
-    print("e: switch ego vehicle | SPACE: charge complete | p: replan | q/ESC: quit")
+    print("Automatic vehicle selection enabled | SPACE: charge complete | q/ESC: quit")
     planning_controller = IntegratedPlanningController(
         route_selector,
         completion_radius_cm=float(
@@ -1201,6 +1227,7 @@ def main() -> int:
         f"{route_publish_scheduler.period_sec:.2f} sec"
     )
     replan_revision = 0
+    automatic_target_initialized = False
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     # 첫 실제 프레임 추론 전에 CUDA 커널과 모델을 준비한다. 준비 중에도 캡처
@@ -1324,10 +1351,83 @@ def main() -> int:
                 bev.shape[:2],
                 frame_index,
             )
-            planning_controller.update(
-                scene,
-                replan_revision,
-            )
+            identity_ready = ros_publisher is None
+            if ros_publisher is not None:
+                # scan/control callback을 먼저 처리해야 이번 프레임 경로가 최신
+                # vehicle namespace와 LiDAR-camera identity를 사용한다.
+                ros_publisher.spin_once()
+                path_target_request = ros_publisher.consume_path_target_request()
+                if path_target_request is not None:
+                    selected_vehicle_id, requested_command = path_target_request
+                    automatic_target_initialized = True
+                    replan_revision += 1
+                    planning_controller.invalidate()
+                    route_publish_scheduler.due(
+                        time.monotonic(),
+                        has_route=False,
+                    )
+                    print(
+                        "Automatic ROS path target: "
+                        f"{selected_vehicle_id} command={requested_command} -> "
+                        f"{ros_publisher.trajectory_topic}"
+                    )
+                association = ros_publisher.update_vehicle_association(
+                    scene.tracked_vehicles
+                )
+                if (
+                    not automatic_target_initialized
+                    and association is not None
+                    and scene.vehicle is not None
+                ):
+                    automatic_vehicle_id = next(
+                        (
+                            vehicle_id
+                            for vehicle_id, track_id in (
+                                association.vehicle_to_track.items()
+                            )
+                            if track_id == scene.vehicle.track_id
+                        ),
+                        None,
+                    )
+                    if automatic_vehicle_id is not None:
+                        ros_publisher.select_vehicle(automatic_vehicle_id)
+                        automatic_target_initialized = True
+                        print(
+                            "Initial ROS path target selected automatically: "
+                            f"{automatic_vehicle_id}=track_{scene.vehicle.track_id}"
+                        )
+                target_track_id = (
+                    association.vehicle_to_track.get(
+                        ros_publisher.active_vehicle_id
+                    )
+                    if association is not None
+                    else None
+                )
+                if target_track_id is not None and localizer.select_ego(
+                    target_track_id
+                ):
+                    replan_revision += 1
+                    planning_controller.invalidate()
+                    route_publish_scheduler.due(
+                        time.monotonic(),
+                        has_route=False,
+                    )
+                    print(
+                        "Automatic camera ego selected: "
+                        f"{ros_publisher.active_vehicle_id}=track_{target_track_id}"
+                    )
+                identity_ready = (
+                    target_track_id is not None
+                    and scene.vehicle is not None
+                    and scene.vehicle.track_id == target_track_id
+                )
+            if identity_ready:
+                planning_controller.update(
+                    scene,
+                    replan_revision,
+                )
+            else:
+                planning_controller.invalidate()
             if (
                 planning_controller.consume_invalidation()
                 and ros_publisher is not None
@@ -1340,12 +1440,16 @@ def main() -> int:
                 has_route=active_outcome is not None,
                 is_new_route=completed_outcome is not None,
             )
-            if publish_now and ros_publisher is not None:
+            if publish_now and ros_publisher is not None and identity_ready:
                 ros_publisher.publish_trajectory(
                     getattr(active_outcome, "trajectory")
                 )
-            if ros_publisher is not None and scene.vehicle is not None:
-                if scene.vehicle.planning_ready:
+            if ros_publisher is not None:
+                if (
+                    identity_ready
+                    and scene.vehicle is not None
+                    and scene.vehicle.planning_ready
+                ):
                     ros_publisher.publish_pose(
                         scene.vehicle,
                         measurement_age_sec=max(
@@ -1353,7 +1457,6 @@ def main() -> int:
                             time.monotonic() - captured_at,
                         ),
                     )
-                ros_publisher.spin_once()
             if write_runtime_files and frame_index % output_every == 0:
                 try:
                     # 기존 파일 기반 진단 호환 모드에서만 저장한다.
@@ -1384,40 +1487,83 @@ def main() -> int:
                     route_selector=route_selector,
                 )
                 canvas = planning_controller.draw_overlay(canvas, transform)
-                cv2.putText(
-                    canvas,
-                    planning_controller.status,
-                    (20, 155),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.60,
-                    (
-                        (0, 0, 255)
-                        if planning_controller.last_error is not None
-                        else (255, 255, 0)
-                    ),
-                    2,
-                    cv2.LINE_AA,
+                current_section, route_target = route_context(
+                    scene,
+                    route_selector,
                 )
+                hud_lines: list[tuple[str, tuple[int, int, int]]] = []
+                if ros_publisher is not None:
+                    active_lidar_pose = ros_publisher.active_lidar_pose
+                    identity_text = (
+                        f"track={ros_publisher.active_track_id} "
+                        f"lidar=({active_lidar_pose.position_x_m:.2f},"
+                        f"{active_lidar_pose.position_y_m:.2f})"
+                        if active_lidar_pose is not None
+                        else ros_publisher.association_status
+                    )
+                    hud_lines.append(
+                        (
+                            (
+                                f"VEHICLE  {ros_publisher.active_vehicle_id}  |  "
+                                "NAMESPACE  "
+                                f"{ros_publisher.vehicle.ros_namespace}"
+                            ),
+                            (0, 255, 255),
+                        )
+                    )
+                    hud_lines.append(
+                        (
+                            f"IDENTITY  {identity_text}  |  "
+                            f"TOPIC  {ros_publisher.trajectory_topic}",
+                            (0, 220, 255),
+                        )
+                    )
+                else:
+                    hud_lines.append(("ROS  disabled", (0, 165, 255)))
+                hud_lines.append(
+                    (
+                        f"ROUTE  {current_section} -> {route_target}  |  "
+                        f"{planning_controller.status}",
+                        (
+                            (0, 0, 255)
+                            if planning_controller.last_error is not None
+                            else (255, 255, 0)
+                        ),
+                    )
+                )
+                hud_lines.append(
+                    (
+                        f"SCENE  ready={scene.planning_ready}  |  {scene.status}",
+                        (220, 220, 220),
+                    )
+                )
+                if scene.charge_assignment is not None:
+                    assignment = scene.charge_assignment
+                    hud_lines.append(
+                        (
+                            f"CHARGE  track={assignment.vehicle_track_id} -> "
+                            f"{assignment.target_slot_name or 'WAIT'}  |  "
+                            f"{assignment.status}",
+                            (255, 0, 255),
+                        )
+                    )
                 capture_age_ms = (time.monotonic() - captured_at) * 1000.0
                 latency_color = (
                     (0, 0, 255)
                     if capture_age_ms > latency_warning_ms
                     else (0, 255, 0)
                 )
-                cv2.putText(
-                    canvas,
+                hud_lines.append(
                     (
-                        f"capture age={capture_age_ms:.0f} ms | "
-                        f"camera frame={frame_index} | "
-                        f"skipped={dropped_camera_frames}"
+                        (
+                            f"CAMERA  age={capture_age_ms:.0f}ms  |  "
+                            f"frame={frame_index}  |  "
+                            f"skipped={dropped_camera_frames}"
+                        ),
+                        latency_color,
                     ),
-                    (20, 95),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    latency_color,
-                    2,
-                    cv2.LINE_AA,
                 )
+                canvas = draw_runtime_hud(canvas, hud_lines)
                 if ros_publisher is not None:
                     ros_publisher.publish_image(canvas)
                     ros_publisher.publish_lidar_image(
@@ -1439,23 +1585,6 @@ def main() -> int:
                         # 새로 계획하도록 planner 결과를 무효화한다.
                         replan_revision += 1
                         planning_controller.invalidate()
-                elif key == ord("p"):
-                    replan_revision += 1
-                    print("Manual replan requested")
-                elif key == ord("e"):
-                    changed, message = localizer.select_next_ego()
-                    print(message)
-                    if changed:
-                        # 이전 ego의 경로와 비동기 결과를 즉시 폐기한다. 다음
-                        # 프레임에서 새 track_id의 전체 고정 경로를 선택한다.
-                        replan_revision += 1
-                        planning_controller.invalidate()
-                        route_publish_scheduler.due(
-                            time.monotonic(),
-                            has_route=False,
-                        )
-                        if ros_publisher is not None:
-                            ros_publisher.invalidate_trajectory()
             processed_frames += 1
             if static_bev is not None:
                 break

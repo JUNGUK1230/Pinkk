@@ -308,8 +308,8 @@ def main() -> int:
     )
     assert straight_fast_rate < curve_fast_rate < curve_slow_rate
 
-    # MPC를 경로 중간에서 시작해도 첫 nearest 검색은 제한된 forward window가
-    # 아니라 첫 direction segment 전체에서 차량 위치에 정렬되어야 한다.
+    # 새 경로는 source endpoint에서 시작해야 한다. 경로 중간과 좌표가 정확히
+    # 일치하더라도 첫 forward window 밖이면 잘못된 mission 재개로 보고 정지한다.
     restart_index = 184
     assert path[restart_index].direction == path[0].direction
     restart_guard = DifferentialDriveMpc()
@@ -319,10 +319,14 @@ def main() -> int:
         path[restart_index].y_m,
         path[restart_index].yaw_rad,
     )
-    assert restart_guard._nearest_index(restart_state) < restart_index
     restart_command = restart_guard.command(restart_state)
-    assert restart_command.status == "TRACKING"
-    assert restart_command.progress_index == restart_index
+    assert restart_command.status.startswith("PATH_START_TOO_FAR_")
+    assert restart_command.linear_mps == 0.0
+    assert restart_command.angular_radps == 0.0
+    assert (
+        restart_command.progress_index
+        <= restart_guard.limits.nearest_forward_window
+    )
 
     # 큰 heading 오차 복귀는 최대 곡률을 사용하더라도 좁은 벽 쪽으로
     # 기준속도로 계속 진행하지 않고 정밀 추종용 저속으로 제한되어야 한다.
