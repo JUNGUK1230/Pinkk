@@ -31,6 +31,9 @@ log/
 *.engine
 *.log
 
+# 중앙제어 실시간 차량 인식에 반드시 필요한 배포 모델은 저장소에 포함한다.
+!src/central_control/models/best.pt
+
 # PyTorch checkpoints are ZIP archives. Ignore accidental manual extraction
 # beside the model file (for example models/best/data/*).
 src/central_control/models/best/
