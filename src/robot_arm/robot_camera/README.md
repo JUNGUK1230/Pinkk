@@ -24,5 +24,22 @@ ros2 handeye_automation     자동 수집과 old/new 비교
 ros2 pinkk_usb_insertion    최종 USB 자동 인식과 PBVS
 ```
 
-과거 Flask 카메라와 USB 수동 클릭 절차는 최종 시스템의 표준 경로가 아닙니다.
-카메라 장치는 동시에 한 프로세스만 열어야 합니다.
+## 이전 Flask 웹캠 실행 방법
+
+로봇 웹캠 서버(SSH 접속):
+
+```bash
+source ~/venv/mycobot/bin/activate
+cd ~/venv/mycobot
+python3 flask_server.py
+```
+
+웹캠에 원격 접속할 노트북:
+
+```bash
+cd ~/Download
+python3 test_0.py
+```
+
+이 Flask 카메라와 USB 수동 클릭 절차는 이전 방식이며 최종 시스템의 표준 경로가
+아닙니다. 카메라 장치는 동시에 한 프로세스만 열어야 합니다.
