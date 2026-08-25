@@ -14,6 +14,7 @@ install/
 log/
 .runtime/
 *.egg-info/
+.coverage
 *.py[cod]
 
 # 로컬 ROS 2/colcon 생성물. 실제 워크스페이스 산출물은 소스 저장소에 포함하지 않는다.
@@ -54,3 +55,6 @@ src/central_control/path_planning/output/live_hybrid_path_on_camera_bev.png
 .runtime/parking_management/rosbridge.log
 .runtime/parking_management/localization.log
 .runtime/parking_management/web_video_server.log
+
+# YOLO 학습 weight는 로컬/릴리스 자산으로 관리하고 Git에는 넣지 않는다.
+/models/*.pt

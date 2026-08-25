@@ -2,7 +2,8 @@
 
 이 문서는 실기 시험에서 실제로 발생한 문제, 원인 판별 근거, 적용한 해결책과
 재확인 방법을 기록한다. 현재 권장 실행 흐름은 `FROZEN_TARGET_TEST_KO.md`에
-있다.
+있다. 2026-08-20 기준 표준 경로는 frozen-target 자동 통합 실행이며 과거
+waypoint/IBVS/MoveIt 실행 명령은 문제 원인을 설명하기 위한 이력으로만 남긴다.
 
 ## 제어 방식 변경 이력과 의사결정
 
@@ -233,7 +234,7 @@ remaining_z = actual_flange_z - port_based_target_flange_z
 | 주 사용 | `descend_joint_z_once` | 유지, 단일 혼합 사이클 |
 | 주 사용 | `descend_joint_z_to_guard` | 유지, 15mm guard까지 자동 반복 |
 | 진단 | `yaw_only_once` | 유지 |
-| 레거시 | PBVS `recover_z_once`, waypoint | 코드 유지, 현재 주 시험 아님 |
+| 제거 | PBVS `recover_z_once`, waypoint | frozen-target 단일 경로 정리 시 삭제 |
 | 비권장 | Cartesian Z 반복 | 실측 오버슈트 때문에 주 경로에서 제외 |
 | 제거 | 별도 `frozen_target_p` 실행기/launch | 기본 실행기에 통합되어 삭제 |
 | 미구현 | 마지막 15mm 접촉 삽입 | 힘/컴플라이언스 확보 후 진행 |
@@ -259,7 +260,7 @@ ROS launch 하위 프로세스의 import 경로가 보장되지 않는다.
 site-packages 경로를 구해 `PYTHONPATH`에 추가한다. 스크립트로 실행한다.
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 ./scripts/run_robot_bridge.sh
 ```
 
@@ -293,7 +294,7 @@ setup을 읽는 동안만 `set +u`로 전환하고 이후 다시 `set -u`를 적
 set +u
 source /opt/ros/jazzy/setup.bash
 source ~/mycobot_moveit_ws/install/setup.bash
-source ~/Pinkk-robot-arm/ros2_ws/install/setup.bash
+source ros2_ws/install/setup.bash
 set -u
 ```
 
@@ -560,14 +561,14 @@ Cartesian Roll/Pitch 복구는 예를 들어 Roll 9.13→3.65도, Pitch
 노트북 빌드:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_build_pinkk.sh
 ```
 
 로봇 PC 빌드:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 로봇 PC의 저장소 루트에서 실행
 bash scripts/calibration/robot_build_pinkk.sh
 ```
 
@@ -584,14 +585,17 @@ YAML이 3초로 남아 있어 실행 로그가 계속 `3.0초 후 ...`로 출력
 
 ## 14. ROS domain 전환
 
-스크립트는 `ROS_DOMAIN_ID=38`로 고정해 사용한다.
+실행 스크립트는 프로필에 따라 Robot A는 domain 36, Robot B는 domain 38을
+선택한다.
 
 ```bash
-ROS_DOMAIN_ID=38 ./scripts/run_laptop_frozen_target_test.sh
+./scripts/run_laptop_frozen_target_test.sh robot_a
+./scripts/run_laptop_frozen_target_test.sh robot_b
 ```
 
 노트북과 로봇 PC의 domain이 반드시 같아야 한다. `.bashrc`를 자주 고치기보다
-시험 명령 앞에 일시적으로 지정하는 방법을 권장한다.
+프로필 인자를 사용하고, 임시 override가 필요할 때만
+`PINKK_ROS_DOMAIN_ID`를 지정한다.
 
 ## 15. Git 변경 파일이 수백~수천 개로 보임
 
@@ -602,6 +606,7 @@ ROS_DOMAIN_ID=38 ./scripts/run_laptop_frozen_target_test.sh
 /build/ /install/ /log/
 /ros2_ws/build/ /ros2_ws/install/ /ros2_ws/log/
 .venv/ __pycache__/ .pytest_cache/ *.py[cod]
+.coverage models/*.pt
 ```
 
 이미 추적 중인 산출물은 `.gitignore`만으로 사라지지 않으므로 Git index에서
@@ -716,15 +721,96 @@ Cartesian 명령 후 로봇 무동작 ... error=32: 역기구학 해 없음
 유지하면서 refine endpoint의 Z/R/P/Yaw만 최신 제조사 actual pose로 구성한다.
 이동 후 초기 Roll/Pitch 복구와 TF XY 재측정은 기존대로 수행한다.
 
-## 21. TCP 측정과 최종 10mm 자동 삽입 보류
+## 21. TCP 시험값과 최종 자동 삽입의 현재 상태
 
 삽입 상태의 포트 base pose와 실제 flange `get_coords()` pose로
 `T_flange_tcp = inverse(T_base_flange) × T_base_tip`을 계산하는 절차를
-검토했다. 그러나 이번 시험에서는 TCP XYZ를 측정하거나 코드에 적용하지
-않았다. 현재 제어는 scalar `final_tcp_offset_z_m=0.120`만 사용한다.
+검토했다. 현재는 완전한 6D TCP 캘리브레이션 대신 scalar
+`final_tcp_offset_z_m=0.130`과 Robot A의 로컬 X `+5mm` 시험값을 사용한다.
+포트 중심 자체에도 Robot A 프로필의 장축 `+2mm`, 단축 `+5mm` 편향이
+별도로 적용된다.
 
-최종 Z guard를 제거하는 변경도 적용하지 않았다. 기존 실측에서 3mm 관절
+기존 실측에서 3mm 관절
 Z 명령이 약 9.5~11.8mm, 5mm Cartesian 명령이 약 18~19.5mm 이동했다.
 접촉/힘 감지 없이 포트 입구 아래 10mm를 자동 목표로 쓰면 소프트웨어가
-초과 이동을 사후에만 발견하므로 손상 위험이 있다. 현재 자동 경로는 최종
-목표 15mm 위에서 계속 종료한다.
+초과 이동을 사후에만 발견하므로 손상 위험이 있다. 현재 시험 설정은 guard
+도달 후 Z-only 최대 10mm, Roll/Pitch 복구, Z-only 5mm, Pitch +7도를 자동
+실행하고 과삽입을 경고로만 기록할 수 있다. 이 설정은 운용 안전을 보장하지
+않으며 힘/접촉 센서를 대신하지 않는다.
+
+## 22. 장축각이 -89도와 +89도 사이에서 불안정하게 판정됨
+
+### 원인
+
+USB 포트 장축은 방향이 없는 축이라 180도 주기다. 기존 360도 원형 통계에서는
+`-89°`와 `+89°`를 약 178도 차이로 계산해 안정된 관측도 Yaw 흔들림으로
+거부할 수 있었다. 자동 시작 콜백도 네 점 중 첫 번째 긴 변만 사용했다.
+
+### 해결
+
+- 각도를 두 배로 변환해 평균한 뒤 다시 절반으로 만드는 180도 축 통계를 쓴다.
+- 초기 median과 최대 편차도 180도 wrap을 사용한다.
+- 네 keypoint의 위·아래 긴 변 두 개를 평균해 자동 시작 장축각을 만든다.
+- `-89°/+89°` 회귀 테스트를 추가했다.
+
+## 23. YOLO 모델이 개인 Desktop 경로에 묶임
+
+### 증상
+
+다른 PC에서 launch하면 `YOLO 모델을 찾을 수 없습니다`가 발생하거나 실행한
+현재 디렉터리에 따라 `../usb_02.pt`가 다른 파일을 가리켰다.
+
+### 해결
+
+표준 로컬 위치를 저장소 루트 기준 `models/usb_02.pt`로 통일했다. PT 파일은
+41MB 로컬 자산이라 Git에서 제외한다. `run_laptop_frozen_target_test.sh`는
+자신의 위치로 저장소 루트를 계산해 실제 모델 경로를 launch argument로 넘긴다.
+다른 weight는 다음처럼 지정한다.
+
+```bash
+PINKK_YOLO_MODEL_PATH=/path/to/model.pt \
+  ./scripts/run_laptop_frozen_target_test.sh robot_a
+```
+
+## 24. 통합 실행 timeout과 자동 복귀가 겹칠 가능성
+
+### 현재 위험
+
+노트북 action client가 timeout을 냈다고 로봇 PC에서 수락한 goal이 반드시
+종료된 것은 아니다. 또한 성공·실패 후 자동 복귀는 현재 수직 인출 없이 초기
+관측 관절 자세를 바로 요청한다. 플러그가 포트에 걸린 상태라면 측하중 또는
+두 이동 명령 중첩 위험이 있다.
+
+### 현재 대응과 후속 작업
+
+- timeout 시에는 바로 같은 명령을 다시 보내지 않고 bridge의 `moving`, 실제
+  pose와 action 상태를 확인한다.
+- 실제 삽입 상태에서는 자동 복귀 전에 포트에서 수직으로 인출해야 한다.
+- 후속 코드에서는 goal `cancel_goal_async()`와 bridge 정지 완료를 확인한 뒤만
+  자동 복귀를 허용해야 한다. 이 보강은 아직 구현하지 않았다.
+
+## 25. Robot A/B에서 같은 방향의 XY 오차가 반복됨
+
+로봇별 `runtime.yaml`, camera intrinsics, Hand-eye를 독립적으로 사용한다.
+같은 카메라 모델이라도 렌즈·장착 위치·초점 차이 때문에 내부행렬을 그대로
+공유하면 안 된다. 한 로봇에서 일정 방향 오차가 반복될 때는 TCP/포트 편향을
+먼저 임의 조정하기보다 다음 순서로 분리한다.
+
+1. 고정 포트에서 여러 관절 자세의 `port_pose_base` 분산 측정
+2. 해당 로봇 카메라 intrinsic 재검증
+3. 해당 로봇 Hand-eye 재검증
+4. 그리퍼와 USB 팁 장착 반복오차 측정
+5. 마지막에만 로봇 프로필의 TCP/포트 로컬 편향 조정
+
+## 26. 브리지 외 프로세스가 `/dev/ttyUSB0`를 점유함
+
+표준 `trajectory_bridge`가 관절 상태 발행과 관절/Cartesian action을 모두
+담당한다. 별도 단독 `joint_state_publisher`는 중복 시리얼 점유 위험 때문에
+제거했다. 현재 다음 프로세스를 동시에 실행하면 안 된다.
+
+- 이전 bridge 프로세스
+- 별도 PyMyCobot Python 스크립트
+- Jupyter 로봇 제어 셀
+- 다른 ROS joint-state/trajectory bridge
+
+확인은 `fuser -v /dev/ttyUSB0`로 하고 표준 bridge 하나만 남긴다.

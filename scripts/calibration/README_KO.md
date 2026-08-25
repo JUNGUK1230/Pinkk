@@ -18,7 +18,7 @@
 |---|---|
 | 최종 통합 브랜치 | `robot_arm_1828` |
 | ROS 2 | Jazzy |
-| ROS domain | `38` |
+| ROS domain | `36` |
 | RMW | `rmw_fastrtps_cpp` |
 | 로봇 PC 계정 | `jetcobot@raspi` |
 | 로봇 serial | `/dev/ttyUSB0`, `1000000 baud` |
@@ -29,11 +29,11 @@
 | ChArUco 유효 기준 | 코너 25개 이상, 재투영 오차 0.7 px 이하 |
 | 자동 관측 자세 | 최대 30개 |
 
-스크립트는 domain 38과 Fast DDS를 고정하므로 일반적으로 별도 `export`가 필요하지 않습니다.
+스크립트는 domain 36과 Fast DDS를 기본값으로 사용하므로 일반적으로 별도 `export`가 필요하지 않습니다.
 직접 ROS 명령을 실행할 때는 두 PC에서 다음 값을 동일하게 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=38
+export ROS_DOMAIN_ID=36
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
@@ -44,7 +44,7 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 Hand-eye 실행 한 번을 하나의 `run`으로 저장합니다.
 
 ```text
-src/robot_arm/robot_camera/handeye_calibration_1828/data/
+src/robot_arm/calibration/handeye/data/
   runs/
     YYYYMMDD_HHMMSS_<label>/
       metadata.json
@@ -70,7 +70,7 @@ src/robot_arm/robot_camera/handeye_calibration_1828/data/
 - `active/`는 비교가 끝난 후 명시적으로 선택한 결과만 담습니다.
 
 상세 파일 규칙은
-[`handeye_calibration_1828/data/README.md`](../../src/robot_arm/robot_camera/handeye_calibration_1828/data/README.md)를
+[`calibration/handeye/data/README.md`](../../src/robot_arm/calibration/handeye/data/README.md)를
 참고합니다.
 
 ## 3. 새 PC 또는 pull 후 한 번 수행
@@ -80,7 +80,7 @@ src/robot_arm/robot_camera/handeye_calibration_1828/data/
 로봇 PC:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git switch robot_arm_1828
 git pull origin robot_arm_1828
 bash scripts/calibration/robot_build_pinkk.sh
@@ -89,7 +89,7 @@ bash scripts/calibration/robot_build_pinkk.sh
 노트북:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 git switch robot_arm_1828
 git pull origin robot_arm_1828
 bash scripts/calibration/laptop_build_pinkk.sh
@@ -137,7 +137,7 @@ sudo lsof /dev/video0
 초기 검증에서는 낮은 속도 5를 권장합니다.
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
@@ -170,7 +170,7 @@ bash scripts/calibration/laptop_usb_accuracy_check.sh observe-execute
 SSH X11 화면을 보면서 실행:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_charuco.sh true
 ```
 
@@ -186,7 +186,7 @@ bash scripts/calibration/robot_start_charuco.sh false
 ### 5.3 노트북 터미널 1 — MoveIt/RViz
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_moveit.sh
 ```
 
@@ -195,7 +195,7 @@ bash scripts/calibration/laptop_start_moveit.sh
 매 run마다 서버를 새로 시작합니다.
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_easy_handeye.sh
 ```
 
@@ -205,7 +205,7 @@ GUI의 `Load Samples`를 누르지 않습니다. 새 run은 빈 샘플 목록에
 ### 5.5 노트북 터미널 3 — 이동 없는 검사
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_auto_handeye.sh check 30 20
 ```
 
@@ -249,7 +249,7 @@ bash scripts/calibration/laptop_handeye_data.sh compute RUN
 ## 6. 저장된 run 확인
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_handeye_data.sh list
 ```
 
@@ -376,7 +376,7 @@ bash scripts/calibration/laptop_publish_handeye_tf.sh 20260723_auto_30samples
 ```bash
 git status --short
 git add \
-  src/robot_arm/robot_camera/handeye_calibration_1828/data \
+  src/robot_arm/calibration/handeye/data \
   ros2_ws/src/pinkk_usb_insertion/config/handeye.yaml
 git commit -m "Record hand-eye calibration run"
 git push origin robot_arm_1828
@@ -386,7 +386,7 @@ git push origin robot_arm_1828
 
 ```bash
 git check-ignore -v \
-  src/robot_arm/robot_camera/handeye_calibration_1828/data/runs/*/*
+  src/robot_arm/calibration/handeye/data/runs/*/*
 ```
 
 정상 상태에서는 아무것도 출력되지 않습니다.

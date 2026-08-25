@@ -15,8 +15,9 @@ pinkk_mycobot_trajectory_bridge:
     # 시리얼 부하를 줄이기 위해 정지 중 2Hz로만 발행한다.
     cartesian_pose_publish_rate_hz: 2.0
     # [deg] send_angles 완료 판정의 관절별 목표 허용오차.
-    # 기기 반복오차 때문에 현재 2도이며, 1도 미세명령에는 적합하지 않다.
-    goal_tolerance_deg: 2.0
+    # 초기 관측 복귀와 같은 3.5도로 맞춰 기기 반복오차로 인한 불필요한
+    # action 거절을 줄인다. 재전송은 늘리지 않고 정지 후 실제 자세는 유지 확인한다.
+    goal_tolerance_deg: 3.5
     # false이면 FollowJointTrajectory action을 받되 실제 send_angles를 차단한다.
     joint_execution_enabled: true
     # 완료 판정에 필요한 연속 정지 샘플 수와 샘플 간 최대 관절 변화량.
@@ -37,6 +38,10 @@ pinkk_mycobot_trajectory_bridge:
     # 반환한다. -1/None만 조회 미지원으로 허용하며 0 등 명시적 비활성
     # 응답은 계속 실패 처리한다. stop/queue clear/정지 확인은 유지한다.
     allow_unconfirmed_fresh_mode: true
+    # false이면 브리지 시작 시 수행한 fresh mode/queue 초기화를 재사용한다.
+    # 각 action 완료·실패 시 stop/clear_queue는 그대로 수행하므로 명령마다
+    # 약 6초 걸리던 중복 prepare_command_queue만 생략한다.
+    prepare_queue_before_each_command: false
     # [s] 관절 trajectory 전체 실행 제한시간.
     max_execution_seconds: 60.0
 
@@ -63,7 +68,9 @@ pinkk_mycobot_trajectory_bridge:
     # 실제 수직 삽입 직전에는 1~2도 수준의 별도 프로파일이 필요하다.
     cartesian_path_tilt_tolerance_deg: 5.0
     # [s] bridge가 send_coords 이후 실제 로봇 상태를 감시하는 제한시간.
-    cartesian_timeout_seconds: 60.0
+    # 큰 오차 명령이 부분 이동 후 멈췄을 때 기존 60초를 모두 기다리는 병목을
+    # 줄인다. send_coords 자체의 블로킹 시간은 이 제한시간에 포함되지 않는다.
+    cartesian_timeout_seconds: 20.0
     # true이면 목표 Z는 전송하지만 실제 Z 오차를 action 실패 조건에서 제외한다.
     # 고정 관측 Z의 해가 없는 현재 시험에서 반드시 true로 유지한다.
     cartesian_ignore_z_tracking_error: true

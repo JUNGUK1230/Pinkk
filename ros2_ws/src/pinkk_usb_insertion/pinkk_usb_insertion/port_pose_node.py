@@ -32,11 +32,27 @@ class PortPoseNode(Node):
     def __init__(self) -> None:
         super().__init__('pinkk_port_pose_node')
         self.declare_parameter('control_config', _default_config('insertion_control.yaml'))
+        self.declare_parameter(
+            'suppress_no_candidate_warning_after_first_valid',
+            True,
+        )
         control = load_yaml(str(self.get_parameter('control_config').value))
         model = control['port_model']
+        self.declare_parameter(
+            'port_model_width_m', float(model['width_m'])
+        )
+        self.declare_parameter(
+            'port_model_height_m', float(model['height_m'])
+        )
         limits = control['pose_estimation']
-        self._port_width = float(model['width_m'])
-        self._port_height = float(model['height_m'])
+        self._port_width = float(
+            self.get_parameter('port_model_width_m').value
+        )
+        self._port_height = float(
+            self.get_parameter('port_model_height_m').value
+        )
+        if self._port_width <= 0.0 or self._port_height <= 0.0:
+            raise ValueError('USB 포트 장축/단축 규격은 양수여야 합니다')
         self._minimum_depth = float(limits['minimum_depth_m'])
         self._maximum_depth = float(limits['maximum_depth_m'])
         self._maximum_error = float(limits['maximum_reprojection_error_px'])
@@ -47,6 +63,12 @@ class PortPoseNode(Node):
         self._maximum_detection_age = float(
             control['safety']['maximum_detection_age_seconds']
         )
+        self._suppress_no_candidate_warning = bool(
+            self.get_parameter(
+                'suppress_no_candidate_warning_after_first_valid'
+            ).value
+        )
+        self._has_valid_detection = False
         self._camera_info: CameraInfo | None = None
 
         self._observation_publisher = self.create_publisher(
@@ -71,7 +93,11 @@ class PortPoseNode(Node):
             self._detection_callback,
             qos_profile_sensor_data,
         )
-        self.get_logger().info('YOLO USB keypoint 검출과 CameraInfo를 기다립니다')
+        self.get_logger().info(
+            'YOLO USB keypoint 검출과 CameraInfo를 기다립니다: '
+            f'port_model={self._port_width * 1000.0:.1f}x'
+            f'{self._port_height * 1000.0:.1f}mm'
+        )
 
     def _camera_info_callback(self, message: CameraInfo) -> None:
         if message.width > 0 and message.height > 0 and len(message.k) == 9:
@@ -87,6 +113,13 @@ class PortPoseNode(Node):
         observation.valid = False
         observation.rejection_reason = reason
         self._observation_publisher.publish(observation)
+        if (
+            self._suppress_no_candidate_warning
+            and self._has_valid_detection
+            and '사용 가능한 USB 포트 검출이 없습니다' in reason
+        ):
+            self.get_logger().debug(reason, throttle_duration_sec=2.0)
+            return
         self.get_logger().warning(reason, throttle_duration_sec=2.0)
 
     def _detection_callback(self, message: UsbPortDetectionArray) -> None:
@@ -149,6 +182,13 @@ class PortPoseNode(Node):
         observation.valid = True
         observation.rejection_reason = ''
         self._observation_publisher.publish(observation)
+        if not self._has_valid_detection:
+            self._has_valid_detection = True
+            if self._suppress_no_candidate_warning:
+                self.get_logger().info(
+                    '첫 유효 포트 검출 완료: 이후 검출 후보 없음 메시지는 '
+                    '관측 토픽에는 계속 반영하되 반복 WARN 로그는 숨깁니다'
+                )
 
         pose = PoseStamped()
         pose.header = observation.header

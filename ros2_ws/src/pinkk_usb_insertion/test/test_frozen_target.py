@@ -2,12 +2,17 @@ import numpy as np
 import pytest
 
 from pinkk_usb_insertion.control.frozen_target import (
+    axial_mean_degrees,
+    axial_median_degrees,
     circular_mean_degrees,
     circular_median_degrees,
     final_insertion_target_z_m,
+    flange_xy_for_tcp_lateral_offset,
     limited_xy_target,
     maximum_angular_deviation_degrees,
+    maximum_axial_deviation_degrees,
     port_based_flange_target_z,
+    port_xy_with_local_offset,
     proportional_xy_target,
     proportional_z_descent_m,
     xy_residual_m,
@@ -33,6 +38,13 @@ def test_maximum_angular_deviation_uses_shortest_wrap() -> None:
     assert maximum_angular_deviation_degrees((179.0, -179.0), 180.0) == pytest.approx(
         1.0
     )
+
+
+def test_axial_statistics_use_180_degree_period() -> None:
+    values = (-89.0, 89.0, -88.0, 88.0)
+    assert abs(abs(axial_mean_degrees(values)) - 90.0) < 1e-6
+    assert abs(abs(axial_median_degrees(values)) - 90.0) < 1e-6
+    assert maximum_axial_deviation_degrees(values, -90.0) == pytest.approx(2.0)
 
 
 def test_final_insertion_target_uses_relative_10mm() -> None:
@@ -61,6 +73,60 @@ def test_port_based_flange_target_z_uses_tcp_and_insertion_depth() -> None:
 def test_port_based_flange_target_z_rejects_depth_beyond_tcp() -> None:
     with pytest.raises(ValueError):
         port_based_flange_target_z(0.070, 0.100, 0.110)
+
+
+def test_tcp_positive_x_moves_flange_negative_x_at_zero_yaw() -> None:
+    target = flange_xy_for_tcp_lateral_offset(
+        (0.200, -0.060),
+        np.eye(3),
+        0.005,
+        0.0,
+    )
+    assert np.allclose(target, (0.195, -0.060))
+
+
+def test_tcp_local_x_rotates_with_flange_yaw() -> None:
+    yaw_90 = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    target = flange_xy_for_tcp_lateral_offset(
+        (0.200, -0.060),
+        yaw_90,
+        -0.005,
+        0.0,
+    )
+    assert np.allclose(target, (0.200, -0.055))
+
+
+def test_port_local_positive_y_moves_target_down_at_identity() -> None:
+    target = port_xy_with_local_offset(
+        (0.200, -0.060),
+        np.eye(3),
+        0.0,
+        0.003,
+    )
+    assert np.allclose(target, (0.200, -0.057))
+
+
+def test_port_local_y_rotates_with_port_pose() -> None:
+    yaw_90 = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    target = port_xy_with_local_offset(
+        (0.200, -0.060),
+        yaw_90,
+        0.0,
+        0.003,
+    )
+    assert np.allclose(target, (0.197, -0.060))
 
 
 def test_xy_residual() -> None:

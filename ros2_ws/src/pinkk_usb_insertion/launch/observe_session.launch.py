@@ -4,7 +4,8 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import TimerAction
+from launch.actions import DeclareLaunchArgument, TimerAction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
 
@@ -16,6 +17,16 @@ def generate_launch_description() -> LaunchDescription:
         get_package_share_directory('pinkk_mycobot_bridge')
     )
     runtime = str(insertion_share / 'config' / 'hybrid_runtime.yaml')
+    profile = LaunchConfiguration('robot_profile')
+    profile_runtime = PathJoinSubstitution(
+        [
+            str(insertion_share),
+            'config',
+            'robots',
+            profile,
+            'runtime.yaml',
+        ]
+    )
     bridge_config = str(
         bridge_share / 'config' / 'trajectory_bridge.yaml'
     )
@@ -34,8 +45,19 @@ def generate_launch_description() -> LaunchDescription:
                 executable='return_to_observe',
                 name='pinkk_return_to_observe',
                 output='screen',
-                parameters=[runtime],
+                parameters=[runtime, profile_runtime],
             )
         ],
     )
-    return LaunchDescription([bridge, return_to_observe])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                'robot_profile',
+                default_value='robot_a',
+                choices=['robot_a', 'robot_b'],
+                description='사용할 로봇별 관측 자세·파라미터 프로필',
+            ),
+            bridge,
+            return_to_observe,
+        ]
+    )

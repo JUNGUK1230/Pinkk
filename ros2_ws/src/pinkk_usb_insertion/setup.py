@@ -15,6 +15,18 @@ setup(
         (f'share/{PACKAGE_NAME}', ['package.xml', 'README.md']),
         (f'share/{PACKAGE_NAME}/launch', glob('launch/*.launch.py')),
         (f'share/{PACKAGE_NAME}/config', glob('config/*.yaml') + glob('config/*.md')),
+        (
+            f'share/{PACKAGE_NAME}/config/robots/robot_a',
+            glob('config/robots/robot_a/*.yaml'),
+        ),
+        (
+            f'share/{PACKAGE_NAME}/config/robots/robot_b',
+            glob('config/robots/robot_b/*.yaml'),
+        ),
+        (
+            f'share/{PACKAGE_NAME}/config/robots',
+            glob('config/robots/*.md'),
+        ),
         (f'share/{PACKAGE_NAME}/docs', glob('docs/*.md')),
     ],
     install_requires=['setuptools'],
@@ -30,7 +42,6 @@ setup(
             'yolo_keypoint_node = pinkk_usb_insertion.yolo_keypoint_node:main',
             'port_pose_node = pinkk_usb_insertion.port_pose_node:main',
             'pbvs_alignment_node = pinkk_usb_insertion.pbvs_alignment_node:main',
-            'pbvs_step_executor_node = pinkk_usb_insertion.pbvs_step_executor_node:main',
             'frozen_target_executor_node = '
             'pinkk_usb_insertion.frozen_target_executor_node:main',
             'return_to_observe = '

@@ -3,6 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+ROBOT_PROFILE="${1:-${PINKK_ROBOT_PROFILE:-robot_a}}"
+case "${ROBOT_PROFILE}" in
+    robot_a) PROFILE_DOMAIN_ID=36 ;;
+    robot_b) PROFILE_DOMAIN_ID=38 ;;
+    *)
+        echo "지원하지 않는 로봇 프로필입니다: ${ROBOT_PROFILE} (robot_a|robot_b)" >&2
+        exit 2
+        ;;
+esac
 
 source_environment() {
     local setup_file="$1"
@@ -17,13 +26,24 @@ source_environment() {
 }
 
 source_environment /opt/ros/jazzy/setup.bash
-source_environment "${HOME}/mycobot_moveit_ws/install/setup.bash"
+MOVEIT_SETUP="${PINKK_MOVEIT_SETUP:-${HOME}/mycobot_moveit_ws/install/setup.bash}"
+source_environment "${MOVEIT_SETUP}"
 source_environment "${REPO_ROOT}/ros2_ws/install/setup.bash"
 
-export ROS_DOMAIN_ID=38
+YOLO_MODEL_PATH="${PINKK_YOLO_MODEL_PATH:-${REPO_ROOT}/models/usb_02.pt}"
+if [[ ! -f "${YOLO_MODEL_PATH}" ]]; then
+    echo "YOLO 모델이 없습니다: ${YOLO_MODEL_PATH}" >&2
+    echo "models/README.md를 참고하거나 PINKK_YOLO_MODEL_PATH를 지정하세요" >&2
+    exit 1
+fi
+
+export ROS_DOMAIN_ID="${PINKK_ROS_DOMAIN_ID:-${PROFILE_DOMAIN_ID}}"
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 unset ROS_LOCALHOST_ONLY
 
 cd "${REPO_ROOT}"
-exec ros2 launch pinkk_usb_insertion frozen_target_alignment.launch.py
+echo "노트북 프로필=${ROBOT_PROFILE}, ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+exec ros2 launch pinkk_usb_insertion frozen_target_alignment.launch.py \
+    robot_profile:="${ROBOT_PROFILE}" \
+    model_path:="${YOLO_MODEL_PATH}"

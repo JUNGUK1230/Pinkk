@@ -34,7 +34,7 @@ from .command_queue import (
     require_no_explicit_command_failure,
     stop_and_clear_command_queue,
 )
-from .joint_state_publisher import JOINT_NAMES, angles_deg_to_rad
+from .joint_utils import JOINT_NAMES, angles_deg_to_rad
 from .joint_completion import (
     JointStabilityMonitor,
     compensated_joint_command_degrees,
@@ -105,6 +105,7 @@ class MyCobotTrajectoryBridge(Node):
         self.declare_parameter("joint_retry_max_step_deg", 1.0)
         self.declare_parameter("joint_retry_max_total_offset_deg", 2.0)
         self.declare_parameter("allow_unconfirmed_fresh_mode", False)
+        self.declare_parameter("prepare_queue_before_each_command", True)
         self.declare_parameter("max_execution_seconds", 60.0)
         self.declare_parameter("cartesian_execution_enabled", False)
         self.declare_parameter("cartesian_base_frame", "g_base")
@@ -130,6 +131,9 @@ class MyCobotTrajectoryBridge(Node):
         self._speed = int(self.get_parameter("speed").value)
         self._allow_unconfirmed_fresh_mode = bool(
             self.get_parameter("allow_unconfirmed_fresh_mode").value
+        )
+        self._prepare_queue_before_each_command = bool(
+            self.get_parameter("prepare_queue_before_each_command").value
         )
         rate = float(self.get_parameter("publish_rate_hz").value)
         cartesian_pose_rate = float(
@@ -405,7 +409,9 @@ class MyCobotTrajectoryBridge(Node):
             f"stable_samples={self._joint_stable_sample_count}, "
             f"max_attempts={self._joint_max_command_attempts}, "
             "retry_compensation="
-            f"{self._joint_retry_compensation_enabled}"
+            f"{self._joint_retry_compensation_enabled}, "
+            "prepare_queue_each_command="
+            f"{self._prepare_queue_before_each_command}"
         )
         api_mode = "API 준비" if self._cartesian_ready else "API 사용 불가"
         execution_mode = (
@@ -535,6 +541,7 @@ class MyCobotTrajectoryBridge(Node):
             self._send_joint_target(target_deg, attempts_sent + 1)
             attempts_sent += 1
         except Exception as error:
+            self._stop_robot()
             result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
             result.error_string = f"send_angles 실패: {error}"
             goal_handle.abort()
@@ -741,12 +748,13 @@ class MyCobotTrajectoryBridge(Node):
             f'{self._joint_max_command_attempts} [deg]: {list(target_deg)}'
         )
         with self._serial_lock:
-            prepare_command_queue(
-                self._robot,
-                allow_unconfirmed_fresh_mode=(
-                    self._allow_unconfirmed_fresh_mode
-                ),
-            )
+            if self._prepare_queue_before_each_command:
+                prepare_command_queue(
+                    self._robot,
+                    allow_unconfirmed_fresh_mode=(
+                        self._allow_unconfirmed_fresh_mode
+                    ),
+                )
             queue_ready_at = time.monotonic()
             response = self._robot.send_angles(
                 list(target_deg),
@@ -881,21 +889,29 @@ class MyCobotTrajectoryBridge(Node):
                 f"{[round(value, 3) for value in target_coords]}, "
                 f"speed={request.speed}, mode={request.mode}"
             )
+            command_started = time.monotonic()
             with self._serial_lock:
-                prepare_command_queue(
-                    self._robot,
-                    allow_unconfirmed_fresh_mode=(
-                        self._allow_unconfirmed_fresh_mode
-                    ),
-                )
+                if self._prepare_queue_before_each_command:
+                    prepare_command_queue(
+                        self._robot,
+                        allow_unconfirmed_fresh_mode=(
+                            self._allow_unconfirmed_fresh_mode
+                        ),
+                    )
+                queue_ready_at = time.monotonic()
                 response = self._robot.send_coords(
                     target_coords, int(request.speed), int(request.mode)
                 )
+            command_finished = time.monotonic()
             require_no_explicit_command_failure('send_coords', response)
             self.get_logger().info(
-                'send_coords 호출 종료: 실제 Cartesian 상태 감시를 시작합니다'
+                'send_coords 호출 종료: '
+                f'queue_prepare={queue_ready_at - command_started:.3f}s, '
+                f'send_coords={command_finished - queue_ready_at:.3f}s. '
+                '실제 Cartesian 상태 감시를 시작합니다'
             )
         except Exception as error:
+            self._stop_robot()
             result.success = False
             result.message = f"Cartesian 명령 실패: {error}"
             goal_handle.abort()
@@ -1232,12 +1248,17 @@ class MyCobotTrajectoryBridge(Node):
         self._cartesian_pose_publisher.publish(self._pose_from_coords(coords))
 
     def _stop_robot(self) -> bool:
+        started = time.monotonic()
         try:
             with self._serial_lock:
                 stop_and_clear_command_queue(self._robot)
         except Exception as error:
             self.get_logger().error(f"로봇 정지·큐 삭제 실패: {error}")
             return False
+        self.get_logger().info(
+            '로봇 정지·큐 정리 완료: '
+            f'stop_clear={time.monotonic() - started:.3f}s'
+        )
         return True
 
     def close(self) -> None:

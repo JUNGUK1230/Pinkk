@@ -30,27 +30,27 @@ pinkk_mycobot_bridge
 로봇 PC와 노트북 모두 다음 값을 사용합니다.
 
 ```bash
-export ROS_DOMAIN_ID=38
+export ROS_DOMAIN_ID=36
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 ```
 
-스크립트의 Domain은 38로 고정되어 있습니다.
+스크립트의 기본 Domain은 36이며 `ROS_DOMAIN_ID` 환경변수로 덮어쓸 수 있습니다.
 
 ## 3. 로봇 PC 실행
 
 bridge:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_bridge.sh 5 5.0
 ```
 
 ChArUco 화면 포함:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_start_charuco.sh true
 ```
 
@@ -90,7 +90,7 @@ camera_optical_frame -> charuco_board
 MoveIt/RViz:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_start_moveit.sh
 ```
 
@@ -138,14 +138,14 @@ bash scripts/calibration/laptop_publish_handeye_tf.sh
 로봇 PC:
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/robot_build_pinkk.sh
 ```
 
 노트북:
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 저장소 루트에서 실행
 bash scripts/calibration/laptop_build_pinkk.sh
 ```
 

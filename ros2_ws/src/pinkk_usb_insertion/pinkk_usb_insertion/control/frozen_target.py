@@ -43,6 +43,42 @@ def maximum_angular_deviation_degrees(values, center_deg: float) -> float:
     return float(np.max(np.abs(deviations)))
 
 
+def axial_mean_degrees(values) -> float:
+    """방향 없는 축 표본의 180도 주기 평균을 ``[-90, 90)``로 반환한다."""
+    angles = np.asarray(values, dtype=np.float64).reshape(-1)
+    if angles.size == 0 or not np.all(np.isfinite(angles)):
+        raise ValueError('축 각도 표본은 하나 이상의 유한값이어야 합니다')
+    doubled = np.radians(2.0 * angles)
+    sine = float(np.mean(np.sin(doubled)))
+    cosine = float(np.mean(np.cos(doubled)))
+    if math.hypot(sine, cosine) < 1e-12:
+        raise ValueError('축 각도 표본의 평균 방향을 결정할 수 없습니다')
+    return 0.5 * math.degrees(math.atan2(sine, cosine))
+
+
+def axial_median_degrees(values) -> float:
+    """방향 없는 축 표본의 180도 wrap을 고려한 중앙값을 반환한다."""
+    angles = np.asarray(values, dtype=np.float64).reshape(-1)
+    if angles.size == 0 or not np.all(np.isfinite(angles)):
+        raise ValueError('축 각도 표본은 하나 이상의 유한값이어야 합니다')
+    reference = axial_mean_degrees(angles)
+    unwrapped = reference + (angles - reference + 90.0) % 180.0 - 90.0
+    median = float(np.median(unwrapped))
+    return (median + 90.0) % 180.0 - 90.0
+
+
+def maximum_axial_deviation_degrees(values, center_deg: float) -> float:
+    """180도 주기 축 중심에서 각 표본까지의 최대 편차를 반환한다."""
+    angles = np.asarray(values, dtype=np.float64).reshape(-1)
+    center = float(center_deg)
+    if angles.size == 0 or not np.all(np.isfinite(angles)):
+        raise ValueError('축 각도 표본은 하나 이상의 유한값이어야 합니다')
+    if not math.isfinite(center):
+        raise ValueError('축 중심각은 유한값이어야 합니다')
+    deviations = (angles - center + 90.0) % 180.0 - 90.0
+    return float(np.max(np.abs(deviations)))
+
+
 def xy_residual_m(current_xy, target_xy) -> float:
     """두 XY 좌표 사이의 유클리드 거리를 반환한다."""
     current = np.asarray(current_xy, dtype=np.float64).reshape(2)
@@ -68,6 +104,56 @@ def port_based_flange_target_z(
     if insertion > tcp_z:
         raise ValueError('삽입 깊이는 flange-to-tip TCP Z보다 클 수 없습니다')
     return port_z + tcp_z - insertion
+
+
+def flange_xy_for_tcp_lateral_offset(
+    port_xy,
+    flange_rotation,
+    tcp_x_m: float,
+    tcp_y_m: float,
+):
+    """flange 로컬 TCP X/Y 편심을 반영한 base-frame flange XY를 반환한다."""
+    port = np.asarray(port_xy, dtype=np.float64).reshape(2)
+    rotation = np.asarray(flange_rotation, dtype=np.float64).reshape(3, 3)
+    tcp_x = float(tcp_x_m)
+    tcp_y = float(tcp_y_m)
+    if (
+        not np.all(np.isfinite(port))
+        or not np.all(np.isfinite(rotation))
+        or not math.isfinite(tcp_x)
+        or not math.isfinite(tcp_y)
+    ):
+        raise ValueError('포트 XY, flange 회전, TCP X/Y는 유한값이어야 합니다')
+    lateral_tcp_base = rotation @ np.array(
+        [tcp_x, tcp_y, 0.0],
+        dtype=np.float64,
+    )
+    return port - lateral_tcp_base[:2]
+
+
+def port_xy_with_local_offset(
+    port_xy,
+    port_rotation,
+    offset_x_m: float,
+    offset_y_m: float,
+):
+    """포트 로컬 X/Y 목표 편향을 base-frame 포트 XY에 반영한다."""
+    port = np.asarray(port_xy, dtype=np.float64).reshape(2)
+    rotation = np.asarray(port_rotation, dtype=np.float64).reshape(3, 3)
+    offset_x = float(offset_x_m)
+    offset_y = float(offset_y_m)
+    if (
+        not np.all(np.isfinite(port))
+        or not np.all(np.isfinite(rotation))
+        or not math.isfinite(offset_x)
+        or not math.isfinite(offset_y)
+    ):
+        raise ValueError('포트 XY, 회전, 로컬 X/Y 편향은 유한값이어야 합니다')
+    offset_base = rotation @ np.array(
+        [offset_x, offset_y, 0.0],
+        dtype=np.float64,
+    )
+    return port + offset_base[:2]
 
 
 def limited_xy_target(current_xy, target_xy, maximum_step_m: float):

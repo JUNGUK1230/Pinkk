@@ -11,5 +11,5 @@ setup_ros_workspace
 cd "${REPO_ROOT}"
 echo "USB 수동 SolvePnP 시작: ${STREAM_URL}"
 exec python3 -m \
-    src.robot_arm.robot_camera.handeye_calibration_1828.applications.manual_usb_tf \
+    src.robot_arm.calibration.handeye.applications.manual_usb_tf \
     --url "${STREAM_URL}"

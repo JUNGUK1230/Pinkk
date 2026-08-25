@@ -24,6 +24,8 @@
 - guard 도달 후 XY/Roll/Pitch를 보정하지 않고 Z만 상대 10mm 추가 하강
 - 마지막 Z 이동 후 제조사 actual XYZ/Yaw에서 초기 관측 Roll/Pitch 전체값을
   한 번 적용하며, 이 단계의 추가 Z 결합 이동은 제한하지 않음
+- Roll/Pitch 복구 뒤 Z-only 5mm와 Pitch +7도 단발 보정
+- 최종 오차 보고 후 성공·실패 모두 10초 뒤 초기 관측 자세 자동 복귀
 
 마지막 Z-only 단계에도 힘/토크 또는 접촉 감지가 없다. 실기에서 명령보다
 큰 Z 이동이 관측됐으므로 비상 정지 수단을 준비하고 낮은 위치에 장애물이
@@ -38,12 +40,13 @@ target_flange_z
 = frozen_port_z + final_tcp_offset_z_m - final_port_insertion_depth_m
 ```
 
-현재 YAML 시험값은 완전히 닫힌 그리퍼에서 flange부터 USB 끝까지 120mm,
-삽입 깊이 10mm다. USB-A와 flange의 X/Y 방향은 동일하고 X/Y 편심은
-0으로 가정한다.
+현재 YAML 시험값은 완전히 닫힌 그리퍼에서 flange부터 USB 끝까지 130mm,
+삽입 깊이 10mm다. Robot A는 flange 로컬 TCP X `+5mm`와 포트 로컬 목표
+장축 `+2mm`, 단축 `+5mm` 시험 편향을 사용하고 Robot B는 이 값을 상속하지
+않는다.
 
 ```text
-target_flange_z = frozen_port_z + 110mm
+target_flange_z = frozen_port_z + 120mm
 ```
 
 충전기를 다시 장착하거나 고정 위치가 변하면 `final_tcp_offset_z_m`을
@@ -78,7 +81,7 @@ URDF Jacobian 관절 Z 하강(send_angles)
 → 실제 get_coords 최종 측정
 ```
 
-- Z 명령은 남은 절대 Z 오차에 P gain을 적용하고 최대 3mm로 제한한다.
+- Z 명령은 남은 절대 Z 오차에 P gain을 적용하고 최대 6mm로 제한한다.
 - Jacobian 관절 하나의 계산 step은 최대 2도다.
 - XY와 Roll/Pitch는 앞선 정렬에서 더 잘 동작한 Cartesian 좌표 제어를 쓴다.
 - XY 5mm, Roll/Pitch 5도 안이면 다음 사이클을 허용한다.
@@ -122,7 +125,7 @@ Z-only 명령 뒤에는 초기 관측 Roll/Pitch를 한 번 적용한다. 이 �
 ### 로봇 PC
 
 ```bash
-cd ~/Pinkk-robot-arm
+# 로봇 PC의 저장소 루트에서 실행
 ./scripts/run_robot_bridge.sh
 ```
 
@@ -132,7 +135,7 @@ cd ~/Pinkk-robot-arm
 ### 노트북
 
 ```bash
-cd ~/Desktop/Pinkk-robot-arm
+# 노트북의 저장소 루트에서 실행
 ./scripts/run_laptop_frozen_target_test.sh
 ```
 
@@ -203,9 +206,11 @@ execute_once 전체 정렬
 → descend_joint_z_to_guard 자동 반복
 → insert_final_z_once (XY/Roll/Pitch 보정 없음)
 → 초기 관측 Roll/Pitch 복구
-→ Z-only 3mm 추가 하강
+→ Z-only 5mm 추가 하강
+→ Pitch +7도 단발 보정
 → 제조사 실제 좌표 최종 측정
 → X/Y/XY/Z/Roll/Pitch/Yaw 오차 보고
+→ 10초 후 초기 관측 관절 자세 자동 복귀
 ```
 
 완료 시 `FINAL_ERROR_REPORT`와
@@ -257,21 +262,23 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 |---|---:|---|
 | `initial_observation_sample_count` | 5 | 초기 목표 집계에 사용할 최근 관측 수 |
 | `initial_observation_aggregation_method` | median | XY/Z/Yaw 이상값에 강한 중앙값 집계 |
+| `robot_xy_kp` | 0.70 | frozen XY 오차에 적용하는 P gain |
+| `roll_pitch_kp` | 0.50 | Roll/Pitch 복구 공통 P gain |
 | `vertical_z_control_backend` | joint | 통합 Z 단계에 Jacobian/send_angles 사용 |
 | `vertical_z_cartesian_mode` | 1 | 통합 Z 단계의 send_coords mode |
 | `absolute_pre_approach_height_m` | 0.18 | 자세 결합 하강을 고려한 포트 위 초기 coarse 높이 |
 | `robot_xy_tracking_tolerance_m` | 0.005 | 초기 XY/Roll/Pitch 결합 정렬의 로봇좌표 XY 허용오차 |
 | `cartesian_mode` | 1 | XY/Roll-Pitch용 제조사 직선 Cartesian 모드 |
 | `use_fixed_roll_pitch_target` | true | 초기 실측 대신 고정 R/P 기준 사용 |
-| `fixed_roll_target_deg` | -180.0 | 전체 제어 Roll 목표 |
+| `fixed_roll_target_deg` | Robot A -177.5 / Robot B -180.0 | 프로필별 전체 제어 Roll 목표 |
 | `fixed_pitch_target_deg` | 0.0 | 전체 제어 Pitch 목표 |
 | `pitch_correction_gain` | 1.70 | Pitch 오차에만 적용하는 보정 배율 |
-| `final_tcp_offset_z_m` | 0.120 | 닫힌 그리퍼의 flange에서 USB 끝까지 거리 |
+| `final_tcp_offset_z_m` | 0.130 | 닫힌 그리퍼의 flange에서 USB 끝까지 거리 |
 | `final_port_insertion_depth_m` | 0.010 | 목표 삽입 깊이 |
-| `enable_final_insertion` | false | 최종 단발 삽입 안전 스위치 |
+| `enable_final_insertion` | true | 현재 시험의 최종 단발 삽입 스위치 |
 | `final_insertion_step_m` | 0.0005 | 승인 1회당 삽입 명령량 |
 | `joint_vertical_z_kp` | 0.40 | 남은 Z 오차 비율 |
-| `joint_vertical_z_step_m` | 0.003 | 관절 Z 1회 명령 상한 |
+| `joint_vertical_z_step_m` | 0.006 | 관절 Z 1회 명령 상한 |
 | `joint_vertical_max_joint_step_deg` | 2.0 | 관절별 계산 증분 상한 |
 | `joint_vertical_xy_tolerance_m` | 0.005 | 다음 사이클 XY 허용오차 |
 | `joint_vertical_roll_pitch_tolerance_deg` | 5.0 | 다음 사이클 자세 허용오차 |
@@ -280,7 +287,9 @@ ros2 topic pub --once /robot_arm/frozen_target/command \
 | `final_insertion_relative_distance_m` | 0.010 | guard 이후 Z-only 상대 하강 거리 |
 | `final_insertion_hard_maximum_total_descent_m` | 0.015 | 마지막 단발 실제 하강 하드 한계 |
 | `enable_post_recovery_final_z` | true | 삽입 후 R/P 복구 뒤 추가 Z 하강 사용 |
-| `post_recovery_final_z_distance_m` | 0.003 | R/P 복구 뒤 Z-only 추가 하강 거리 |
+| `post_recovery_final_z_distance_m` | 0.005 | R/P 복구 뒤 Z-only 추가 하강 거리 |
+| `post_final_z_pitch_lift_deg` | 7.0 | 모든 Z 하강 뒤 Pitch 단발 보정량 |
+| `auto_return_to_observe_delay_seconds` | 10.0 | 통합 실행 뒤 초기 자세 복귀 대기 |
 
 이 작업공간에서는 YAML data file이 install에 복사될 수 있으므로 YAML만
 수정해도 노트북 패키지를 재빌드하고 launch를 재시작한다. Python/launch/

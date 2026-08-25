@@ -1,6 +1,74 @@
 # USB 포트 정렬 개발일지
 
-## 2026-07-29 현재 목표
+## 2026-08-20 현재 상태
+
+현재 실제 시험 경로는 MoveIt 실행과 과거 waypoint/IBVS 실험을 제외한
+`frozen-target` 하나다. 아래 2026-07~08 초반 절은 이 구조에 도달하기까지의
+시험 기록이며, 당시 명령이 현재도 지원된다는 뜻은 아니다. 현재 실행 절차와
+파라미터는 `FROZEN_TARGET_TEST_KO.md`를 기준으로 한다.
+
+### 현재 표준 흐름
+
+```text
+카메라 → YOLO Pose keypoint 4개 → SolvePnP
+→ Hand-eye와 flange TF로 포트 base pose 계산
+→ 최근 5장 median으로 PBVS target/port Z/장축각 고정
+→ frozen XY + port Z 180mm 위 pre-approach coarse
+→ 제조사 actual pose 기반 XY P보정
+→ 고정 Roll/Pitch와 Joint6 Yaw 보정
+→ 관절 Jacobian Z 하강
+→ 필요 시 Cartesian XY/Roll-Pitch 보정
+→ guard 이후 Z-only 10mm
+→ Roll/Pitch 복구 → Z-only 5mm → Pitch +7도
+→ FINAL_ERROR_REPORT → 10초 후 초기 관측 자세 복귀
+```
+
+실제 이동은 ROS action bridge를 통해 PyMyCobot `send_coords()`와
+`send_angles()`로 실행한다. MoveIt 충돌검사와 고주기 visual servo는 현재
+실행 경로에 없다.
+
+### 현재 주요 설정
+
+- 포트 SolvePnP 모델: 장축 18mm × 단축 10mm
+- 자동 시작: 영상 중심 반경 150px 안에서 5초 정지 관측
+- 장축 통계: 방향 없는 180도 주기, 최근 5장 median
+- Robot A 고정 Roll/Pitch: `[-177.5, 0.0]deg`
+- Robot A TCP 로컬 X: `+5mm`
+- Robot A 포트 로컬 목표 편향: 장축 `+2mm`, 단축 `+5mm`
+- XY P gain/허용오차: `0.70` / `5mm`
+- Z backend: URDF Jacobian 관절 증분, 1회 요청 상한 `6mm`
+- flange-to-tip Z / 삽입 깊이: `130mm` / `10mm`
+- 반복 명령 전 대기/정착: `0.2s` / `0.3s`
+
+### 이번 정리에서 반영한 항목
+
+- 포트 장축 `-89°/+89°`를 178도 차이로 오판하던 360도 통계를 180도
+  축 통계로 수정했다.
+- 자동 시작 장축각을 한쪽 edge가 아니라 두 긴 변의 평균으로 계산한다.
+- 코드 기본값으로만 있던 `robot_xy_kp`, `roll_pitch_kp`를 YAML에 노출했다.
+- 단독 `joint_state_publisher`를 제거하고 상태 발행을 통합 bridge 하나로
+  일원화해 `/dev/ttyUSB0` 이중 점유 가능성을 줄였다.
+- 사용되지 않던 `tool_transform.yaml`, 과거 gate, 빈 `motion_control` 구조와
+  생성물·캐시를 정리했다.
+- YOLO weight 위치를 저장소 밖 개인 경로에서 `models/usb_02.pt`로 통일했다.
+  PT 파일은 Git에 넣지 않고 `PINKK_YOLO_MODEL_PATH`로 교체할 수 있다.
+
+### 현재 확인된 한계와 다음 순서
+
+1. 수락된 ROS action이 timeout일 때 goal 취소와 실제 정지 완료를 상위
+   실행기가 보장해야 한다.
+2. 성공·실패 후 자동 관절 복귀 전에 포트에서 수직으로 인출하는 단계가 없다.
+3. 평면 IPPE의 두 pose 후보를 재투영오차·포트 normal·이전 프레임 연속성으로
+   선택하지 않고 단일 해만 사용한다.
+4. 초기 target XYZ, port Z, 장축각이 별도 토픽 deque라 같은 검출 프레임끼리
+   완전히 동기화되지 않는다. pose 전체를 detection ID 기준으로 묶어야 한다.
+5. `frozen_target_executor_node.py`에 orchestration과 과거 Z 실험 코드가 함께
+   남아 있어 초기 정렬/Z 하강/최종 삽입/action client 모듈 분리가 필요하다.
+6. Robot B 내부행렬과 Hand-eye를 Robot A와 독립적으로 다시 검증해야 한다.
+
+이번 단계에서는 위 후속 항목을 코드로 바꾸지 않고 다음 작업 목록으로 남겼다.
+
+## 2026-07-29 초기 목표(과거 기록)
 
 JetCobot 카메라로 USB 포트를 검출하고, 제조사 PyMyCobot API로 포트
 근처까지 이동한 뒤 영상 피드백으로 남은 XY/Yaw 오차를 줄이는 것이
@@ -149,19 +217,7 @@ Joint6 범위 제한은 실제 장비 실행에 필요한 최소 보호로 유�
 - 유효한 5~10프레임의 u/v/장축각/SolvePnP 깊이 중앙값을 사용한다.
 - 분산이 큰 관측에서는 이동하지 않는다.
 
-### 4. 결합 IBVS
-
-실제 하드웨어에서 다음 관계를 측정한다.
-
-```text
-[Δu, Δv, Δθ] = J × [ΔX, ΔY, ΔJoint6]
-```
-
-Joint6 회전으로 생기는 화면 중심 이동까지 포함한 로컬 영상 자코비안을
-사용해 XY와 Yaw를 함께 보정한다. 관측 거리가 바뀌면 자코비안을 다시
-추정하거나 SolvePnP 깊이로 스케일을 갱신한다.
-
-### 5. 충전기 장착 이후
+### 4. 충전기 장착 이후
 
 - flange에서 충전기 끝까지 TCP를 측정한다.
 - 충전기와 포트가 정렬됐을 때의 목표 영상각을 보정한다.
@@ -309,7 +365,7 @@ PBVS coarse (mode 1, path lock 없음)
 ### 보류 및 미적용
 
 - TCP XYZ를 삽입 pose로 역산하는 절차는 검토했지만 이번 작업에서는 측정하거나
-  제어에 적용하지 않았다. 현재 코드는 기존 scalar TCP Z 시험값 120mm만 쓴다.
+  제어에 적용하지 않았다. 현재 코드는 scalar TCP Z 시험값 130mm만 쓴다.
 - 최종 Z guard 15mm는 제거하지 않았다. 실측에서 3~5mm Z 명령이 실제
   9~19.5mm 이동했으므로 포트 내부 10mm 자동 삽입은 현재 범위 밖이다.
 - 다음 XY 개선 후보인 제조사 실제 `cartesian_pose_actual` 기반 refine 시작
@@ -340,7 +396,7 @@ PBVS coarse (mode 1, path lock 없음)
 - 최종 순서를 `Z-only 삽입 → 초기 Roll/Pitch 복구 → Z-only 3mm 추가 하강`
   으로 확장했다. 추가 3mm는 한 번의 관절 Jacobian 명령으로 실행한다.
 - 비교 시험을 위해 `vertical_z_control_backend=cartesian`을 추가했다. 이
-  설정에서는 통합 실행의 guard 하강, 최종 10mm 및 R/P 뒤 3mm를 모두
+  설정에서는 통합 실행의 guard 하강, 최종 10mm 및 R/P 뒤 5mm를 모두
   제조사 `send_coords(mode=1)`로 실행하고 최종 실제 오차를 보고한다.
 - 다음 비교 시험은 같은 통합 흐름에서 backend만 `joint`로 되돌려 Jacobian
   관절 증분과 제조사 `send_angles` 결과를 비교한다.
