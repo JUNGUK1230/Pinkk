@@ -228,7 +228,7 @@ pinkk_frozen_target_executor_node:
     # 실제 명령은 영상 오차*gain과 20도 중 작은 값이다.
     keypoint_maximum_step_deg: 20.0
     # [deg] 영상 장축 오차가 이 값 이하면 Yaw가 수렴했다고 본다.
-    keypoint_tolerance_deg: 3.0
+    keypoint_tolerance_deg: 4.0
     # 영상 오차를 Joint6 명령 방향으로 바꾸는 부호.
     keypoint_command_sign: -1.0
     # 실측: 영상 +6.95deg에서 gain 1.32 명령 후 -1.97deg까지 이동했다.

@@ -38,9 +38,21 @@ class PortPoseNode(Node):
         )
         control = load_yaml(str(self.get_parameter('control_config').value))
         model = control['port_model']
+        self.declare_parameter(
+            'port_model_width_m', float(model['width_m'])
+        )
+        self.declare_parameter(
+            'port_model_height_m', float(model['height_m'])
+        )
         limits = control['pose_estimation']
-        self._port_width = float(model['width_m'])
-        self._port_height = float(model['height_m'])
+        self._port_width = float(
+            self.get_parameter('port_model_width_m').value
+        )
+        self._port_height = float(
+            self.get_parameter('port_model_height_m').value
+        )
+        if self._port_width <= 0.0 or self._port_height <= 0.0:
+            raise ValueError('USB 포트 장축/단축 규격은 양수여야 합니다')
         self._minimum_depth = float(limits['minimum_depth_m'])
         self._maximum_depth = float(limits['maximum_depth_m'])
         self._maximum_error = float(limits['maximum_reprojection_error_px'])
@@ -81,7 +93,11 @@ class PortPoseNode(Node):
             self._detection_callback,
             qos_profile_sensor_data,
         )
-        self.get_logger().info('YOLO USB keypoint 검출과 CameraInfo를 기다립니다')
+        self.get_logger().info(
+            'YOLO USB keypoint 검출과 CameraInfo를 기다립니다: '
+            f'port_model={self._port_width * 1000.0:.1f}x'
+            f'{self._port_height * 1000.0:.1f}mm'
+        )
 
     def _camera_info_callback(self, message: CameraInfo) -> None:
         if message.width > 0 and message.height > 0 and len(message.k) == 9:
