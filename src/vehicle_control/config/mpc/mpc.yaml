@@ -162,6 +162,14 @@
     # 전진 중 현재 heading을 유지해도 경로로 수렴하고 있으면 횡오차를
     # 억지로 닫는 반대 조향을 줄인다. 직선과 곡선 모두에 적용된다.
     forward_converging_cross_track_gain_scale: 0.25
+    # 전진 optimizer에서만 위치 비용에 곱한다. 현재 공통 위치 비용
+    # 1000/1600은 후진 최종 정렬에는 유지하되, 전진에서는 400/640으로
+    # 낮춰 작은 위치 오차 때문에 곡률이 계속 한계에 붙는 현상을 줄인다.
+    forward_position_weight_scale: 0.40
+    # [1/m] MPC와 경로 feed-forward 뒤에 더하는 전진 횡오차/yaw 보정의
+    # 합계 상한이다. 경로 자체의 큰 곡률과 heading recovery에는 적용하지
+    # 않으므로 코너 조향 능력은 유지하고 복귀 오버슈팅만 억제한다.
+    forward_feedback_curvature_limit_1pm: 2.5
     # 경로 쪽을 향해 복귀 중일 때 헤딩 정렬 gain을 최대 이 배율까지 높인다.
     # 위치가 선에 닿기 전에 차체를 직선 접선과 평행하게 만들어 S자 반동을 줄인다.
     forward_straight_heading_gain_scale: 4.0

@@ -80,6 +80,15 @@ class MpcLimits:
     cross_track_feedback_gain_1pm2: float = 15.0
     forward_cross_track_gain_scale: float = 1.0
     forward_converging_cross_track_gain_scale: float = 0.25
+    # Keep reverse parking tuning independent from forward tracking.  The
+    # project YAML intentionally uses large common position weights for the
+    # final reverse alignment, so forward motion scales only its own position
+    # part of the optimizer objective.
+    forward_position_weight_scale: float = 1.0
+    # Maximum curvature that the separate forward CTE/yaw feedback may add on
+    # top of the MPC/path feed-forward result.  Path curvature and heading
+    # recovery still retain the full physical steering range.
+    forward_feedback_curvature_limit_1pm: float = 3.0
     forward_straight_heading_gain_scale: float = 1.8
     forward_rejoin_lookahead_m: float = 0.13
     forward_rejoin_max_heading_rad: float = math.radians(15.0)
@@ -159,6 +168,8 @@ class MpcLimits:
             self.reverse_heading_gain_scale,
             self.forward_cross_track_gain_scale,
             self.forward_converging_cross_track_gain_scale,
+            self.forward_position_weight_scale,
+            self.forward_feedback_curvature_limit_1pm,
             self.forward_straight_heading_gain_scale,
             self.forward_rejoin_lookahead_m,
             self.forward_rejoin_max_heading_rad,
@@ -194,6 +205,10 @@ class MpcLimits:
             raise ValueError(
                 "converging cross-track gain must not exceed forward gain"
             )
+        if self.forward_position_weight_scale > 1.0:
+            raise ValueError("forward position weight scale must not exceed one")
+        if self.forward_feedback_curvature_limit_1pm > self.max_curvature_1pm:
+            raise ValueError("forward feedback curvature limit exceeds physical limit")
         if self.forward_straight_heading_gain_scale < 1.0:
             raise ValueError("straight heading gain scale must be at least one")
         if (
@@ -1264,7 +1279,7 @@ class DifferentialDriveMpc:
                     + convergence_ratio
                     * (self.limits.forward_straight_heading_gain_scale - 1.0)
                 )
-        feedback = (
+        cross_track_feedback = (
             -self.limits.cross_track_feedback_gain_1pm2
             * (
                 self.limits.reverse_cross_track_gain_scale
@@ -1276,7 +1291,7 @@ class DifferentialDriveMpc:
         # 경로에 닿는 위치만 맞추면 차량이 접선과 비스듬한 상태로 선을
         # 통과한 뒤 반대 조향하며 S자가 된다. 진행 방향을 고려한 heading
         # feedback으로 합류 순간에 경로 접선과 나란해지도록 감쇠한다.
-        feedback += (
+        heading_feedback = (
             direction
             * self.limits.heading_feedback_gain_1pmprad
             * (
@@ -1286,6 +1301,20 @@ class DifferentialDriveMpc:
             )
             * effective_heading_error
         )
+        feedback = cross_track_feedback + heading_feedback
+        if direction > 0:
+            # The optimizer already reacts to position error.  Without an
+            # independent bound this second feedback path can add another
+            # several 1/m and hold the command at +/-8.33 1/m until the car
+            # crosses the line.  Bound only the correction; planned curve
+            # feed-forward and explicit heading recovery remain unrestricted.
+            feedback = float(
+                np.clip(
+                    feedback,
+                    -self.limits.forward_feedback_curvature_limit_1pm,
+                    self.limits.forward_feedback_curvature_limit_1pm,
+                )
+            )
         curvature += feedback
         target_curvature_limit = path_curvature_limit
         recovery_scale = 0.0
@@ -2432,8 +2461,14 @@ class DifferentialDriveMpc:
             else:
                 position_error = error_x**2 + error_y**2
             terminal = index == len(references) - 1
+            position_weight_scale = (
+                self.limits.forward_position_weight_scale
+                if direction > 0
+                else 1.0
+            )
             cost += (
-                (self.weights.terminal_position if terminal else self.weights.position)
+                position_weight_scale
+                * (self.weights.terminal_position if terminal else self.weights.position)
                 * position_error
                 + (self.weights.terminal_yaw if terminal else self.weights.yaw)
                 * yaw_error**2

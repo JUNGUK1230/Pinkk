@@ -230,9 +230,12 @@ endpoints:
     type: parking
   P4:
     staging: [29.9338, 78.4646, -2.4521787849]
-    entry_staging: [28.8387, 84.6325, -2.9670597284]
+    # 실차 시험에서 기존 후진 시작 중심(camera 약 x=143px)이 왼쪽 흰
+    # 구획 구조물에 너무 가까워 바퀴가 걸렸다. 화면 오른쪽의 열린 도로
+    # 방향으로 3.5cm 옮겨(camera 약 x=171px) 여유를 확보한다.
+    entry_staging: [31.5394, 86.8588, -2.9670597284]
     goal: [57.6142, 67.6820, 2.2602101955]
-    entry_turning_radius_cm: 20.0
+    entry_turning_radius_cm: 16.0
     entry_approach_turning_radius_cm: 20.0
     entry_attachment_search_cm: 60.0
     entry_final_straight_cm: 0.0

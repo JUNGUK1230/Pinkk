@@ -331,6 +331,8 @@ class MpcPathFollower(Node):
             "cross_track_feedback_gain_1pm2": 15.0,
             "forward_cross_track_gain_scale": 1.0,
             "forward_converging_cross_track_gain_scale": 0.25,
+            "forward_position_weight_scale": 1.0,
+            "forward_feedback_curvature_limit_1pm": 3.0,
             "forward_straight_heading_gain_scale": 1.8,
             "forward_rejoin_lookahead_m": 0.13,
             "forward_rejoin_max_heading_deg": 15.0,
@@ -484,6 +486,12 @@ class MpcPathFollower(Node):
             ),
             forward_converging_cross_track_gain_scale=self._positive_parameter(
                 "forward_converging_cross_track_gain_scale", overrides
+            ),
+            forward_position_weight_scale=self._positive_parameter(
+                "forward_position_weight_scale", overrides
+            ),
+            forward_feedback_curvature_limit_1pm=self._positive_parameter(
+                "forward_feedback_curvature_limit_1pm", overrides
             ),
             forward_straight_heading_gain_scale=self._positive_parameter(
                 "forward_straight_heading_gain_scale", overrides
