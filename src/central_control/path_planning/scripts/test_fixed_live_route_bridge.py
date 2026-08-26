@@ -103,7 +103,7 @@ def main() -> int:
     locked_controller.close()
 
     # 다른 차량의 충전 배정 C2를 C1에 있는 ego의 다음 목표로 표시하면
-    # 안 된다. C1/C2의 유효한 다음 목표는 P1~P4뿐이다.
+    # 안 된다. 출차 명령은 자동 배정과 별도로 EXIT를 강제해야 한다.
     c1_vehicle = SimpleNamespace(
         track_id=7,
         center_cm=(
@@ -128,6 +128,7 @@ def main() -> int:
     assert route_context(c1_scene, selector) == ("C1", "WAIT")
     c1_scene.planning_request = SimpleNamespace(slot_name="P3")
     assert route_context(c1_scene, selector) == ("C1", "P3")
+    assert route_context(c1_scene, selector, "EXIT") == ("C1", "EXIT")
 
     arrival_controller = IntegratedPlanningController(selector)
     c1_goal = selector.endpoints["C1"]["goal"]
@@ -178,8 +179,54 @@ def main() -> int:
         charge_assignment=None,
     )
     assert route_context(p8_scene, selector) == ("P8", "C2")
+    assert route_context(p8_scene, selector, "EXIT") == ("P8", "EXIT")
     p8_scene.planning_request = SimpleNamespace(slot_name="P7")
     assert route_context(p8_scene, selector) == ("P8", "WAIT")
+
+    # 모든 주차·충전 종점은 웹 출차 명령을 받으면 EXIT 고정 경로를
+    # 선택할 수 있어야 한다.
+    for source in (
+        "P1", "P2", "P3", "P4",
+        "P5", "P6", "P7", "P8",
+        "C1", "C2",
+    ):
+        endpoint = selector.endpoints[source]
+        source_pose = tuple(endpoint.get("goal", endpoint["staging"]))
+        exit_outcome = controller._plan_request(
+            frame_index=2,
+            observed_at_unix_sec=time.time(),
+            slot_name="EXIT",
+            start_pose_cm=source_pose,
+            goal_pose_cm=(0.0, 0.0, 0.0),
+            alternative_goal_pose_cm=(0.0, 0.0, 0.0),
+        )
+        assert exit_outcome.adjusted_start == source_pose
+        assert exit_outcome.request.slot_name == "EXIT"
+        assert exit_outcome.trajectory
+
+    # 자동 배정 요청이 없는 충전 중 상태에서도 웹 출차 명령만으로 실제
+    # controller.update 경로가 생성되어야 한다.
+    forced_controller = IntegratedPlanningController(selector)
+    c1_pose = tuple(selector.endpoints["C1"]["goal"])
+    forced_scene = SimpleNamespace(
+        frame_index=3,
+        observed_at_unix_sec=time.time(),
+        vehicle=SimpleNamespace(
+            track_id=7,
+            center_cm=c1_pose[:2],
+            yaw_rad=float(c1_pose[2]),
+        ),
+        planning_request=None,
+    )
+    forced_controller.update(forced_scene, route_revision=1, forced_target="EXIT")
+    deadline = time.monotonic() + 1.0
+    while forced_controller.outcome is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+        forced_controller._collect_finished()
+    assert forced_controller.last_error is None
+    assert forced_controller.outcome is not None
+    assert forced_controller.outcome.request.slot_name == "EXIT"
+    forced_controller.close()
 
     print("Measured camera yaw + fixed front/back reference check passed")
     print(f"Fixed route bridge points: {len(outcome.trajectory)}")

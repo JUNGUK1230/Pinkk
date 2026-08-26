@@ -280,11 +280,21 @@ class IntegratedPlanningController:
         self,
         scene: SceneObservation,
         route_revision: int,
+        forced_target: str | None = None,
     ) -> None:
-        """새 차량/목표 조합일 때만 고정 경로 선택을 시작한다."""
+        """새 차량/목표 조합일 때만 고정 경로 선택을 시작한다.
+
+        운영자가 출차를 요청하면 ``forced_target=\"EXIT\"``가 자동 주차·
+        충전 배정보다 우선한다.
+        """
         self._collect_finished()
         if scene.vehicle is None:
             return
+        forced_target = (
+            str(forced_target).upper()
+            if forced_target is not None
+            else None
+        )
         if self.outcome is not None and self._active_key is not None:
             trajectory = tuple(getattr(self.outcome, "trajectory", ()))
             if not trajectory:
@@ -296,7 +306,10 @@ class IntegratedPlanningController:
                 float(getattr(goal, "y_cm")) - scene.vehicle.center_cm[1],
             )
             if goal_distance_cm <= self.completion_radius_cm:
+                completed_target = self._active_key[1]
                 self.invalidate()
+                if forced_target == completed_target:
+                    return
                 return
             if route_revision == self._active_key[2]:
                 # 출발 후에는 YOLO/점유 상태가 잠깐 흔들리거나 다른 목표가
@@ -309,7 +322,7 @@ class IntegratedPlanningController:
             and route_revision == self._active_key[2]
         ):
             return
-        if scene.planning_request is None:
+        if scene.planning_request is None and forced_target is None:
             if (
                 self.outcome is not None
                 or self._future is not None
@@ -359,9 +372,50 @@ class IntegratedPlanningController:
             )
             return
         self._idle_endpoint = None
+        if forced_target is not None:
+            endpoint = getattr(self.route_selector, "endpoints", {}).get(
+                forced_target
+            )
+            if endpoint is None:
+                self.last_error = f"unknown forced route target: {forced_target}"
+                return
+            detector = getattr(self.route_selector, "detect_location", None)
+            current_pose = (
+                scene.vehicle.center_cm[0],
+                scene.vehicle.center_cm[1],
+                scene.vehicle.yaw_rad,
+            )
+            detected_section = (
+                str(detector(current_pose))
+                if callable(detector)
+                else "TRANSIT"
+            )
+            if detected_section == forced_target:
+                # EXIT 도착 후 버튼 요청이 남아 있어도 같은
+                # EXIT 경로를 반복 생성하지 않는다.
+                self.invalidate()
+                self._idle_endpoint = detected_section
+                return
+            endpoint_pose = endpoint.get("goal", endpoint.get("staging"))
+            if endpoint_pose is None:
+                self.last_error = (
+                    f"forced route target has no endpoint pose: {forced_target}"
+                )
+                return
+            request_slot_name = forced_target
+            request_start_pose = current_pose
+            request_goal_pose = tuple(float(value) for value in endpoint_pose)
+            request_alternative_goal_pose = request_goal_pose
+        else:
+            request = scene.planning_request
+            assert request is not None
+            request_slot_name = request.slot_name
+            request_start_pose = request.start_pose_cm
+            request_goal_pose = request.goal_pose_cm
+            request_alternative_goal_pose = request.alternative_goal_pose_cm
         key = (
             scene.vehicle.track_id,
-            scene.planning_request.slot_name,
+            request_slot_name,
             route_revision,
         )
         if self._future is not None:
@@ -374,15 +428,14 @@ class IntegratedPlanningController:
             self.outcome = None
             self.last_error = None
             self._active_key = key
-        request = scene.planning_request
         self._future = self._executor.submit(
             self._plan_request,
             scene.frame_index,
             scene.observed_at_unix_sec,
-            request.slot_name,
-            request.start_pose_cm,
-            request.goal_pose_cm,
-            request.alternative_goal_pose_cm,
+            request_slot_name,
+            request_start_pose,
+            request_goal_pose,
+            request_alternative_goal_pose,
         )
 
     def consume_new_outcome(self) -> object | None:
@@ -969,6 +1022,7 @@ def _draw_continuous_path(
 def route_context(
     scene: SceneObservation,
     route_selector: object | None,
+    forced_target: str | None = None,
 ) -> tuple[str, str]:
     """Return the live ego section and currently assigned route target."""
     current_section = "UNKNOWN"
@@ -999,6 +1053,15 @@ def route_context(
             current_section = "TRANSIT"
 
     target = "WAIT"
+    if forced_target is not None:
+        requested_target = str(forced_target).upper()
+        allowed_transitions = getattr(
+            route_selector,
+            "allowed_transitions",
+            {},
+        )
+        if requested_target in allowed_transitions.get(current_section, ()):
+            return current_section, requested_target
     if scene.planning_request is not None:
         requested_target = scene.planning_request.slot_name
         allowed_transitions = getattr(
@@ -1015,6 +1078,7 @@ def route_context(
 def print_scene(
     scene: SceneObservation,
     route_selector: object | None = None,
+    forced_target: str | None = None,
 ) -> None:
     print(f"Frame {scene.frame_index}: {scene.status}")
     if scene.vehicle:
@@ -1026,7 +1090,11 @@ def print_scene(
             f"conf={vehicle.confidence:.2f}, "
             f"ambiguous={vehicle.heading_ambiguous or vehicle.ego_selection_ambiguous}"
         )
-    current_section, route_target = route_context(scene, route_selector)
+    current_section, route_target = route_context(
+        scene,
+        route_selector,
+        forced_target,
+    )
     print(f"  Route context: {current_section} -> {route_target}")
     free_count = sum(not slot.occupied for slot in scene.parking_slots)
     print(f"  Parking slots: {free_count}/{len(scene.parking_slots)} free")
@@ -1094,6 +1162,14 @@ def main() -> int:
         from ultralytics import YOLO
 
         config = load_config(args.config)
+        identity_mode = str(
+            config.get("vehicle_identity_mode", "automatic")
+        ).strip().lower()
+        if identity_mode not in {"manual", "automatic"}:
+            raise ValueError(
+                "vehicle_identity_mode must be 'manual' or 'automatic', "
+                f"got {identity_mode!r}"
+            )
         if args.vehicle_id is not None:
             config["vehicle_id"] = args.vehicle_id
         if args.initial_ego_center is not None:
@@ -1123,6 +1199,12 @@ def main() -> int:
                 ),
                 lidar_image_topic=str(
                     config.get("ros_lidar_image_topic", "/pinkk/lidar_map/image")
+                ),
+                user_bev_image_topic=str(
+                    config.get(
+                        "ros_user_bev_image_topic",
+                        "/pinkk/camera_bev/image",
+                    )
                 ),
                 management_status_topic=str(
                     config.get(
@@ -1212,7 +1294,17 @@ def main() -> int:
             f"{policy.name}, {policy.preference} from {policy.reference_bev_px}, "
             f"slots={list(policy.allowed_slots)}"
         )
-    print("Automatic vehicle selection enabled | SPACE: charge complete | q/ESC: quit")
+    if identity_mode == "manual":
+        print(
+            "Manual vehicle selection enabled | TAB: camera vehicle | "
+            "1/2: bind vehicle namespace | A: automatic matching | "
+            "SPACE: charge complete | q/ESC: quit"
+        )
+    else:
+        print(
+            "Automatic vehicle selection enabled | TAB: camera vehicle | "
+            "1/2: manual bind | SPACE: charge complete | q/ESC: quit"
+        )
     planning_controller = IntegratedPlanningController(
         route_selector,
         completion_radius_cm=float(
@@ -1227,7 +1319,10 @@ def main() -> int:
         f"{route_publish_scheduler.period_sec:.2f} sec"
     )
     replan_revision = 0
+    forced_route_targets: dict[str, str] = {}
+    pending_replan_vehicle_ids: set[str] = set()
     automatic_target_initialized = False
+    manual_track_id: int | None = None
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     # 첫 실제 프레임 추론 전에 CUDA 커널과 모델을 준비한다. 준비 중에도 캡처
@@ -1330,6 +1425,11 @@ def main() -> int:
                 )
                 return 1
 
+            # 사용자 웹에는 YOLO mask, 좌표, 경로 overlay를 그리기 전의 순수
+            # Camera BEV만 별도 토픽으로 보낸다.
+            if ros_publisher is not None:
+                ros_publisher.publish_user_bev_image(bev)
+
             result = model.track(
                 source=bev,
                 imgsz=inference_imgsz,
@@ -1352,6 +1452,7 @@ def main() -> int:
                 frame_index,
             )
             identity_ready = ros_publisher is None
+            target_track_id: int | None = None
             if ros_publisher is not None:
                 # scan/control callback을 먼저 처리해야 이번 프레임 경로가 최신
                 # vehicle namespace와 LiDAR-camera identity를 사용한다.
@@ -1359,72 +1460,133 @@ def main() -> int:
                 path_target_request = ros_publisher.consume_path_target_request()
                 if path_target_request is not None:
                     selected_vehicle_id, requested_command = path_target_request
-                    automatic_target_initialized = True
-                    replan_revision += 1
-                    planning_controller.invalidate()
-                    route_publish_scheduler.due(
-                        time.monotonic(),
-                        has_route=False,
-                    )
+                    if requested_command == "exit":
+                        forced_route_targets[selected_vehicle_id] = "EXIT"
+                    elif requested_command in {"entry", "charge"}:
+                        forced_route_targets.pop(selected_vehicle_id, None)
+                    if requested_command == "replan":
+                        # 현재 section이 확정된 뒤 endpoint 재선택과 TRANSIT
+                        # 마지막 경로 재발행 중 하나를 선택한다.
+                        pending_replan_vehicle_ids.add(selected_vehicle_id)
+                    if identity_mode == "automatic":
+                        # 웹에서 명시한 namespace를 초기 자동 선택이 다시
+                        # 덮어쓰지 않도록 요청 이후에는 자동 초기화를 끝낸다.
+                        automatic_target_initialized = True
+                    if requested_command != "replan":
+                        replan_revision += 1
+                        planning_controller.invalidate()
+                        route_publish_scheduler.due(
+                            time.monotonic(),
+                            has_route=False,
+                        )
                     print(
-                        "Automatic ROS path target: "
+                        f"{identity_mode.capitalize()} ROS path target: "
                         f"{selected_vehicle_id} command={requested_command} -> "
                         f"{ros_publisher.trajectory_topic}"
                     )
-                association = ros_publisher.update_vehicle_association(
-                    scene.tracked_vehicles
-                )
-                if (
-                    not automatic_target_initialized
-                    and association is not None
-                    and scene.vehicle is not None
-                ):
-                    automatic_vehicle_id = next(
-                        (
-                            vehicle_id
-                            for vehicle_id, track_id in (
-                                association.vehicle_to_track.items()
-                            )
-                            if track_id == scene.vehicle.track_id
-                        ),
-                        None,
+                if identity_mode == "manual":
+                    target_track_id = manual_track_id
+                    if target_track_id is not None:
+                        localizer.select_ego(target_track_id)
+                else:
+                    association = ros_publisher.update_vehicle_association(
+                        scene.tracked_vehicles
                     )
-                    if automatic_vehicle_id is not None:
-                        ros_publisher.select_vehicle(automatic_vehicle_id)
-                        automatic_target_initialized = True
-                        print(
-                            "Initial ROS path target selected automatically: "
-                            f"{automatic_vehicle_id}=track_{scene.vehicle.track_id}"
+                    if (
+                        not automatic_target_initialized
+                        and association is not None
+                        and scene.vehicle is not None
+                    ):
+                        automatic_vehicle_id = next(
+                            (
+                                vehicle_id
+                                for vehicle_id, track_id in (
+                                    association.vehicle_to_track.items()
+                                )
+                                if track_id == scene.vehicle.track_id
+                            ),
+                            None,
                         )
-                target_track_id = (
-                    association.vehicle_to_track.get(
-                        ros_publisher.active_vehicle_id
+                        if automatic_vehicle_id is not None:
+                            ros_publisher.select_vehicle(automatic_vehicle_id)
+                            automatic_target_initialized = True
+                            print(
+                                "Initial ROS path target selected automatically: "
+                                f"{automatic_vehicle_id}="
+                                f"track_{scene.vehicle.track_id}"
+                            )
+                    target_track_id = (
+                        association.vehicle_to_track.get(
+                            ros_publisher.active_vehicle_id
+                        )
+                        if association is not None
+                        else None
                     )
-                    if association is not None
-                    else None
-                )
-                if target_track_id is not None and localizer.select_ego(
-                    target_track_id
-                ):
-                    replan_revision += 1
-                    planning_controller.invalidate()
-                    route_publish_scheduler.due(
-                        time.monotonic(),
-                        has_route=False,
-                    )
-                    print(
-                        "Automatic camera ego selected: "
-                        f"{ros_publisher.active_vehicle_id}=track_{target_track_id}"
-                    )
+                    if target_track_id is not None and localizer.select_ego(
+                        target_track_id
+                    ):
+                        replan_revision += 1
+                        planning_controller.invalidate()
+                        route_publish_scheduler.due(
+                            time.monotonic(),
+                            has_route=False,
+                        )
+                        print(
+                            "Automatic camera ego selected: "
+                            f"{ros_publisher.active_vehicle_id}="
+                            f"track_{target_track_id}"
+                        )
                 identity_ready = (
                     target_track_id is not None
                     and scene.vehicle is not None
                     and scene.vehicle.track_id == target_track_id
                 )
+            forced_route_target = (
+                forced_route_targets.get(ros_publisher.active_vehicle_id)
+                if ros_publisher is not None
+                else None
+            )
+            if (
+                ros_publisher is not None
+                and identity_ready
+                and ros_publisher.active_vehicle_id
+                in pending_replan_vehicle_ids
+            ):
+                current_section, _ = route_context(
+                    scene,
+                    route_selector,
+                    forced_route_target,
+                )
+                if current_section == "TRANSIT":
+                    replayed = ros_publisher.republish_last_trajectory(
+                        ros_publisher.active_vehicle_id
+                    )
+                    print(
+                        "TRANSIT route replay: "
+                        f"{ros_publisher.active_vehicle_id} "
+                        f"{'published' if replayed else 'no cached route'}"
+                    )
+                else:
+                    # START/주차/충전/EXIT에서는 기존 경로 재생성 동작을
+                    # 그대로 유지한다.
+                    replan_revision += 1
+                    planning_controller.invalidate()
+                    route_publish_scheduler.due(
+                        time.monotonic(),
+                        has_route=False,
+                    )
+                    print(
+                        "Endpoint route replanning: "
+                        f"{ros_publisher.active_vehicle_id} at {current_section}"
+                    )
+                pending_replan_vehicle_ids.discard(
+                    ros_publisher.active_vehicle_id
+                )
             if identity_ready:
                 planning_controller.update(
                     scene,
                     replan_revision,
+                    forced_route_target,
                 )
             else:
                 planning_controller.invalidate()
@@ -1467,7 +1629,7 @@ def main() -> int:
                 save_scene_observation(scene, output_path)
             now = time.monotonic()
             if now - last_print_time >= 1.0 or static_bev is not None:
-                print_scene(scene, route_selector)
+                print_scene(scene, route_selector, forced_route_target)
                 capture_age_ms = (now - captured_at) * 1000.0
                 print(
                     "  Live timing: "
@@ -1490,17 +1652,25 @@ def main() -> int:
                 current_section, route_target = route_context(
                     scene,
                     route_selector,
+                    forced_route_target,
                 )
                 hud_lines: list[tuple[str, tuple[int, int, int]]] = []
                 if ros_publisher is not None:
-                    active_lidar_pose = ros_publisher.active_lidar_pose
-                    identity_text = (
-                        f"track={ros_publisher.active_track_id} "
-                        f"lidar=({active_lidar_pose.position_x_m:.2f},"
-                        f"{active_lidar_pose.position_y_m:.2f})"
-                        if active_lidar_pose is not None
-                        else ros_publisher.association_status
-                    )
+                    if identity_mode == "manual":
+                        identity_text = (
+                            f"manual track={manual_track_id}"
+                            if manual_track_id is not None
+                            else "manual: TAB camera, then 1/2 bind"
+                        )
+                    else:
+                        active_lidar_pose = ros_publisher.active_lidar_pose
+                        identity_text = (
+                            f"track={ros_publisher.active_track_id} "
+                            f"lidar=({active_lidar_pose.position_x_m:.2f},"
+                            f"{active_lidar_pose.position_y_m:.2f})"
+                            if active_lidar_pose is not None
+                            else ros_publisher.association_status
+                        )
                     hud_lines.append(
                         (
                             (
@@ -1574,6 +1744,54 @@ def main() -> int:
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
+                if key == 9:  # TAB
+                    identity_mode = "manual"
+                    manual_track_id = None
+                    changed, message = localizer.select_next_ego()
+                    print(message)
+                    if changed:
+                        replan_revision += 1
+                        planning_controller.invalidate()
+                        route_publish_scheduler.due(
+                            time.monotonic(),
+                            has_route=False,
+                        )
+                    print(
+                        "Press 1 or 2 to bind the selected camera vehicle "
+                        "to its ROS namespace."
+                    )
+                if key in (ord("1"), ord("2")):
+                    if ros_publisher is None:
+                        print("Manual vehicle binding requires ROS publishing")
+                    elif scene.vehicle is None or scene.vehicle.track_id is None:
+                        print("Manual vehicle binding failed: no camera ego track")
+                    else:
+                        identity_mode = "manual"
+                        manual_track_id = int(scene.vehicle.track_id)
+                        selected_vehicle_id = f"vehicle_{chr(key)}"
+                        ros_publisher.select_vehicle(selected_vehicle_id)
+                        replan_revision += 1
+                        planning_controller.invalidate()
+                        route_publish_scheduler.due(
+                            time.monotonic(),
+                            has_route=False,
+                        )
+                        print(
+                            "Manual vehicle binding: "
+                            f"track_{manual_track_id} -> {selected_vehicle_id} "
+                            f"({ros_publisher.vehicle.ros_namespace})"
+                        )
+                if key in (ord("a"), ord("A")):
+                    identity_mode = "automatic"
+                    manual_track_id = None
+                    automatic_target_initialized = False
+                    replan_revision += 1
+                    planning_controller.invalidate()
+                    route_publish_scheduler.due(
+                        time.monotonic(),
+                        has_route=False,
+                    )
+                    print("Automatic LiDAR-camera vehicle matching enabled")
                 if key == ord(" "):
                     completed, message = localizer.complete_charging(
                         scene.vehicle.track_id if scene.vehicle is not None else None,

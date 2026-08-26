@@ -21,7 +21,13 @@ realtime_localization:
   # web_video_server가 직접 구독해 브라우저에 전달하는 annotation 영상.
   ros_image_topic: /pinkk/localization/image
   ros_lidar_image_topic: /pinkk/lidar_map/image
+  # 사용자 웹 전용: YOLO 검출·좌표·경로가 없는 순수 Camera BEV.
+  ros_user_bev_image_topic: /pinkk/camera_bev/image
   ros_management_status_topic: /pinkk/management/status
+  # 동작 시험 중에는 자동 LiDAR-camera 매칭을 건너뛰고 운영자가 화면에서
+  # TAB으로 camera track을 고른 뒤 1/2로 vehicle namespace를 직접 연결한다.
+  # 자동 매칭을 다시 사용할 때는 automatic으로 바꾸거나 실행 중 A를 누른다.
+  vehicle_identity_mode: manual
   lidar_map_path: src/central_control/camera_tools/first_map/my_test_map0710.png
   # 두 차량 namespace의 scan을 카메라 차량 후보 주변에서 x/y/yaw 정합해
   # ByteTrack track_id와 영속 vehicle_id를 자동 연결한다.

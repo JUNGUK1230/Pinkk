@@ -27,7 +27,11 @@ def main() -> int:
         ("START", "C2"),
         ("P8", "C1"),
         ("C2", "P3"),
-        ("P4", "EXIT"),
+        *((source, "EXIT") for source in (
+            "P1", "P2", "P3", "P4",
+            "P5", "P6", "P7", "P8",
+            "C1", "C2",
+        )),
     )
     for expected_source, target in cases:
         endpoint = selector.endpoints[expected_source]

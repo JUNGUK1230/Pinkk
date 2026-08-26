@@ -40,7 +40,9 @@ road_backbone:
   P2: [57.7891, 101.4271, -2.4521787849]
   P3: [43.4592, 89.6143, -2.4521787849]
   P4: [29.9338, 78.4646, -2.4521787849]
-  EXIT: [23.2712034889, 76.8954852119, -3.0299]
+  # EXIT 박스 안에서 P1~P4 공통 직선축을 그대로 연장한다. 따라서
+  # camera BEV 기준 왼쪽을 바라본 채 제자리 회전 없이 도착한다.
+  EXIT: [26.0000000000, 75.2217672905, -2.4521787849]
 
 # START -> C1에서만 카메라 화면의 수평축을 정확히 따른다. LiDAR map은
 # camera BEV에 대해 39.5005도 회전되어 있으므로 이 좌표들은 LiDAR에서는
@@ -165,76 +167,88 @@ endpoints:
     type: charging
   C2:
     # 차량 후미가 C2 경계를 통과하기 전에 goal yaw 정렬을 완료한다.
-    # C1과 동일하게 마지막 38cm는 goal yaw를 유지한 직선 후진이다.
-    staging: [119.5609540908, 153.8367446119, 2.4347431207]
+    # 새 camera_bev에서 검출한 C2 차량 중심에 맞춰 기존 박스를
+    # camera 기준 오른쪽 11px, 아래 8px 이동했다. 등록 affine 기준
+    # lidar_map_cm 이동량은 (+0.4249, +1.6462)cm이다.
+    # C1과 동일하게 마지막 44cm는 goal yaw를 유지한 직선 후진이다.
+    staging: [119.9858451608, 155.4829804919, 2.4347431207]
     # 삭제된 기존 P1 공간을 충분히 사용해 slot 앞에서 자세를 완성한다.
     # 첫 곡선 후진 뒤 C1과 비슷한 길이로 전진 정렬하고, 충분한 길이의
     # 직선 후진으로 진입한다.
     # C1과 비슷한 길이의 전진 정렬 구간을 확보하도록 빈 공간 안쪽의
     # staging을 사용한다.
-    entry_staging: [92.1991388139, 131.2015876775, 2.7925268032]
-    goal: [148.9913709964, 155.7119903448, -2.4696320774]
+    entry_staging: [92.6240298839, 132.8478235575, 2.7925268032]
+    goal: [149.4162620664, 157.3582262248, -2.4696320774]
     entry_turning_radius_cm: 40.0
-    entry_maximum_cusp_yaw_error_deg: 10.0
+    # C1과 같은 3-point 형상: 충분히 첫 후진한 뒤 저속 재전진으로
+    # 최종 후진축에 정렬하고, 직선 후진으로 충전 자세를 완성한다.
+    entry_maximum_cusp_yaw_error_deg: 16.5
+    entry_minimum_initial_reverse_cm: 50.0
+    entry_cusp_relative_to_alignment:
+      longitudinal_cm: -33.0
+      lateral_cm: 11.5
+      yaw_offset_deg: -16.0
     entry_approach_turning_radius_cm: 16.0
     entry_attachment_search_cm: 60.0
     exit_turning_radius_cm: 40.0
-    entry_final_straight_cm: 38.0
+    entry_final_straight_cm: 44.0
     # camera BEV의 C2 사각형을 등록 affine으로 변환한 lidar_map_cm polygon.
     entry_slot_polygon_cm:
-    - [141.2178208149, 138.3235708756]
-    - [156.8092216079, 150.8523665604]
-    - [145.5525959660, 164.9005293996]
-    - [129.9611951730, 152.3717337149]
+    - [141.6427118849, 139.9698067556]
+    - [157.2341126779, 152.4986024404]
+    - [145.9774870360, 166.5467652796]
+    - [130.3860862430, 154.0179695949]
     type: charging
   P1:
     staging: [71.5236, 112.7492, -2.4521787849]
-    entry_staging: [75.5236, 114.7492, -2.8012446353]
+    # P1~P4 공통으로 주차열에서 camera 화면 아래쪽 벽 방향으로 8cm
+    # 떨어진 뒤 후진을 시작해 급한 진입각을 완화한다.
+    entry_staging: [70.4285, 120.9171, -2.9670597284]
     goal: [98.6142, 102.6820, 2.2602101955]
-    entry_turning_radius_cm: 14.0
-    entry_approach_turning_radius_cm: 14.0
+    entry_turning_radius_cm: 20.0
+    entry_approach_turning_radius_cm: 20.0
     entry_attachment_search_cm: 60.0
     entry_final_straight_cm: 0.0
     type: parking
   P2:
     staging: [57.7891, 101.4271, -2.4521787849]
-    entry_staging: [61.7891, 101.4271, -2.8012446353]
+    entry_staging: [56.6940, 107.5950, -2.9670597284]
     goal: [84.2284, 91.3639, 2.2602101955]
-    entry_turning_radius_cm: 14.0
-    entry_approach_turning_radius_cm: 14.0
+    entry_turning_radius_cm: 20.0
+    entry_approach_turning_radius_cm: 20.0
     entry_attachment_search_cm: 60.0
     entry_final_straight_cm: 0.0
     type: parking
   P3:
     staging: [43.4592, 89.6143, -2.4521787849]
-    entry_staging: [47.4592, 89.6143, -2.8012446353]
+    entry_staging: [42.3641, 95.7822, -2.9670597284]
     goal: [69.2284, 80.3639, 2.2602101955]
-    entry_turning_radius_cm: 14.0
-    entry_approach_turning_radius_cm: 14.0
+    entry_turning_radius_cm: 20.0
+    entry_approach_turning_radius_cm: 20.0
     entry_attachment_search_cm: 60.0
     entry_final_straight_cm: 0.0
     type: parking
   P4:
     staging: [29.9338, 78.4646, -2.4521787849]
-    entry_staging: [33.9338, 78.4646, -2.8012446353]
+    entry_staging: [28.8387, 84.6325, -2.9670597284]
     goal: [57.6142, 67.6820, 2.2602101955]
-    entry_turning_radius_cm: 14.0
-    entry_approach_turning_radius_cm: 14.0
+    entry_turning_radius_cm: 20.0
+    entry_approach_turning_radius_cm: 20.0
     entry_attachment_search_cm: 60.0
     entry_final_straight_cm: 0.0
     type: parking
   EXIT:
-    staging: [23.27120352, 76.89548524, -3.0299]
+    staging: [26.0000000000, 75.2217672905, -2.4521787849]
     type: exit
 
 allowed_transitions:
   START: [P8, P7, P6, P5, C1, C2]
-  P8: [C1, C2]
-  P7: [C1, C2]
-  P6: [C1, C2]
-  P5: [C1, C2]
-  C1: [P1, P2, P3, P4]
-  C2: [P1, P2, P3, P4]
+  P8: [C1, C2, EXIT]
+  P7: [C1, C2, EXIT]
+  P6: [C1, C2, EXIT]
+  P5: [C1, C2, EXIT]
+  C1: [P1, P2, P3, P4, EXIT]
+  C2: [P1, P2, P3, P4, EXIT]
   P1: [EXIT]
   P2: [EXIT]
   P3: [EXIT]

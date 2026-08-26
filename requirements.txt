@@ -7,3 +7,7 @@ PyYAML
 Flask>=3.0,<4
 scipy
 typeguard
+# MPC horizon/state/input visualization. CasADi 3.8 removes an API used by
+# do-mpc 5.1.1, so keep the verified compatible 3.7 series.
+do-mpc==5.1.1
+casadi>=3.7,<3.8

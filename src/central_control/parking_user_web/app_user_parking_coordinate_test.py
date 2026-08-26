@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import atexit
 import json
+import os
 import sys
 import threading
 import time
 from pathlib import Path
 
-import cv2
-import numpy as np
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
@@ -27,22 +25,16 @@ sys.path.insert(0, str(SRC_DIR))
 
 from central_control.vehicle_registry import VEHICLES as VEHICLE_REGISTRY
 
-FIRST_MAP_DIR = SRC_DIR / "central_control" / "camera_tools" / "first_map"
-
-CALIBRATION_FILE = FIRST_MAP_DIR / "camera_calibration.npz"
-HOMOGRAPHY_FILE = FIRST_MAP_DIR / "bev_homography.npz"
-
-CALIBRATION_CANDIDATES = [CALIBRATION_FILE]
-HOMOGRAPHY_CANDIDATES = [HOMOGRAPHY_FILE]
-
-# ============================================================
-# 카메라 설정
-# ============================================================
-
-CAMERA_ID = 2
-CAMERA_WIDTH = 1920
-CAMERA_HEIGHT = 1080
-CAMERA_FPS = 30
+VIDEO_ENABLED = os.environ.get("PINKK_VIDEO_ENABLED", "true").lower() not in {
+    "0",
+    "false",
+    "no",
+}
+VIDEO_TOPIC = os.environ.get(
+    "PINKK_VIDEO_TOPIC",
+    "/pinkk/camera_bev/image",
+)
+VIDEO_PORT = int(os.environ.get("PINKK_VIDEO_PORT", "8080"))
 
 VEHICLES = {
     index: {
@@ -65,15 +57,6 @@ app = Flask(
     template_folder=str(TEMPLATE_DIR),
 )
 
-camera_lock = threading.Lock()
-camera: cv2.VideoCapture | None = None
-
-camera_matrix: np.ndarray | None = None
-dist_coeffs: np.ndarray | None = None
-homography_matrix: np.ndarray | None = None
-bev_width = 1600
-bev_height = 800
-
 def initial_vehicle_state(robot: int) -> dict:
     return {
         "robot": robot,
@@ -88,16 +71,12 @@ def initial_vehicle_state(robot: int) -> dict:
         "request_state": "대기 중",
         "estimated_time": "-",
         "progress": 100,
-        "camera_mode": "확인 중",
+        "camera_mode": "순수 BEV 실시간 영상" if VIDEO_ENABLED else "영상 비활성",
     }
 
 
 system_states = {robot: initial_vehicle_state(robot) for robot in ROBOT_NAMESPACES}
 
-
-def set_camera_mode(mode: str) -> None:
-    for state in system_states.values():
-        state["camera_mode"] = mode
 
 battery_lock = threading.Lock()
 battery_last_updates = {robot: 0.0 for robot in ROBOT_NAMESPACES}
@@ -212,209 +191,13 @@ def requested_robot(payload: dict | None = None) -> int:
     return robot
 
 
-def find_existing_file(candidates: list[Path], label: str) -> Path:
-    for path in candidates:
-        if path.exists():
-            print(f"{label}: {path}")
-            return path
-
-    searched = "\n".join(f"  - {path}" for path in candidates)
-    raise FileNotFoundError(
-        f"{label} 파일을 찾을 수 없습니다.\n검색 위치:\n{searched}"
-    )
-
-
-def load_bev_files() -> None:
-    global camera_matrix
-    global dist_coeffs
-    global homography_matrix
-    global bev_width
-    global bev_height
-
-    calibration_path = find_existing_file(
-        CALIBRATION_CANDIDATES,
-        "Calibration",
-    )
-    homography_path = find_existing_file(
-        HOMOGRAPHY_CANDIDATES,
-        "Homography",
-    )
-
-    calibration_data = np.load(calibration_path)
-    bev_data = np.load(homography_path)
-
-    # 기존 파일 키 이름 차이를 둘 다 지원
-    if "camera_matrix" in calibration_data.files:
-        camera_matrix = calibration_data["camera_matrix"]
-    elif "cameraMatrix" in calibration_data.files:
-        camera_matrix = calibration_data["cameraMatrix"]
-    else:
-        raise KeyError(
-            "camera_calibration.npz에 camera_matrix 또는 cameraMatrix가 없습니다."
-        )
-
-    if "dist_coeffs" in calibration_data.files:
-        dist_coeffs = calibration_data["dist_coeffs"]
-    elif "dist" in calibration_data.files:
-        dist_coeffs = calibration_data["dist"]
-    else:
-        raise KeyError(
-            "camera_calibration.npz에 dist_coeffs 또는 dist가 없습니다."
-        )
-
-    homography_matrix = bev_data["homography_matrix"]
-    bev_width = int(bev_data["bev_width"])
-    bev_height = int(bev_data["bev_height"])
-
-    print("=" * 64)
-    print("BEV 설정 로드 완료")
-    print(f"BEV 크기: {bev_width} x {bev_height}")
-    print("=" * 64)
-
-
-def open_camera() -> bool:
-    global camera
-
-    with camera_lock:
-        if camera is not None and camera.isOpened():
-            return True
-
-        cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_V4L2)
-
-        if not cap.isOpened():
-            set_camera_mode("연결 끊김")
-            print(f"[경고] 카메라 {CAMERA_ID}번을 열 수 없습니다.")
-            return False
-
-        cap.set(
-            cv2.CAP_PROP_FOURCC,
-            cv2.VideoWriter_fourcc(*"MJPG"),
-        )
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-        cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
-
-        # 실제 프레임 수신까지 확인
-        received = False
-        for _ in range(10):
-            ok, frame = cap.read()
-            if ok and frame is not None and frame.size > 0:
-                received = True
-                break
-            time.sleep(0.05)
-
-        if not received:
-            cap.release()
-            set_camera_mode("연결 끊김")
-            print("[경고] 카메라는 열렸지만 프레임을 받지 못했습니다.")
-            return False
-
-        camera = cap
-        if (
-            camera_matrix is not None
-            and dist_coeffs is not None
-            and homography_matrix is not None
-        ):
-            set_camera_mode("실시간 BEV")
-        else:
-            set_camera_mode("카메라 연결됨 / BEV 파일 없음")
-
-        actual_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fps = camera.get(cv2.CAP_PROP_FPS)
-
-        print("=" * 64)
-        print("Runtime Camera")
-        print(f"Camera ID : {CAMERA_ID}")
-        print(f"Resolution: {actual_width} x {actual_height}")
-        print(f"FPS       : {actual_fps}")
-        print("=" * 64)
-
-        return True
-
-
-def close_camera() -> None:
-    global camera
-
-    with camera_lock:
-        if camera is not None:
-            camera.release()
-            camera = None
-
-
-atexit.register(close_camera)
-
-
-def read_bev_frame() -> np.ndarray | None:
-    if camera_matrix is None or dist_coeffs is None or homography_matrix is None:
-        return None
-
-    if not open_camera():
-        return None
-
-    with camera_lock:
-        if camera is None:
-            return None
-
-        ok, frame = camera.read()
-
-    if not ok or frame is None:
-        set_camera_mode("연결 끊김")
-        close_camera()
-        return None
-
-    undistorted = cv2.undistort(
-        frame,
-        camera_matrix,
-        dist_coeffs,
-    )
-
-    bev = cv2.warpPerspective(
-        undistorted,
-        homography_matrix,
-        (bev_width, bev_height),
-    )
-
-    return bev
-
-
-def generate_video():
-    while True:
-        frame = read_bev_frame()
-        if frame is None:
-            return
-
-        ok, encoded = cv2.imencode(
-            ".jpg",
-            frame,
-            [cv2.IMWRITE_JPEG_QUALITY, 85],
-        )
-        if not ok:
-            continue
-
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n"
-            + encoded.tobytes()
-            + b"\r\n"
-        )
-
-        time.sleep(1 / CAMERA_FPS)
-
-
 @app.route("/")
 def index():
-    return render_template("index_user.html")
-
-
-@app.route("/video_feed")
-def video_feed():
-    if camera_matrix is None or homography_matrix is None or not open_camera():
-        return Response("BEV 영상 스트림을 사용할 수 없습니다.", status=503)
-
-    return Response(
-        generate_video(),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
+    return render_template(
+        "index_user.html",
+        video_enabled=VIDEO_ENABLED,
+        video_topic=VIDEO_TOPIC,
+        video_port=VIDEO_PORT,
     )
 
 
@@ -521,14 +304,6 @@ def route_request(command: str):
     )
 
 if __name__ == "__main__":
-    try:
-        load_bev_files()
-    except (FileNotFoundError, KeyError) as error:
-        print(error)
-        print("[경고] BEV 영상 스트림을 시작할 수 없습니다.")
-        set_camera_mode("사용 불가")
-
-    open_camera()
     threading.Thread(target=run_ros_node, daemon=True).start()
     threading.Thread(target=refresh_battery_connection_state, daemon=True).start()
 
@@ -541,7 +316,7 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5002,
-        debug=True,
+        debug=False,
         threaded=True,
         use_reloader=False,
     )

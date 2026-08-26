@@ -22,6 +22,9 @@
     # 실차 pinky_bringup으로 선속도와 각속도를 보낼 출력 토픽이다.
     # 다른 주행 제어기와 동시에 사용하지 말며, 변경 시 노드를 재시작해야 한다.
     cmd_vel_topic: cmd_vel
+    # Python MPC 시각화 노드가 구독하는 JSON 디버그 snapshot이다.
+    # 제어 출력과 완전히 분리되어 시각화가 종료돼도 주행에는 영향이 없다.
+    debug_topic: mpc_debug
     # true이면 같은 차량 namespace의 cmd_vel에 다른 publisher가 발견될 때
     # 충돌로 판단하고 정지한다.
     reject_cmd_vel_conflicts: true

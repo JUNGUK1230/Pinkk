@@ -405,6 +405,15 @@ class MpcCommand:
     status: str
     solve_time_sec: float
     cost: float
+    predicted_states: tuple[VehicleState, ...] = ()
+    predicted_controls: tuple[tuple[float, float], ...] = ()
+    reference_horizon: tuple[ReferencePoint, ...] = ()
+    reference_curvatures_1pm: tuple[float, ...] = ()
+    cross_track_error_m: float = 0.0
+    heading_error_rad: float = 0.0
+    speed_limit_mps: float = 0.0
+    curvature_limit_1pm: float = 0.0
+    angular_speed_limit_radps: float = 0.0
 
 
 class DifferentialDriveMpc:
@@ -1430,6 +1439,12 @@ class DifferentialDriveMpc:
 
         self.last_speed_mps = speed
         self.last_curvature_1pm = curvature
+        debug_controls = controls.copy()
+        # 첫 입력은 feed-forward, 변화율 제한, 물리 한계를 모두 적용한 실제
+        # cmd_vel과 일치시킨다. 나머지는 optimizer가 계산한 horizon이다.
+        debug_controls[0, 0] = speed
+        debug_controls[0, 1] = curvature
+        predicted_states = self._rollout_vehicle_center(state, debug_controls)
         shifted = np.vstack((controls[1:], controls[-1]))
         self._warm_start = shifted.reshape(-1)
         return MpcCommand(
@@ -1440,7 +1455,51 @@ class DifferentialDriveMpc:
             status="TRACKING",
             solve_time_sec=solve_time,
             cost=float(result.fun),
+            predicted_states=predicted_states,
+            predicted_controls=tuple(
+                (float(control[0]), float(control[1]))
+                for control in debug_controls
+            ),
+            reference_horizon=tuple(reference for reference, _ in references),
+            reference_curvatures_1pm=tuple(
+                float(reference_curvature)
+                for _, reference_curvature in references
+            ),
+            cross_track_error_m=float(current_tracking_error),
+            heading_error_rad=float(signed_tracking_yaw_error),
+            speed_limit_mps=float(
+                self.limits.max_forward_speed_mps
+                if direction > 0
+                else self.limits.max_reverse_speed_mps
+            ),
+            curvature_limit_1pm=float(physical_limit),
+            angular_speed_limit_radps=float(self.limits.max_angular_speed_radps),
         )
+
+    def _rollout_vehicle_center(
+        self,
+        state: VehicleState,
+        controls: np.ndarray,
+    ) -> tuple[VehicleState, ...]:
+        """최적 입력 horizon을 DD rear-axle 모델로 적분해 중심 궤적으로 반환한다."""
+        offset = self.limits.control_point_offset_m
+        yaw = float(state.yaw_rad)
+        rear_x = float(state.x_m) - offset * math.cos(yaw)
+        rear_y = float(state.y_m) - offset * math.sin(yaw)
+        predicted: list[VehicleState] = [state]
+        for speed, curvature in np.asarray(controls, dtype=np.float64):
+            angular = float(speed * curvature)
+            rear_x += self.limits.dt_sec * float(speed) * math.cos(yaw)
+            rear_y += self.limits.dt_sec * float(speed) * math.sin(yaw)
+            yaw = normalize_angle(yaw + self.limits.dt_sec * angular)
+            predicted.append(
+                VehicleState(
+                    x_m=rear_x + offset * math.cos(yaw),
+                    y_m=rear_y + offset * math.sin(yaw),
+                    yaw_rad=yaw,
+                )
+            )
+        return tuple(predicted)
 
     def _nearest_index(self, state: VehicleState) -> int:
         # 기어가 바뀐 직후에는 cusp 양쪽 점이 거의 같은 위치에 있다.

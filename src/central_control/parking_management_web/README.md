@@ -2,7 +2,8 @@
 
 이 화면은 Flask 백엔드 없이 정적 HTML로 실행합니다.
 
-- 영상: `web_video_server` (`/pinkk/localization/image`, `/pinkk/lidar_map/image`)
+- 관리자 영상: `web_video_server` (`/pinkk/localization/image`, `/pinkk/lidar_map/image`)
+- 사용자 영상: `web_video_server` (`/pinkk/camera_bev/image`, 주석 없는 순수 BEV)
 - 주차장·경로 상태: rosbridge (`/pinkk/management/status`)
 - 요청 알림: 관리자 버튼으로 실제 전송한 요청만 브라우저에 누적 표시
 - PINKY_01 배터리: rosbridge (`/pinkk/vehicle_1/battery/percent`, `/pinkk/vehicle_1/battery/voltage`)
@@ -91,14 +92,29 @@ Pinky 없이 관제 PC의 웹과 localization만 실행하려면 다음 옵션�
 ./src/central_control/scripts/run_parking_management.sh --without-camera
 ```
 
-영상 서버, rosbridge, `index.html` 서버와 localization이 함께 실행됩니다.
+영상 서버, rosbridge, 관리자 `index.html` 서버, 사용자 Flask 웹과 localization이
+함께 실행됩니다.
 localization은 YOLO 화면과 빨간 차량 좌표가 표시된 실제 LiDAR 맵을 같은
 프레임에서 각각 `/pinkk/localization/image`, `/pinkk/lidar_map/image`로
-발행합니다. localization의 OpenCV 경로 화면과 관제 웹이 함께 열리며,
+발행하고, overlay 전 원본 Camera BEV는 `/pinkk/camera_bev/image`로 별도
+발행합니다. 사용자 웹에는 이 순수 BEV만 표시되어 YOLO 검출, 차량 좌표와
+생성 경로는 노출되지 않습니다. localization의 OpenCV 경로 화면과 관제 웹이 함께 열리며,
 카메라, YOLO와 경로 생성 로직은 같은 프로세스에서 실행됩니다.
 종료할 때는 같은 터미널에서 `Ctrl+C`를 누릅니다. 자동 실행된 Pinky
 bringup과 LED·LCD 노드도 함께 종료됩니다. 로그는 `.runtime/parking_management/`에
 저장됩니다.
+
+터미널을 강제로 닫아 5002/8000/8080/9090 포트나 차량 bringup이 남은 경우에는
+다음 전용 종료 명령을 실행한 뒤 다시 시작합니다.
+
+```bash
+PINKY1_HOST=pinky@192.168.0.4 \
+PINKY2_HOST=pinky@192.168.0.5 \
+./src/central_control/scripts/stop_parking_management.sh
+```
+
+차량 Wi-Fi에 연결하지 않은 상태에서 중앙 PC 프로세스만 정리하려면
+`./src/central_control/scripts/stop_parking_management.sh --local-only`를 실행합니다.
 
 ## 개별 실행
 
@@ -143,7 +159,9 @@ PINKY_01 bringup의 배터리 토픽은 `/pinkk/vehicle_1/battery/percent`와
 같은 ROS PC의 브라우저에서는 아래 주소로 접속합니다.
 
 ```text
-http://localhost:8000
+관리자: http://localhost:8000
+사용자 차량 1: http://localhost:5002/?robot=1
+사용자 차량 2: http://localhost:5002/?robot=2
 ```
 
 다른 PC나 휴대폰에서는 ROS PC와 같은 네트워크에 연결한 뒤 ROS PC에서
@@ -152,7 +170,9 @@ http://localhost:8000
 주소창에 그대로 입력하지 않습니다.
 
 ```text
-http://192.168.0.73:8000
+관리자: http://192.168.0.73:8000
+사용자 차량 1: http://192.168.0.73:5002/?robot=1
+사용자 차량 2: http://192.168.0.73:5002/?robot=2
 ```
 
 다른 토픽이나 포트를 사용하면 URL 쿼리로 지정할 수 있습니다.

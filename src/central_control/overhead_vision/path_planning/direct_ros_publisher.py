@@ -31,6 +31,7 @@ except ImportError:  # direct script compatibility
 
 IMAGE_TOPIC = "/pinkk/localization/image"
 LIDAR_IMAGE_TOPIC = "/pinkk/lidar_map/image"
+USER_BEV_IMAGE_TOPIC = "/pinkk/camera_bev/image"
 MANAGEMENT_STATUS_TOPIC = "/pinkk/management/status"
 CONTROL_REQUEST_TOPIC = "/pinkk/web/control"
 PATH_COMMANDS = frozenset(("entry", "exit", "charge", "replan"))
@@ -79,6 +80,7 @@ class DirectRosPublisher:
         vehicle_id: str,
         image_topic: str = IMAGE_TOPIC,
         lidar_image_topic: str = LIDAR_IMAGE_TOPIC,
+        user_bev_image_topic: str = USER_BEV_IMAGE_TOPIC,
         management_status_topic: str = MANAGEMENT_STATUS_TOPIC,
         control_request_topic: str = CONTROL_REQUEST_TOPIC,
         lidar_map_path: str | Path | None = None,
@@ -127,6 +129,7 @@ class DirectRosPublisher:
         self._Image = Image
         self._String = String
         self._pending_path_request: tuple[str, str] | None = None
+        self._last_trajectories: dict[str, tuple[object, ...]] = {}
         self._owns_context = not rclpy.ok()
         if self._owns_context:
             rclpy.init(args=None)
@@ -176,6 +179,11 @@ class DirectRosPublisher:
         self._lidar_image_publisher = self._node.create_publisher(
             Image,
             lidar_image_topic,
+            image_qos,
+        )
+        self._user_bev_image_publisher = self._node.create_publisher(
+            Image,
+            user_bev_image_topic,
             image_qos,
         )
         self._management_status_publisher = self._node.create_publisher(
@@ -243,6 +251,7 @@ class DirectRosPublisher:
                 )
         self.image_topic = image_topic
         self.lidar_image_topic = lidar_image_topic
+        self.user_bev_image_topic = user_bev_image_topic
         self.management_status_topic = management_status_topic
         self.control_request_topic = control_request_topic
         self.lidar_resolution_cm = float(lidar_resolution_cm)
@@ -417,6 +426,14 @@ class DirectRosPublisher:
     def publish_lidar_image(self, image: object) -> None:
         """차량 좌표가 표시된 실제 LiDAR 맵을 웹 영상 토픽으로 발행한다."""
         self._publish_image(self._lidar_image_publisher, image, "lidar_map")
+
+    def publish_user_bev_image(self, image: object) -> None:
+        """YOLO·경로 annotation이 없는 Camera BEV를 사용자 웹에 발행한다."""
+        self._publish_image(
+            self._user_bev_image_publisher,
+            image,
+            "overhead_camera_bev_clean",
+        )
 
     def _publish_image(self, publisher: object, image: object, frame_id: str) -> None:
         if not hasattr(image, "shape") or len(image.shape) != 3:
@@ -608,6 +625,7 @@ class DirectRosPublisher:
 
     def publish_trajectory(self, trajectory: Sequence[object]) -> None:
         """고정 경로를 표준 path와 x/y/yaw/direction 행렬로 발행한다."""
+        trajectory = tuple(trajectory)
         if not trajectory:
             raise ValueError("trajectory must not be empty")
         stamp = self._node.get_clock().now().to_msg()
@@ -650,10 +668,29 @@ class DirectRosPublisher:
         publishers["path_valid"].publish(validity)
         publishers["path"].publish(path_message)
         publishers["trajectory"].publish(trajectory_message)
+        self._last_trajectories[self._active_vehicle_id] = trajectory
         self._node.get_logger().info(
             f"Published {len(trajectory)} points: "
             f"{self.path_topic}, {self.trajectory_topic}"
         )
+
+    def republish_last_trajectory(self, vehicle_id: str) -> bool:
+        """TRANSIT에서 중단된 차량의 마지막 전체 경로를 다시 발행한다."""
+        selected = get_vehicle(vehicle_id)
+        trajectory = self._last_trajectories.get(selected.vehicle_id)
+        if trajectory is None:
+            self._node.get_logger().warning(
+                "Cannot replay trajectory: no previously published route for "
+                f"{selected.vehicle_id}"
+            )
+            return False
+        self.select_vehicle(selected.vehicle_id)
+        self.publish_trajectory(trajectory)
+        self._node.get_logger().info(
+            f"Replayed last trajectory for {selected.vehicle_id}: "
+            f"{len(trajectory)} points"
+        )
+        return True
 
     def invalidate_trajectory(self) -> None:
         """Ego 전환 중 이전 차량 경로를 제어기가 즉시 폐기하게 알린다."""

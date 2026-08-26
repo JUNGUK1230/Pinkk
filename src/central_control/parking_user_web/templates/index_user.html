@@ -69,6 +69,11 @@ button{font:inherit}
   border-radius:18px;background:#0b111a
 }
 .camera img{display:block;width:100%;height:100%;object-fit:contain}
+.camera-placeholder{
+  position:absolute;inset:0;display:grid;place-items:center;padding:24px;
+  color:#aebdcd;font-size:14px;text-align:center
+}
+.camera-placeholder.hidden{display:none}
 .camera-overlay{
   position:absolute;left:16px;right:16px;bottom:16px;
   display:flex;justify-content:space-between;gap:12px;align-items:center;
@@ -179,10 +184,12 @@ button{font:inherit}
       </div>
 
       <div class="camera">
-        <img src="{{ url_for('video_feed') }}" alt="실시간 BEV 주차장 화면">
+        <img id="bevStream" alt="실시간 순수 BEV 주차장 화면">
+        <div class="camera-placeholder" id="cameraPlaceholder">
+          순수 BEV 영상 연결 중
+        </div>
         <div class="camera-overlay">
           <div class="camera-chip" id="cameraMode">카메라 확인 중</div>
-          <div class="camera-chip">좌표와 관리자 정보는 사용자 화면에서 숨김</div>
         </div>
       </div>
     </section>
@@ -254,9 +261,38 @@ let running = false;
 const robot = new URLSearchParams(location.search).get('robot') === '2' ? 2 : 1;
 const controllerName = `PINKY_${String(robot).padStart(2, '0')}`;
 const vehicleId = `vehicle_${robot}`;
+const videoEnabled = {{ video_enabled | tojson }};
+const defaultVideoTopic = {{ video_topic | tojson }};
+const defaultVideoPort = {{ video_port | tojson }};
+const query = new URLSearchParams(location.search);
+const videoPort = query.get('videoPort') || defaultVideoPort;
+const videoTopic = query.get('videoTopic') || defaultVideoTopic;
 document.title = `${controllerName} Parking`;
 document.getElementById('pageTitle').textContent = `${controllerName} Parking`;
 document.querySelector(`[data-robot="${robot}"]`)?.classList.add('active');
+
+function configureVideo(){
+  const image = document.getElementById('bevStream');
+  const placeholder = document.getElementById('cameraPlaceholder');
+  const mode = document.getElementById('cameraMode');
+  if(!videoEnabled){
+    image.removeAttribute('src');
+    placeholder.textContent = '카메라 없이 실행 중입니다.';
+    mode.textContent = '영상 비활성';
+    return;
+  }
+  const streamUrl = `http://${location.hostname}:${videoPort}/stream?topic=${encodeURI(videoTopic)}`;
+  image.onload = () => {
+    placeholder.classList.add('hidden');
+    mode.textContent = '순수 BEV 실시간 영상';
+  };
+  image.onerror = () => {
+    placeholder.classList.remove('hidden');
+    placeholder.textContent = 'BEV 영상 연결 대기 중';
+    mode.textContent = 'BEV 연결 대기';
+  };
+  image.src = streamUrl;
+}
 
 function setButtons(disabled){
   document.getElementById('entryButton').disabled = disabled;
@@ -290,7 +326,6 @@ function applyStatus(data){
   document.getElementById('stateBadge').textContent = data.state ?? '-';
   document.getElementById('requestState').textContent = data.request_state ?? '-';
   document.getElementById('estimatedTime').textContent = data.estimated_time ?? '-';
-  document.getElementById('cameraMode').textContent = data.camera_mode ?? '카메라 확인 중';
   document.getElementById('serviceText').textContent = '서비스 정상';
   document.getElementById('updatedTime').textContent =
     new Date().toLocaleTimeString('ko-KR', {hour12:false});
@@ -355,6 +390,7 @@ async function requestParking(command){
   }
 }
 
+configureVideo();
 loadStatus();
 setInterval(loadStatus, 2000);
 </script>

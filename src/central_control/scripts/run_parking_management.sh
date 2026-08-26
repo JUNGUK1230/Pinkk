@@ -12,6 +12,8 @@ ROS_AUTOMATIC_DISCOVERY_RANGE="${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
 ROS_STATIC_PEERS="${ROS_STATIC_PEERS:-${PINKY1_HOST##*@};${PINKY2_HOST##*@}}"
 RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 LOG_DIR="$PROJECT_ROOT/.runtime/parking_management"
+LOCAL_PROCESS_FILE="$LOG_DIR/process_groups"
+REMOTE_TARGET_FILE="$LOG_DIR/remote_targets"
 WITH_PINKY=true
 WITHOUT_CAMERA=false
 SETUP_SSH=false
@@ -86,6 +88,8 @@ port_in_use() {
 require_free_port() {
     if port_in_use "$1"; then
         echo "ERROR: port $1 is already in use. Stop the previous server first." >&2
+        echo "  ./src/central_control/scripts/stop_parking_management.sh" >&2
+        echo "  # 중앙 PC만 정리: 위 명령 끝에 --local-only" >&2
         exit 1
     fi
 }
@@ -121,14 +125,24 @@ cleanup() {
         kill -KILL -- "-$pid" 2>/dev/null || true
     done
     wait "${CHILD_PIDS[@]}" 2>/dev/null || true
+    rm -f "$LOCAL_PROCESS_FILE" "$REMOTE_TARGET_FILE"
 }
 
 require_free_port 8000
+require_free_port 5002
 require_free_port 9090
 if ! $WITHOUT_CAMERA; then
     require_free_port 8080
 fi
 trap cleanup HUP INT TERM EXIT
+: >"$LOCAL_PROCESS_FILE"
+: >"$REMOTE_TARGET_FILE"
+
+record_child() {
+    local pid="$1"
+    local label="$2"
+    printf '%s|%s\n' "$pid" "$label" >>"$LOCAL_PROCESS_FILE"
+}
 
 start_remote_pinky() {
     local host="$1"
@@ -162,6 +176,7 @@ start_remote_pinky() {
         "$PROJECT_ROOT/src/vehicle_control/pinky_bringup_namespaced.launch.xml" \
         "$host:/home/pinky/pinky_pro/src/pinky_pro/pinky_bringup/launch/bringup_robot.launch.xml"
     REMOTE_PINKY_TARGETS+=("$host|$namespace")
+    printf '%s|%s\n' "$host" "$namespace" >>"$REMOTE_TARGET_FILE"
     ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
         "chmod 755 /home/pinky/pinky_status_led.py /home/pinky/pinky_status_lcd.py /home/pinky/run_pinky_services.sh; env -u ROS_NAMESPACE ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh --stop" \
         >"$LOG_DIR/${controller_id}_bringup.log" 2>&1
@@ -174,6 +189,7 @@ start_remote_pinky() {
         "exec env -u ROS_NAMESPACE ROS_LOCALHOST_ONLY=0 ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROS_AUTOMATIC_DISCOVERY_RANGE=$ROS_AUTOMATIC_DISCOVERY_RANGE ROS_STATIC_PEERS='$ROS_PC_IP' RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS=UDPv4 ROBOT_NAMESPACE=$namespace /home/pinky/run_pinky_services.sh $namespace" \
         >>"$LOG_DIR/${controller_id}_bringup.log" 2>&1 &
     CHILD_PIDS+=("$!")
+    record_child "$!" "pinky_ssh_${controller_id}"
 }
 
 publisher_count() {
@@ -230,11 +246,13 @@ if ! $WITHOUT_CAMERA; then
     setsid ros2 run web_video_server web_video_server \
         >"$LOG_DIR/web_video_server.log" 2>&1 &
     CHILD_PIDS+=("$!")
+    record_child "$!" "web_video_server"
 fi
 
 setsid ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
     >"$LOG_DIR/rosbridge.log" 2>&1 &
 CHILD_PIDS+=("$!")
+record_child "$!" "rosbridge"
 
 setsid python3 "$PROJECT_ROOT/src/central_control/scripts/serve_parking_management.py" \
     --port 8000 \
@@ -242,12 +260,28 @@ setsid python3 "$PROJECT_ROOT/src/central_control/scripts/serve_parking_manageme
     --vehicle-config "$PROJECT_ROOT/src/central_control/config/vehicles.yaml" \
     >"$LOG_DIR/web.log" 2>&1 &
 CHILD_PIDS+=("$!")
+record_child "$!" "parking_web"
+
+USER_VIDEO_ENABLED=true
+if $WITHOUT_CAMERA; then
+    USER_VIDEO_ENABLED=false
+fi
+setsid env \
+    PINKK_VIDEO_ENABLED="$USER_VIDEO_ENABLED" \
+    PINKK_VIDEO_TOPIC="/pinkk/camera_bev/image" \
+    PINKK_VIDEO_PORT="8080" \
+    "$PROJECT_ROOT/.venv/bin/python" \
+    "$PROJECT_ROOT/src/central_control/parking_user_web/app_user_parking_coordinate_test.py" \
+    >"$LOG_DIR/user_web.log" 2>&1 &
+CHILD_PIDS+=("$!")
+record_child "$!" "user_web"
 
 if ! $WITHOUT_CAMERA; then
     setsid "$PROJECT_ROOT/.venv/bin/python" -m \
         src.central_control.overhead_vision.localization.live_localization \
         >"$LOG_DIR/localization.log" 2>&1 &
     CHILD_PIDS+=("$!")
+    record_child "$!" "live_localization"
 fi
 
 sleep 2
@@ -259,8 +293,10 @@ for pid in "${CHILD_PIDS[@]}"; do
 done
 
 URL="http://${ROS_PC_IP}:8000"
+USER_URL="http://${ROS_PC_IP}:5002/?robot=1"
 echo "Parking management services are running."
-echo "Open: $URL"
+echo "Admin web: $URL"
+echo "User web:  $USER_URL"
 echo "Logs: $LOG_DIR"
 if $WITHOUT_CAMERA; then
     echo "Without-camera mode: camera, localization, and video server are disabled."
@@ -269,6 +305,7 @@ echo "Press Ctrl+C to stop all services started by this script."
 
 if command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
     xdg-open "$URL" >/dev/null 2>&1 || true
+    xdg-open "$USER_URL" >/dev/null 2>&1 || true
 fi
 
 wait -n "${CHILD_PIDS[@]}"

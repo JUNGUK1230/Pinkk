@@ -249,6 +249,7 @@ timeout되거나 정합 점수가 나쁘면 pose를 발행하지 않습니다.
 | `/pinkk/management/status` | `std_msgs/String` | 중앙 → 관리자 웹 JSON | reliable |
 | `/pinkk/localization/image` | `sensor_msgs/Image` | YOLO annotation 영상 | reliable |
 | `/pinkk/lidar_map/image` | `sensor_msgs/Image` | LiDAR map overlay 영상 | reliable |
+| `/pinkk/camera_bev/image` | `sensor_msgs/Image` | 사용자 웹용 순수 Camera BEV | reliable |
 
 trajectory의 layout은 point × field이고 field 순서는 정확히 다음과 같습니다.
 
@@ -418,10 +419,14 @@ export ROS_DOMAIN_ID=36
 - `web_video_server` : 8080
 - `rosbridge_websocket` : 9090
 - 관리자 정적 웹/API : 8000
+- 사용자 Flask 웹 : 5002
 - YOLO localization과 고정 경로 발행
 - 두 Pinky의 remote bringup, 상태 LED와 LCD
 
-브라우저 주소는 `http://<ROS_PC_IP>:8000`입니다. 로그는
+관리자 웹은 `http://<ROS_PC_IP>:8000`, 사용자 웹은
+`http://<ROS_PC_IP>:5002/?robot=1`(또는 `robot=2`)입니다. 사용자 웹 영상은
+`/pinkk/camera_bev/image`만 사용하므로 YOLO 검출, 차량 좌표와 생성 경로가
+그려지지 않습니다. 로그는
 `.runtime/parking_management/`에 저장됩니다. `Ctrl+C`로 이 스크립트가 시작한
 관제와 원격 서비스를 함께 종료합니다.
 
@@ -464,12 +469,28 @@ export ROS_DOMAIN_ID=36
 ./src/vehicle_control/run_vehicle_controller.sh vehicle_2
 ```
 
+### 7.3 do-mpc 실시간 시각화
+
+MPC 제어기를 먼저 실행한 뒤 별도 터미널에서 같은 차량 ID로 실행합니다.
+시각화 노드는 제어 명령을 발행하지 않으므로 닫아도 차량 주행에는 영향을 주지
+않습니다.
+
+```bash
+cd ~/PINKK
+./src/vehicle_control/run_mpc_visualizer.sh vehicle_1
+```
+
+화면에는 전체 경로, 현재 차량 중심, 최적화된 미래 horizon, reference horizon,
+선속도·각속도·곡률, 횡오차·헤딩오차, 속도·곡률·각속도·계산시간 제약 사용률이
+실시간으로 표시됩니다. `vehicle_2`는 마지막 인자만 바꿉니다.
+
 각 스크립트는 동일 namespace에서 `fused_pose_estimator`와
 `mpc_path_follower`를 함께 실행하고 하나가 종료되면 다른 하나도 정리합니다.
 
-### 7.3 사용자 웹 선택 실행
+### 7.4 사용자 웹 개별 실행
 
-관리자 웹과 별개로 사용자 시험 웹이 필요할 때 실행합니다.
+통합 스크립트는 사용자 웹도 자동 실행합니다. 사용자 웹만 따로 실행해야 할 때는
+`web_video_server`와 localization을 먼저 실행한 뒤 아래 명령을 사용합니다.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -482,7 +503,10 @@ export ROS_DOMAIN_ID=36
 - 차량 1: `http://<ROS_PC_IP>:5002/?robot=1`
 - 차량 2: `http://<ROS_PC_IP>:5002/?robot=2`
 
-### 7.4 localization만 실행
+기본 영상 토픽은 순수 BEV `/pinkk/camera_bev/image`이며, 사용자 웹 프로세스는
+USB 카메라를 직접 열지 않습니다.
+
+### 7.5 localization만 실행
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -646,7 +670,8 @@ MPC YAML을 실행 중 저장하면 1초 안에 전체 값을 검증한 뒤 원�
   sector의 비상정지로 처리합니다.
 - `pause` 요청의 완전한 중앙 중재와 별도 management event publisher는 아직
   구현되지 않았습니다.
-- 사용자 웹은 시험용이며 Flask debug 모드가 켜져 있습니다.
+- 사용자 웹은 운영 모드(`debug=False`)로 실행되지만 Flask 내장 서버이므로 외부
+  인터넷에 직접 공개하지 않고 주차장 내부망에서 사용합니다.
 - 로봇팔은 아직 실제 자동 주차 흐름에 연결되어 있지 않습니다.
 - 현재 전체 MPC 회귀 검사는 직선에서 2 cm 횡이탈 후 합류할 때 중심선을 약
   6.2 mm 넘어가는 항목에서 실패합니다. 새 실차 주행 전 forward rejoin 튜닝 또는

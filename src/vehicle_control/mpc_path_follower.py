@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from pathlib import Path
 import struct
@@ -21,13 +22,14 @@ try:
     from rclpy.parameter import Parameter
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from sensor_msgs.msg import LaserScan
-    from std_msgs.msg import Bool, Float64MultiArray
+    from std_msgs.msg import Bool, Float64MultiArray, String
 except ImportError as error:  # pragma: no cover - ROS 환경 오류 메시지용
     raise RuntimeError("ROS 2 Jazzy 환경을 source한 뒤 실행해야 합니다") from error
 
 try:
     from .mpc_controller import (
         DifferentialDriveMpc,
+        MpcCommand,
         MpcLimits,
         MpcWeights,
         ReferencePoint,
@@ -37,6 +39,7 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from mpc_controller import (  # type: ignore
         DifferentialDriveMpc,
+        MpcCommand,
         MpcLimits,
         MpcWeights,
         ReferencePoint,
@@ -51,6 +54,7 @@ STATIC_PARAMETERS = frozenset(
         "path_valid_topic",
         "pose_topic",
         "cmd_vel_topic",
+        "debug_topic",
         "scan_topic",
         "tuning_file",
         "tuning_reload_period_sec",
@@ -228,6 +232,11 @@ class MpcPathFollower(Node):
             self._cmd_vel_topic,
             10,
         )
+        self._debug_publisher = self.create_publisher(
+            String,
+            str(self.get_parameter("debug_topic").value),
+            10,
+        )
         self._timer = self.create_timer(1.0 / control_frequency, self._control_tick)
 
         self._state: VehicleState | None = None
@@ -276,6 +285,7 @@ class MpcPathFollower(Node):
             "auto_reload_tuning": True,
             "tuning_reload_period_sec": 1.0,
             "cmd_vel_topic": "/cmd_vel",
+            "debug_topic": "mpc_debug",
             # Pinky 실차 구동계에서 map curvature와 동일한 부호를 사용한다.
             "angular_command_sign": 1.0,
             "scan_topic": "scan",
@@ -1028,6 +1038,7 @@ class MpcPathFollower(Node):
         message.linear.x = command.linear_mps
         message.angular.z = self._angular_command_sign * command.angular_radps
         self._command_publisher.publish(message)
+        self._publish_debug(command)
         self._log_status(command.status)
         if now - self._last_tracking_log_monotonic >= 1.0:
             reference = self._controller.path[command.progress_index]
@@ -1070,9 +1081,76 @@ class MpcPathFollower(Node):
         )
 
     def _publish_zero(self, status: str) -> None:
-        self._controller.stop(status)
+        command = self._controller.stop(status)
         self._command_publisher.publish(Twist())
+        self._publish_debug(command)
         self._log_status(status)
+
+    def _publish_debug(self, command: MpcCommand) -> None:
+        """시각화 전용 snapshot을 JSON으로 발행한다. 제어 계산에는 관여하지 않는다."""
+        state = self._state
+        direction = 0
+        if self._controller.path and 0 <= command.progress_index < len(
+            self._controller.path
+        ):
+            direction = int(
+                self._controller.path[command.progress_index].direction
+            )
+        payload = {
+            "stamp_sec": self.get_clock().now().nanoseconds / 1e9,
+            "status": command.status,
+            "progress_index": int(command.progress_index),
+            "direction": direction,
+            "state": (
+                None
+                if state is None
+                else [float(state.x_m), float(state.y_m), float(state.yaw_rad)]
+            ),
+            "command": [
+                float(command.linear_mps),
+                float(self._angular_command_sign * command.angular_radps),
+                float(command.curvature_1pm),
+            ],
+            "errors": [
+                float(command.cross_track_error_m),
+                float(command.heading_error_rad),
+            ],
+            "solver": [float(command.solve_time_sec), float(command.cost)],
+            "limits": [
+                float(command.speed_limit_mps),
+                float(command.curvature_limit_1pm),
+                float(command.angular_speed_limit_radps),
+            ],
+            "obstacles": [self._front_obstacle_m, self._rear_obstacle_m],
+            "forward_rejoin_active": bool(
+                self._controller._forward_rejoin_active
+            ),
+            "dt_sec": float(self._controller.limits.dt_sec),
+            "predicted_states": [
+                [float(point.x_m), float(point.y_m), float(point.yaw_rad)]
+                for point in command.predicted_states
+            ],
+            "predicted_controls": [
+                [float(speed), float(curvature), float(speed * curvature)]
+                for speed, curvature in command.predicted_controls
+            ],
+            "reference_horizon": [
+                [
+                    float(point.x_m),
+                    float(point.y_m),
+                    float(point.yaw_rad),
+                    int(point.direction),
+                    float(curvature),
+                ]
+                for point, curvature in zip(
+                    command.reference_horizon,
+                    command.reference_curvatures_1pm,
+                )
+            ],
+        }
+        message = String()
+        message.data = json.dumps(payload, separators=(",", ":"))
+        self._debug_publisher.publish(message)
 
     def _log_status(self, status: str) -> None:
         if status == self._last_status:

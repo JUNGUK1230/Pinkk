@@ -47,12 +47,16 @@ src/central_control/camera_tools/first_map/my_test_map0710.png
 허용 이동 관계는 다음과 같습니다.
 
 - `START` → `P8`~`P5`, `C1`, `C2`
-- `P8`~`P5` → `C1`, `C2`
-- `C1`, `C2` → `P1`~`P4`
+- `P8`~`P5` → `C1`, `C2`, `EXIT`
+- `C1`, `C2` → `P1`~`P4`, `EXIT`
 - `P1`~`P4` → `EXIT`
 
 동일 라인 내부 전이(`P8`→`P7`, `C1`→`C2`, `P1`→`P2` 등)는 허용하지
 않으며, 다른 차량의 충전 배정은 현재 ego의 `TARGET`으로 표시하지 않습니다.
+
+웹에서 출차 버튼을 누르면 자동 배정보다 출차 요청이 우선합니다. 차량이
+`P1`~`P8`, `C1`, `C2` 중 어디에 있든 현재 종점에서 `EXIT`까지의 고정 경로를
+선택해 차량 namespace의 path/trajectory 토픽으로 주기 발행합니다.
 
 ## 실시간 실행
 
@@ -68,11 +72,17 @@ YOLO/ByteTrack 검출, 현재 section 판별, 목표 배정, 고정 CSV 선택�
 
 창 조작:
 
+- `TAB`: 화면에 보이는 camera 차량(track) 순환 선택
+- `1`: 선택한 camera 차량을 `/pinkk/vehicle_1`에 수동 연결
+- `2`: 선택한 camera 차량을 `/pinkk/vehicle_2`에 수동 연결
+- `A`: LiDAR-camera 자동 매칭 모드로 복귀
 - `SPACE`: C1/C2 충전 완료 처리 후 P1~P4 목표 배정
 - `q` 또는 `ESC`: 종료
 
-운영 차량은 LiDAR-camera identity와 `/pinkk/web/control` 요청의 `vehicle_id`로
-자동 선택합니다.
+현재 기본값은 동작 시험용 수동 모드입니다. `TAB`으로 화면 차량을 확인한 뒤
+`1` 또는 `2`를 누르면 선택한 차량의 namespace로 pose와 경로가 발행됩니다.
+자동 매칭은 `A`를 누르거나 설정의 `vehicle_identity_mode`를 `automatic`으로
+바꾸면 다시 사용할 수 있습니다.
 
 heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`/`x` 키는 없습니다.
 
@@ -83,6 +93,8 @@ heading은 차량 마스크에서 자동 측정하므로 마우스 클릭과 `h`
 - `/pinkk/vehicle_N/path`: `nav_msgs/Path`, m 단위, 차량별 map frame
 - `/pinkk/vehicle_N/trajectory`: `std_msgs/Float64MultiArray`
 - `/pinkk/vehicle_N/path_valid`: `std_msgs/Bool`, ego 전환 시 이전 경로 즉시 무효화
+- `/pinkk/camera_bev/image`: `sensor_msgs/Image`, 사용자 웹 전용 순수 Camera BEV
+  (YOLO 검출, 차량 좌표, 경로 overlay 없음)
 
 `/pinkk/vehicle_N/trajectory`의 point 필드는 다음 네 개뿐입니다.
 

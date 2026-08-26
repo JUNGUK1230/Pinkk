@@ -28,8 +28,8 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 ## 허용 경로
 
 - `START` → `P8`~`P5`, `C1`, `C2`
-- `P8`~`P5` → `C1`, `C2`
-- `C1`, `C2` → `P1`~`P4`
+- `P8`~`P5` → `C1`, `C2`, `EXIT`
+- `C1`, `C2` → `P1`~`P4`, `EXIT`
 - `P1`~`P4` → `EXIT`
 
 같은 단계의 주차면 사이 이동(`P8`→`P7`, `C1`→`C2`, `P1`→`P2` 등)은
@@ -38,6 +38,10 @@ section과 목표 section에 대응하는 CSV 전체를 선택합니다. 차량�
 슬롯에서 출차할 때는 해당 주차 진입 경로를 반대로 따라 전진합니다. 목표
 슬롯에서는 도로 중앙 staging pose에서 한 번의 연속 후진 maneuver로
 진입합니다.
+
+웹의 출차 버튼은 자동 주차·충전 배정보다 우선합니다. 현재 차량이
+`P1`~`P8` 또는 `C1`/`C2`에 있으면 해당 위치에서 `EXIT`까지의 고정 경로를
+차량 namespace의 path/trajectory 토픽으로 발행합니다.
 
 ## 생성과 검사
 
@@ -86,19 +90,24 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 `route_republish_period_sec` 주기로 동일 경로를 반복 발행합니다. 기본값은
 1초입니다. 목표 변경이나 경로 무효화 시 이전 경로 재발행은 즉시 중단됩니다.
 
-경로 생성기는 등록된 모든 차량의 publisher를 시작할 때 생성합니다. 최초
-LiDAR-camera identity가 확정되면 현재 ego track에 대응하는 vehicle namespace를
-자동 선택합니다. 이후 웹 요청에 포함된 `vehicle_id`에 따라 대상 차량과 camera
-ego를 함께 자동 전환합니다. 화면의 `VEHICLE`, `NAMESPACE`, `IDENTITY`, `TOPIC`
-행에서 현재 선택과 자동 매칭 상태를 확인할 수 있습니다. 설정의 `vehicle_id`와
-실행 인자 `--vehicle-id`는 identity 확정 전 화면에 표시할 fallback일 뿐입니다.
+경로 생성기는 등록된 모든 차량의 publisher를 시작할 때 생성합니다. 현재 동작
+시험의 기본값은 수동 identity 모드입니다. `TAB`으로 camera ego track을 순환한
+뒤 `1` 또는 `2`를 눌러 각각 `/pinkk/vehicle_1`, `/pinkk/vehicle_2`에 연결합니다.
+화면의 `VEHICLE`, `NAMESPACE`, `IDENTITY`, `TOPIC` 행에서 선택 결과를 확인할 수
+있습니다. `A`를 누르면 LiDAR-camera 자동 매칭 모드로 돌아갑니다.
 
-일반 운용에서는 키를 누를 필요가 없습니다. 경로 생성기가
+자동 모드에서는 키를 누를 필요가 없습니다. 경로 생성기가
 `/pinkk/web/control` (`std_msgs/String`)을 구독하며 관리자웹 또는 사용자웹의
 `entry`, `exit`, `charge`, `replan` 요청에 포함된 `vehicle_id`를 검증한 뒤 해당
 차량을 자동 선택합니다. `robot_id`, `controller_id`, `hardware_serial`,
 `ros_namespace`가 함께 전달된 경우 차량 레지스트리와 하나라도 다르면 요청을
-무시합니다. `1`/`2` 및 `e` 수동 선택은 제거되어 운용자가 누를 필요가 없습니다.
+무시합니다. 수동 모드에서 웹 요청은 선택된 namespace의 명령과 경로 재계획을
+요청하지만, camera track 연결은 안전을 위해 `TAB`과 `1`/`2`로 확정합니다.
+
+`replan`은 차량 위치에 따라 다르게 처리합니다. 차량이 `START`, 주차면 또는
+충전면 같은 설정 종점에 있으면 기존과 동일하게 현재 section에서 경로를 다시
+선택합니다. 운행 중 `TRANSIT`에서 정지한 경우에는 차량별로 보관한 마지막 전체
+trajectory를 같은 namespace에 다시 발행합니다.
 
 두 차량이 카메라에 함께 보이면 경로 생성기는 `/pinkk/vehicle_1/scan`과
 `/pinkk/vehicle_2/scan`을 각각 공용 LiDAR 지도에 정합합니다. 카메라 검출 위치

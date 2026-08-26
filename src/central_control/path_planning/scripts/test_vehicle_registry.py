@@ -108,6 +108,16 @@ def main() -> int:
     assert not first_validity.messages
     assert len(second_validity.messages) == 1
     assert second_validity.messages[0].data is False
+
+    # TRANSIT 경로 재생성은 차량별 마지막 trajectory를 그대로 다시 보내야
+    # 하며, 다른 차량의 캐시를 섞으면 안 된다.
+    cached_trajectory = (SimpleNamespace(x_cm=1.0), SimpleNamespace(x_cm=2.0))
+    router._last_trajectories = {"vehicle_2": cached_trajectory}
+    replayed: list[tuple[object, ...]] = []
+    router.publish_trajectory = lambda points: replayed.append(tuple(points))
+    assert router.republish_last_trajectory("vehicle_2")
+    assert replayed == [cached_trajectory]
+    assert not router.republish_last_trajectory("vehicle_1")
     try:
         router.select_vehicle("vehicle_3")
     except ValueError:

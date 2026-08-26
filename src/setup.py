@@ -51,6 +51,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mpc_path_follower = vehicle_control.mpc_path_follower:main',
+            'mpc_visualizer = vehicle_control.mpc_visualizer:main',
             'fused_pose_estimator = vehicle_control.fused_pose_estimator:main',
             'pinky_status_led = vehicle_control.pinky_status_led:main',
             'pinky_status_lcd = vehicle_control.pinky_status_lcd:main',

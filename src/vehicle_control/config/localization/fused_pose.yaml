@@ -28,22 +28,23 @@
     lidar_x_m: -0.057
     lidar_y_m: 0.0
     scan_frame_yaw_deg: 180.0
-    # YOLO mask 중심의 프레임별 흔들림을 줄이되 주행 위치 변화는 따라간다.
-    camera_position_filter_alpha: 0.35
-    # false이면 카메라는 x/y에만 사용한다. mask 장축 yaw와 카메라 이동
-    # 방향 yaw는 모두 제외하고 LiDAR 절대 yaw + wheel odom 상대회전만 쓴다.
-    use_camera_heading: false
+    # GPU 추론으로 카메라 갱신률이 안정됐으므로 위치 측정 반영률을 높여
+    # 이전 alpha=0.35에서 생기던 경로 대비 위치 지연을 줄인다.
+    camera_position_filter_alpha: 0.55
+    # 카메라 mask 장축 yaw와 이동 방향 yaw를 다시 사용한다. wheel odom은
+    # 프레임 사이 상대회전을 유지하고 LiDAR는 절대 방향/drift를 보정한다.
+    use_camera_heading: true
     # 카메라 절대 위치에 프레임 촬영 이후 wheel odom 이동량을 더해 현재 위치를
     # 발행한다. 이상하면 false로 바꾸고 노드를 재시작하면 기존 방식으로 복귀한다.
     odom_position_prediction_enabled: true
-    # [s] alpha=0.35 위치 필터가 만드는 추가 지연을 odom 기준점에 반영한다.
-    camera_filter_delay_sec: 0.08
+    # [s] alpha=0.55와 빨라진 카메라 갱신률에서 남는 필터 지연만 보상한다.
+    camera_filter_delay_sec: 0.03
     # [s] 카메라 측정시각과 가장 가까운 odom sample의 허용 시간 차이다.
     odom_anchor_tolerance_sec: 0.15
     # [m] odom reset이나 timestamp 이상 시 과도하게 위치를 옮기지 않는 상한이다.
     maximum_odom_position_prediction_m: 0.06
     # mask 장축은 주행 중 형상 노이즈가 있으므로 odom 예측과 가까울 때만 보정한다.
-    camera_yaw_correction_alpha: 0.10
+    camera_yaw_correction_alpha: 0.18
     maximum_camera_yaw_error_deg: 10.0
 
     # lidar_map은 이미지 좌표(+y 아래, +yaw 시계방향)이고 IMU/ROS는
@@ -71,17 +72,17 @@
     # 초기 LiDAR 정합의 국소 오차가 첫 직선에서 급조향을 만드는 것을 막는다.
     route_heading_correction_lock_distance_m: 0.30
     lidar_correction_alpha: 0.15
-    lidar_only_yaw_alpha: 0.35
+    lidar_only_yaw_alpha: 0.20
     # e 키로 ego 차량이 바뀌어 카메라 위치가 크게 뛰면 전역 yaw를 다시 찾는다.
     heading_reset_position_jump_m: 0.20
     # 마스크 장축 대신 카메라 중심이 1.5cm 이상 실제 이동했을 때만
     # 이동 벡터로 절대 yaw를 계산한다. 후진은 이동 방향에 180도를 더한다.
     motion_heading_baseline_m: 0.015
-    # 카메라 이동 yaw는 직선에서만 wheel odom의 장기 drift를 천천히 보정한다.
-    # 기록 분석에서 곡선 chord가 실제 yaw보다 늦어 최대 29.5도 오차를 만든
-    # 현상이 확인되어 보정 비율과 1회 보정량을 낮춘다.
-    motion_heading_alpha: 0.15
-    motion_heading_max_step_deg: 2.0
+    # 카메라 이동 yaw는 직선에서만 wheel odom의 장기 drift를 보정한다.
+    # 갱신률 개선분을 반영하되 곡선 chord 지연이 yaw를 끌어당기지 않도록
+    # 곡선 차단 조건은 유지한다.
+    motion_heading_alpha: 0.25
+    motion_heading_max_step_deg: 3.0
     # [rad/s] |cmd_vel.angular.z|가 이 값보다 크면 곡선으로 판단하고
     # 지연된 카메라 이동 yaw 보정을 중단해 odom+LiDAR heading을 유지한다.
     motion_heading_correction_max_angular_speed_radps: 0.05
@@ -97,4 +98,5 @@
     imu_timeout_sec: 0.3
     odom_timeout_sec: 0.5
     lidar_heading_timeout_sec: 1.5
-    publish_rate_hz: 15.0
+    # 빨라진 카메라 pose를 제어기가 기다리지 않도록 fused pose 발행률도 높인다.
+    publish_rate_hz: 25.0
