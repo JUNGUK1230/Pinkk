@@ -1,21 +1,18 @@
-[WARN] [1787724119.872801575] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
-[WARN] [1787724119.872872240] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
-[INFO] [1787724119.887056391] [web_video_server]: Loading streamer plugin: web_video_server/stream/h264
-[INFO] [1787724119.974407616] [web_video_server]: Loading streamer plugin: web_video_server/stream/mjpeg
-[INFO] [1787724119.974475526] [web_video_server]: Loading streamer plugin: web_video_server/stream/png
-[INFO] [1787724119.974487399] [web_video_server]: Loading streamer plugin: web_video_server/stream/ros_compressed
-[INFO] [1787724119.974502608] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp8
-[INFO] [1787724119.974513879] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp9
-[INFO] [1787724119.974525982] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/jpeg
-[INFO] [1787724119.974615102] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/png
-[INFO] [1787724119.974625823] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/ros_compressed
-[INFO] [1787724119.974714382] [web_video_server]: Waiting For connections on 0.0.0.0:8080
-[INFO] [1787724121.807332076] [web_video_server]: Handling Request: /stream?topic=/pinkk/camera_bev/image
-[INFO] [1787724121.807701310] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/camera_bev/image with QoS profile default
-[INFO] [1787724121.822950733] [web_video_server]: Handling Request: /stream?topic=/pinkk/localization/image&t=1787724121808
-[INFO] [1787724121.823263129] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/localization/image with QoS profile default
-[INFO] [1787724121.824634425] [web_video_server]: Handling Request: /stream?topic=/pinkk/lidar_map/image&t=1787724121808
-[INFO] [1787724121.824856629] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/lidar_map/image with QoS profile default
-[INFO] [1787724151.474870002] [web_video_server]: Removed Stream: /pinkk/localization/image
-[INFO] [1787724151.974832729] [web_video_server]: Removed Stream: /pinkk/lidar_map/image
-[INFO] [1787724175.345187985] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[WARN] [1787731299.968610256] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
+[WARN] [1787731299.968657174] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
+[INFO] [1787731299.983047027] [web_video_server]: Loading streamer plugin: web_video_server/stream/h264
+[INFO] [1787731300.135692621] [web_video_server]: Loading streamer plugin: web_video_server/stream/mjpeg
+[INFO] [1787731300.135755440] [web_video_server]: Loading streamer plugin: web_video_server/stream/png
+[INFO] [1787731300.135764236] [web_video_server]: Loading streamer plugin: web_video_server/stream/ros_compressed
+[INFO] [1787731300.135771560] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp8
+[INFO] [1787731300.135778102] [web_video_server]: Loading streamer plugin: web_video_server/stream/vp9
+[INFO] [1787731300.135786709] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/jpeg
+[INFO] [1787731300.135856680] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/png
+[INFO] [1787731300.135874283] [web_video_server]: Loading streamer plugin: web_video_server/snapshot/ros_compressed
+[INFO] [1787731300.135944125] [web_video_server]: Waiting For connections on 0.0.0.0:8080
+[INFO] [1787731301.882982679] [web_video_server]: Handling Request: /stream?topic=/pinkk/camera_bev/image
+[INFO] [1787731301.883411636] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/camera_bev/image with QoS profile default
+[INFO] [1787731301.889507018] [web_video_server]: Handling Request: /stream?topic=/pinkk/localization/image&t=1787731301868
+[INFO] [1787731301.889746639] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/localization/image with QoS profile default
+[INFO] [1787731301.982740988] [web_video_server]: Handling Request: /stream?topic=/pinkk/lidar_map/image&t=1787731301868
+[INFO] [1787731301.983113810] [web_video_server.mjpeg_streamer]: Streaming topic /pinkk/lidar_map/image with QoS profile default

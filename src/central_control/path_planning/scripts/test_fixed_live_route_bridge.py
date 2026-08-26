@@ -17,6 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from fixed_route_selector import FixedRouteSelector  # noqa: E402
 from src.central_control.overhead_vision.localization.live_localization import (  # noqa: E402
+    AutomaticIdentityLock,
     IntegratedPlanningController,
     RoutePublishScheduler,
     route_context,
@@ -82,6 +83,17 @@ def main() -> int:
     assert scheduler.due(11.2, has_route=True, is_new_route=True)
     assert not scheduler.due(11.3, has_route=False)
     assert scheduler.due(11.4, has_route=True)
+
+    # 자동 identity는 한 번 확정되면 주기적인 LiDAR 재매칭 결과가 달라져도
+    # 같은 namespace 운행 중에는 camera track을 바꾸면 안 된다. 운영자가
+    # vehicle namespace를 바꾼 경우에만 잠금을 풀고 새 track을 받아들인다.
+    identity_lock = AutomaticIdentityLock()
+    assert identity_lock.resolve("vehicle_1", {"vehicle_1": 7}) == (7, True)
+    assert identity_lock.resolve("vehicle_1", {"vehicle_1": 99}) == (7, False)
+    assert identity_lock.resolve("vehicle_1", None) == (7, False)
+    assert identity_lock.resolve("vehicle_2", {"vehicle_2": 8}) == (8, True)
+    identity_lock.clear()
+    assert identity_lock.track_id is None
 
     # 출발 후 점유 판정이 흔들려 다른 목표가 추천돼도 현재 route revision이
     # 유지되는 동안에는 이미 발행한 목적지와 경로를 교체하면 안 된다.

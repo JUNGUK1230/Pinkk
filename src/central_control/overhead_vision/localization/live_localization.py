@@ -17,7 +17,7 @@ from pathlib import Path
 import sys
 import threading
 import time
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import cv2
 import numpy as np
@@ -238,6 +238,39 @@ class RoutePublishScheduler:
             self.last_publish_time = now
             return True
         return False
+
+
+@dataclass
+class AutomaticIdentityLock:
+    """운행 중 ROS 차량 namespace와 camera track 연결을 고정한다."""
+
+    vehicle_id: str | None = None
+    track_id: int | None = None
+
+    def resolve(
+        self,
+        active_vehicle_id: str,
+        vehicle_to_track: Mapping[str, int] | None,
+    ) -> tuple[int | None, bool]:
+        """잠긴 track과 이번 호출에서 새로 잠겼는지를 반환한다."""
+        vehicle_id = str(active_vehicle_id)
+        if self.vehicle_id != vehicle_id:
+            # active namespace 변경은 웹/키보드에서 요청한 명시적 차량
+            # 전환이다. 이때에만 이전 차량의 camera track 잠금을 푼다.
+            self.vehicle_id = None
+            self.track_id = None
+        if self.track_id is not None:
+            return self.track_id, False
+        if vehicle_to_track is None or vehicle_id not in vehicle_to_track:
+            return None, False
+        self.vehicle_id = vehicle_id
+        self.track_id = int(vehicle_to_track[vehicle_id])
+        return self.track_id, True
+
+    def clear(self) -> None:
+        """운영자가 identity mode 또는 차량을 명시적으로 바꿀 때 해제한다."""
+        self.vehicle_id = None
+        self.track_id = None
 
 
 class IntegratedPlanningController:
@@ -1322,6 +1355,7 @@ def main() -> int:
     forced_route_targets: dict[str, str] = {}
     pending_replan_vehicle_ids: set[str] = set()
     automatic_target_initialized = False
+    automatic_identity_lock = AutomaticIdentityLock()
     manual_track_id: int | None = None
     if not args.no_display:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -1515,24 +1549,30 @@ def main() -> int:
                                 f"{automatic_vehicle_id}="
                                 f"track_{scene.vehicle.track_id}"
                             )
-                    target_track_id = (
-                        association.vehicle_to_track.get(
-                            ros_publisher.active_vehicle_id
+                    target_track_id, identity_locked_now = (
+                        automatic_identity_lock.resolve(
+                            ros_publisher.active_vehicle_id,
+                            (
+                                association.vehicle_to_track
+                                if association is not None
+                                else None
+                            ),
                         )
-                        if association is not None
-                        else None
                     )
+                    if identity_locked_now:
+                        print(
+                            "Automatic vehicle identity locked: "
+                            f"{ros_publisher.active_vehicle_id}="
+                            f"track_{target_track_id}"
+                        )
                     if target_track_id is not None and localizer.select_ego(
                         target_track_id
                     ):
-                        replan_revision += 1
-                        planning_controller.invalidate()
-                        route_publish_scheduler.due(
-                            time.monotonic(),
-                            has_route=False,
-                        )
+                        # 같은 실제 차량의 camera track을 선택하는 것은 pose
+                        # 입력 연결일 뿐 운행 단계 변경이 아니다. 자동 매칭
+                        # 결과가 갱신될 때 기존 경로를 폐기하지 않는다.
                         print(
-                            "Automatic camera ego selected: "
+                            "Automatic camera ego selected under identity lock: "
                             f"{ros_publisher.active_vehicle_id}="
                             f"track_{target_track_id}"
                         )
@@ -1588,8 +1628,15 @@ def main() -> int:
                     replan_revision,
                     forced_route_target,
                 )
-            else:
-                planning_controller.invalidate()
+            # 운행 중 YOLO 검출이나 vehicle-track association이 한 프레임
+            # 끊겨도 이미 발행한 경로는 폐기하지 않는다. 실차 기록에서
+            # identity_ready가 순간적으로 False가 되자 path_valid=False가
+            # 즉시 발행되어, 목적지까지 60 cm 이상 남은 상태에서 MPC가
+            # PATH_INVALIDATED로 멈췄다. 카메라 위치가 잠시 없을 때는 fused
+            # pose가 odom으로 이어가며, 실제 pose 손실은 MPC의 POSE_TIMEOUT이
+            # 안전하게 정지시킨다. 차량 전환·재계획·도착 시의 명시적
+            # invalidate 경로는 위 로직과 IntegratedPlanningController에
+            # 그대로 남겨둔다.
             if (
                 planning_controller.consume_invalidation()
                 and ros_publisher is not None
@@ -1665,11 +1712,14 @@ def main() -> int:
                     else:
                         active_lidar_pose = ros_publisher.active_lidar_pose
                         identity_text = (
-                            f"track={ros_publisher.active_track_id} "
+                            f"locked_track={automatic_identity_lock.track_id} "
                             f"lidar=({active_lidar_pose.position_x_m:.2f},"
                             f"{active_lidar_pose.position_y_m:.2f})"
                             if active_lidar_pose is not None
-                            else ros_publisher.association_status
+                            else (
+                                f"locked_track={automatic_identity_lock.track_id} "
+                                f"{ros_publisher.association_status}"
+                            )
                         )
                     hud_lines.append(
                         (
@@ -1746,6 +1796,7 @@ def main() -> int:
                     break
                 if key == 9:  # TAB
                     identity_mode = "manual"
+                    automatic_identity_lock.clear()
                     manual_track_id = None
                     changed, message = localizer.select_next_ego()
                     print(message)
@@ -1767,6 +1818,7 @@ def main() -> int:
                         print("Manual vehicle binding failed: no camera ego track")
                     else:
                         identity_mode = "manual"
+                        automatic_identity_lock.clear()
                         manual_track_id = int(scene.vehicle.track_id)
                         selected_vehicle_id = f"vehicle_{chr(key)}"
                         ros_publisher.select_vehicle(selected_vehicle_id)
@@ -1783,6 +1835,7 @@ def main() -> int:
                         )
                 if key in (ord("a"), ord("A")):
                     identity_mode = "automatic"
+                    automatic_identity_lock.clear()
                     manual_track_id = None
                     automatic_target_initialized = False
                     replan_revision += 1

@@ -1,22 +1,21 @@
-[INFO] [launch]: All log files can be found below /home/junguk/.ros/log/2026-08-26-15-01-59-951618-junguk-Cyborg-A15-AI-B2HWFKG-544133
+[INFO] [launch]: All log files can be found below /home/junguk/.ros/log/2026-08-26-17-01-40-040010-junguk-Cyborg-A15-AI-B2HWFKG-610956
 [INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [rosbridge_websocket-1]: process started with pid [544227]
-[INFO] [rosapi_node-2]: process started with pid [544228]
-[rosapi_node-2] [WARN] [1787724120.465506048] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
-[rosapi_node-2] [WARN] [1787724120.465516839] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
-[rosbridge_websocket-1] [WARN] [1787724120.476776230] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
-[rosbridge_websocket-1] [WARN] [1787724120.476785748] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
-[rosbridge_websocket-1] [INFO] [1787724120.536995068] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
-[rosbridge_websocket-1] [INFO] [1787724121.846410861] [rosbridge_websocket]: Calling services in new thread
-[rosbridge_websocket-1] [INFO] [1787724121.846732946] [rosbridge_websocket]: Sending action goals in new thread
-[rosbridge_websocket-1] [INFO] [1787724121.847388476] [rosbridge_websocket]: Client connected. 1 clients total.
-[rosbridge_websocket-1] [INFO] [1787724121.852304415] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_1/battery/percent
-[rosbridge_websocket-1] [INFO] [1787724121.854027492] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_1/battery/voltage
-[rosbridge_websocket-1] [INFO] [1787724121.855672090] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_2/battery/percent
-[rosbridge_websocket-1] [INFO] [1787724121.857273094] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_2/battery/voltage
-[rosbridge_websocket-1] [INFO] [1787724121.858638299] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_1/emergency_stop_state
-[rosbridge_websocket-1] [INFO] [1787724121.859970971] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/vehicle_2/emergency_stop_state
-[rosbridge_websocket-1] [INFO] [1787724121.861539424] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/management/status
-[rosbridge_websocket-1] [INFO] [1787724121.862717281] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/management/events
-[rosbridge_websocket-1] [INFO] [1787724121.863926959] [rosbridge_websocket]: [Client 9e17e21f-c3c6-43bb-9081-7bbf2e8e8831] Subscribed to /pinkk/web/control
-[rosbridge_websocket-1] [INFO] [1787724150.956761039] [rosbridge_websocket]: Client disconnected. 0 clients total.
+[INFO] [rosbridge_websocket-1]: process started with pid [611049]
+[INFO] [rosapi_node-2]: process started with pid [611051]
+[rosapi_node-2] [WARN] [1787731300.554367604] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
+[rosapi_node-2] [WARN] [1787731300.554385278] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
+[rosbridge_websocket-1] [WARN] [1787731300.558636759] [rcl]: ROS_LOCALHOST_ONLY is deprecated but still honored if it is enabled. Use ROS_AUTOMATIC_DISCOVERY_RANGE and ROS_STATIC_PEERS instead.
+[rosbridge_websocket-1] [WARN] [1787731300.558644864] [rcl]: 'localhost_only' is disabled, 'automatic_discovery_range' and 'static_peers' will be used.
+[rosbridge_websocket-1] [INFO] [1787731300.614365903] [rosbridge_websocket]: Rosbridge WebSocket server started on port 9090
+[rosbridge_websocket-1] [INFO] [1787731301.884237030] [rosbridge_websocket]: Calling services in new thread
+[rosbridge_websocket-1] [INFO] [1787731301.884602357] [rosbridge_websocket]: Sending action goals in new thread
+[rosbridge_websocket-1] [INFO] [1787731301.885761980] [rosbridge_websocket]: Client connected. 1 clients total.
+[rosbridge_websocket-1] [INFO] [1787731301.888113265] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_1/battery/percent
+[rosbridge_websocket-1] [INFO] [1787731301.889635800] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_1/battery/voltage
+[rosbridge_websocket-1] [INFO] [1787731301.890830839] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_2/battery/percent
+[rosbridge_websocket-1] [INFO] [1787731301.892197712] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_2/battery/voltage
+[rosbridge_websocket-1] [INFO] [1787731301.894402321] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_1/emergency_stop_state
+[rosbridge_websocket-1] [INFO] [1787731301.896803541] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/vehicle_2/emergency_stop_state
+[rosbridge_websocket-1] [INFO] [1787731301.898899205] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/management/status
+[rosbridge_websocket-1] [INFO] [1787731301.900191817] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/management/events
+[rosbridge_websocket-1] [INFO] [1787731301.901806546] [rosbridge_websocket]: [Client 5901a6d1-dcaa-4465-8d46-59e6c9278629] Subscribed to /pinkk/web/control

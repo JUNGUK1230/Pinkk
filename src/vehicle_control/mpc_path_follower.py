@@ -335,6 +335,8 @@ class MpcPathFollower(Node):
             "forward_feedback_curvature_limit_1pm": 3.0,
             "forward_straight_heading_gain_scale": 1.8,
             "forward_rejoin_lookahead_m": 0.13,
+            "forward_rejoin_activation_error_m": 0.025,
+            "forward_rejoin_release_error_m": 0.010,
             "forward_rejoin_max_heading_deg": 15.0,
             "forward_curve_rejoin_lookahead_m": 0.15,
             "heading_feedback_gain_1pmprad": 4.0,
@@ -498,6 +500,12 @@ class MpcPathFollower(Node):
             ),
             forward_rejoin_lookahead_m=self._positive_parameter(
                 "forward_rejoin_lookahead_m", overrides
+            ),
+            forward_rejoin_activation_error_m=self._positive_parameter(
+                "forward_rejoin_activation_error_m", overrides
+            ),
+            forward_rejoin_release_error_m=self._positive_parameter(
+                "forward_rejoin_release_error_m", overrides
             ),
             forward_rejoin_max_heading_rad=math.radians(
                 self._positive_parameter(

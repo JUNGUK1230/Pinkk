@@ -91,6 +91,8 @@ class MpcLimits:
     forward_feedback_curvature_limit_1pm: float = 3.0
     forward_straight_heading_gain_scale: float = 1.8
     forward_rejoin_lookahead_m: float = 0.13
+    forward_rejoin_activation_error_m: float = 0.025
+    forward_rejoin_release_error_m: float = 0.010
     forward_rejoin_max_heading_rad: float = math.radians(15.0)
     forward_curve_rejoin_lookahead_m: float = 0.15
     heading_feedback_gain_1pmprad: float = 4.0
@@ -172,6 +174,8 @@ class MpcLimits:
             self.forward_feedback_curvature_limit_1pm,
             self.forward_straight_heading_gain_scale,
             self.forward_rejoin_lookahead_m,
+            self.forward_rejoin_activation_error_m,
+            self.forward_rejoin_release_error_m,
             self.forward_rejoin_max_heading_rad,
             self.forward_curve_rejoin_lookahead_m,
             self.cross_track_slowdown_start_m,
@@ -211,6 +215,13 @@ class MpcLimits:
             raise ValueError("forward feedback curvature limit exceeds physical limit")
         if self.forward_straight_heading_gain_scale < 1.0:
             raise ValueError("straight heading gain scale must be at least one")
+        if (
+            self.forward_rejoin_release_error_m
+            < self.cross_track_deadband_m
+            or self.forward_rejoin_activation_error_m
+            <= self.forward_rejoin_release_error_m
+        ):
+            raise ValueError("forward rejoin activation/release thresholds are invalid")
         if (
             not math.isfinite(self.heading_feedback_gain_1pmprad)
             or self.heading_feedback_gain_1pmprad < 0.0
@@ -1667,17 +1678,27 @@ class DifferentialDriveMpc:
         on_straight: bool,
     ) -> None:
         """현재 자세에서 원 경로까지 이어지는 고정 합류 곡선을 latch한다."""
-        if self._forward_rejoin_active and projection.rear_s_m >= (
-            self._forward_rejoin_start_s_m
-            + self._forward_rejoin_length_m
-        ):
-            # 생성 당시 정한 합류 길이를 지나면 정상 경로 추종으로 반드시
-            # 복귀한다. 실차의 mm/deg 잡음 때문에 합류 모드가 고착되면 큰
-            # 곡선 보정과 직접 횡오차 보정이 계속 차단될 수 있다.
-            self._reset_forward_rejoin()
+        if self._forward_rejoin_active:
+            rejoin_complete = projection.rear_s_m >= (
+                self._forward_rejoin_start_s_m
+                + self._forward_rejoin_length_m
+            )
+            back_on_path = (
+                abs(projection.center_cross_track_m)
+                <= self.limits.forward_rejoin_release_error_m
+            )
+            if rejoin_complete or back_on_path:
+                # 계획한 합류 길이를 통과하거나 실제 원 경로에 충분히
+                # 가까워지면 virtual path를 즉시 버린다. 이전 구현은 6mm
+                # 오차에서도 latch된 뒤 약 25초 동안 유지돼 실제 경로와
+                # 평행하게 최대 9cm 벗어나는 현상을 만들었다.
+                self._reset_forward_rejoin()
         if self._forward_rejoin_active:
             return
-        if abs(projection.center_cross_track_m) <= self.limits.cross_track_deadband_m:
+        if (
+            abs(projection.center_cross_track_m)
+            < self.limits.forward_rejoin_activation_error_m
+        ):
             return
 
         minimum_length = (

@@ -94,16 +94,33 @@ Pinky 차량
 - 카메라 보정 후 1600×800 Bird's-Eye View 생성
 - YOLO segmentation으로 차량 형상과 주차면 겹침 계산
 - ByteTrack으로 프레임 간 차량 추적
-- 각 차량 LaserScan을 지도에 정합해 `track_id ↔ vehicle_id` 연결
+- `/pinkk/vehicle_1/scan`, `/pinkk/vehicle_2/scan`을 각각 구독
+- namespace별 LiDAR 위치와 카메라 track 위치를 비교
+- 위치가 가장 잘 맞는 `track_id ↔ vehicle_id`를 연결
+- 연결된 차량 namespace로 `localization_pose`, `path`, `trajectory` 발행
 - 확신이 부족하면 경로를 발행하지 않는 fail-closed 정책
+
+```text
+/pinkk/vehicle_1/scan → LiDAR 지도 위치 ─┐
+                                         ├→ 카메라 track 위치와 비교
+/pinkk/vehicle_2/scan → LiDAR 지도 위치 ─┘
+
+vehicle_1 위치 ≈ track_7 위치
+→ vehicle_1 ↔ track_7 확정
+→ /pinkk/vehicle_1/localization_pose
+→ /pinkk/vehicle_1/path
+→ /pinkk/vehicle_1/trajectory
+```
 
 ### 발표 멘트
 
 “ByteTrack ID는 화면에서 잠시 사라지면 바뀔 수 있어 영구적인 차량 ID로 쓸 수
-없습니다. 그래서 각 차량이 보내는 LiDAR scan을 지도와 정합하고, 카메라 차량
-후보 주변에서 가장 비용이 낮은 일대일 조합을 찾았습니다. 1·2순위 점수 차이와
-연속 확인 조건까지 통과해야 차량을 확정합니다. 현재 실차 동작 시험 기본값은
-운영자가 차량을 직접 연결하는 수동 모드이며, 자동 매칭 구현도 선택할 수 있습니다.”
+없습니다. 반면 LiDAR scan은 차량별 namespace 토픽으로 들어오므로 어느 차량의
+scan인지 알고 있습니다. 각 namespace의 scan을 지도에 정합한 위치와 카메라
+track 위치를 비교해, 위치가 맞는 track을 해당 실제 차량으로 연결합니다. 연결
+후 카메라 pose와 경로는 같은 차량 namespace로 발행합니다. 1·2순위 점수 차이와
+연속 확인 조건까지 통과해야 확정하며, 확신이 부족하면 발행하지 않습니다. 현재
+실차 동작 시험 기본값은 수동 연결 모드이며 자동 매칭도 선택할 수 있습니다.”
 
 ## 슬라이드 5. 경로 계획의 발전 과정
 
@@ -121,12 +138,33 @@ Pinky 차량
 - 실제 운영: 32개 고정 경로를 선택해 즉시 발행
 - 전진·후진 방향과 cusp 정지를 경로에 명시
 
+### 현재 고정 경로 생성 방식
+
+```text
+실측한 endpoint·staging·도로 기준점을 YAML에 정의
+→ 공통 도로를 직선과 접선 원호로 생성
+→ 특수 합류 구간에 5차 Bezier 또는 방향 제한 Reeds–Shepp 적용
+→ 주차면별 전진 접근·후진 maneuver 연결
+→ source exit + 공통 도로 + target entry 조립
+→ footprint 충돌·곡률·최종 직선 후진 검사
+→ rear-axle 경로를 차량 중심 경로로 변환
+→ 0.5cm 간격 CSV 저장
+```
+
+- P5~P8: 최소 14cm 반경의 단일 연속 후진 진입
+- P1~P4: 최소 20cm 반경의 단일 연속 후진 진입
+- C1·C2: 후진→전진 정렬→44cm 직선 후진의 3-point 진입
+- 현재 고정 CSV는 Hybrid A* 탐색 결과를 그대로 저장한 것이 아님
+
 ### 발표 멘트
 
 “초기에는 온라인 A*와 Hybrid A*로 매번 경로를 탐색했습니다. 하지만 실차에서는
 계산 성공 여부보다 매번 같은 안전한 궤적을 재현하는 것이 더 중요했습니다.
-따라서 Hybrid A* 계열은 경로 생성과 진단 도구로 남기고, 운영 중에는 차량
-footprint와 곡률을 미리 검증한 32개 경로를 선택하는 구조로 바꿨습니다.”
+현재 고정 경로는 실제 도로 기준점과 주차 pose를 YAML에 정의하고, 직선·접선
+원호·Bezier·방향 제한 Reeds–Shepp과 주차면별 후진 maneuver를 조합해 만듭니다.
+차량 footprint와 곡률을 검사한 뒤 0.5cm 간격 CSV로 저장하며, 운영 중에는
+검증된 32개 CSV 중 하나를 선택합니다. Hybrid A*는 형상 실험과 진단용으로
+남겨 두었습니다.”
 
 ### 추천 화면
 
@@ -302,6 +340,29 @@ LiDAR를 결합해 보완했다.
 더 중요했다. 오프라인에서 footprint·곡률·기어 전환을 검증한 경로를 운영에 쓰면
 즉시 발행할 수 있고 회귀 검사도 가능하다. Hybrid A*는 지도 변경 시 경로를 만드는
 도구로 유지한다.
+
+### Q. 왜 Nav2를 사용하지 않고 경로 생성기부터 MPC까지 직접 만들었나요?
+
+Nav2를 적용해도 PINKK에 필요한 핵심 기능은 대부분 별도 구현해야 했다.
+
+- 상단 카메라·odom·LiDAR를 결합한 pose를 Nav2 TF 구조로 바꾸는 adapter
+- `x, y, yaw, direction`의 전진·후진 정보를 보존하는 planner/controller plugin
+- cusp 완전 정지와 gear block 상태 관리
+- 12×10cm 차량의 중심 offset, 휠 속도와 곡률 제한을 반영한 custom controller
+- 두 차량의 ID 연결, 주차면·충전면 배정과 mission 단계용 중앙 coordinator
+
+즉, 핵심 알고리즘을 모두 직접 만든 뒤 Nav2의 lifecycle·action·behavior tree
+계층을 추가하는 형태가 된다. 반면 현재 환경은 약 2.5×2.2m의 고정 주차장으로,
+범용 온라인 재탐색보다 32개 경로의 결정성과 0.5cm 간격 충돌 검증이 중요했다.
+또한 pose나 차량 ID가 불확실한 상황에서는 자동 recovery보다 정지가 더 안전했다.
+
+발표용 짧은 답변:
+
+> “Nav2를 사용해도 외부 카메라 pose adapter, 전후진 경로 plugin, custom MPC,
+> 다중 차량 coordinator를 다시 만들어야 했습니다. 고정된 초소형 주차장에서는
+> 그 통합 비용보다 검증된 32개 경로의 결정성과 cm 단위 제어가 더 중요했습니다.
+> 그래서 핵심 파이프라인을 직접 연결했고, 동적 환경으로 확장할 때 Nav2 도입을
+> 다시 고려할 계획입니다.”
 
 ### Q. 두 차량을 어떻게 구분하나요?
 
