@@ -98,11 +98,15 @@ PNG 경로 이미지는 운영 입력이 아니므로 생성하지 않습니다.
 
 자동 모드에서는 키를 누를 필요가 없습니다. 경로 생성기가
 `/pinkk/web/control` (`std_msgs/String`)을 구독하며 관리자웹 또는 사용자웹의
-`entry`, `exit`, `charge`, `replan` 요청에 포함된 `vehicle_id`를 검증한 뒤 해당
+`entry`, `exit`, `charge`, `park`, `replan` 요청에 포함된 `vehicle_id`를 검증한 뒤 해당
 차량을 자동 선택합니다. `robot_id`, `controller_id`, `hardware_serial`,
 `ros_namespace`가 함께 전달된 경우 차량 레지스트리와 하나라도 다르면 요청을
 무시합니다. 수동 모드에서 웹 요청은 선택된 namespace의 명령과 경로 재계획을
 요청하지만, camera track 연결은 안전을 위해 `TAB`과 `1`/`2`로 확정합니다.
+
+경로 단계는 웹 명령으로 명시적으로 전환합니다. `entry`는 START→P5~P8,
+`charge`는 P5~P8→C2/C1, `park`는 C1/C2→P1~P4 경로를 생성합니다.
+`park`는 차량이 실제 C1 또는 C2로 판정된 경우에만 받아들입니다.
 
 `replan`은 차량 위치에 따라 다르게 처리합니다. 차량이 `START`, 주차면 또는
 충전면 같은 설정 종점에 있으면 기존과 동일하게 현재 section에서 경로를 다시

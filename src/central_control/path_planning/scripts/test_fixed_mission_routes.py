@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import math
 from pathlib import Path
@@ -25,9 +26,50 @@ ROAD_TURNING_RADIUS_MARGIN_CM = 2.0
 ENDPOINT_ATTACHMENT_SEARCH_CM = 25.0
 
 
+def _center_pose_to_rear_axle(values: list[float], offset_cm: float) -> list[float]:
+    """Convert an authored vehicle-center pose to planner rear-axle geometry."""
+    x_cm, y_cm, yaw_rad = map(float, values)
+    return [
+        x_cm - offset_cm * math.cos(yaw_rad),
+        y_cm - offset_cm * math.sin(yaw_rad),
+        yaw_rad,
+    ]
+
+
+def _rear_axle_planning_config(authored_config: dict) -> dict:
+    """Return a copy whose vehicle poses are converted for internal planning."""
+    if authored_config.get("waypoint_reference") != "vehicle_center":
+        raise ValueError("fixed route waypoint reference must be vehicle_center")
+    offset_cm = float(authored_config["rear_axle_to_center_cm"])
+    if offset_cm < 0.0:
+        raise ValueError("rear_axle_to_center_cm must not be negative")
+    config = copy.deepcopy(authored_config)
+
+    for name, pose in config["road_backbone"].items():
+        config["road_backbone"][name] = _center_pose_to_rear_axle(
+            pose, offset_cm
+        )
+    for targets in config.get("route_waypoint_sequences", {}).values():
+        for target, poses in targets.items():
+            targets[target] = [
+                _center_pose_to_rear_axle(pose, offset_cm) for pose in poses
+            ]
+    for targets in config.get("route_waypoint_overrides", {}).values():
+        for overrides in targets.values():
+            for name, pose in overrides.items():
+                overrides[name] = _center_pose_to_rear_axle(pose, offset_cm)
+    for endpoint in config["endpoints"].values():
+        for key in ("staging", "entry_staging", "goal"):
+            if key in endpoint:
+                endpoint[key] = _center_pose_to_rear_axle(
+                    endpoint[key], offset_cm
+                )
+    return config
+
+
 def _load_config() -> dict:
     with (PROJECT_ROOT / "config/fixed_mission_routes.yaml").open(encoding="utf-8") as file:
-        return yaml.safe_load(file)
+        return _rear_axle_planning_config(yaml.safe_load(file))
 
 
 def _pose(values: list[float]) -> Pose:

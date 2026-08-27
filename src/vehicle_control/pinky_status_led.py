@@ -47,8 +47,8 @@ class PinkyStatusLed(Node):
         self._cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
         self._latched = False
         self._pause_latched = False
+        self._charge_latched = False
         self._blink_on = False
-        self._charge_blink_steps = 0
         self._battery_percent: float | None = None
         self._last_color: tuple[int, int, int] | None = None
         self._command_publisher = None
@@ -75,7 +75,6 @@ class PinkyStatusLed(Node):
         )
         self._stop_timer = self.create_timer(1.0 / publish_hz, self._publish_stop)
         self._blink_timer = self.create_timer(0.4, self._update_emergency_blink)
-        self._charge_blink_timer = self.create_timer(0.25, self._update_charge_blink)
         self._set_led(OFF)
         self._publish_state()
         self.get_logger().info(
@@ -98,7 +97,7 @@ class PinkyStatusLed(Node):
         if (
             not self._latched
             and not self._pause_latched
-            and self._charge_blink_steps == 0
+            and not self._charge_latched
         ):
             color = battery_color(self._battery_percent)
             if color != self._last_color:
@@ -113,29 +112,35 @@ class PinkyStatusLed(Node):
             return
         status = message.data.strip()
         if status == "일시 정지":
-            self._charge_blink_steps = 0
+            self._charge_latched = False
             self._pause_latched = True
             self._blink_on = True
             self._set_led(YELLOW)
             self.get_logger().warning("Pause requested -> LED yellow blinking")
             return
-        if status not in {"경로 생성 중", "입차 중", "출차 중", "충전 중"}:
+        if status not in {
+            "경로 생성 중",
+            "입차 중",
+            "출차 중",
+            "충전 중",
+            "주차칸 이동 중",
+        }:
             return
         if self._pause_latched:
             self._pause_latched = False
             self._blink_on = False
         if status != "충전 중":
+            self._charge_latched = False
             self._show_battery()
             return
-        # 즉시 초록색을 켠 뒤 OFF/ON/OFF 네 단계로 총 두 번 점멸한다.
-        self._charge_blink_steps = 4
+        self._charge_latched = True
         self._set_led(GREEN)
-        self.get_logger().info("Charging request -> LED green blink x2")
+        self.get_logger().info("Charging request -> LED green latched")
 
     def _set_emergency_stop(self, request, response):
         self._latched = bool(request.data)
         if self._latched:
-            self._charge_blink_steps = 0
+            self._charge_latched = False
             if self._command_publisher is None:
                 self._command_publisher = self.create_publisher(
                     Twist, self._cmd_vel_topic, 10
@@ -173,15 +178,6 @@ class PinkyStatusLed(Node):
         self._blink_on = not self._blink_on
         color = RED if self._latched else YELLOW
         self._set_led(color if self._blink_on else OFF)
-
-    def _update_charge_blink(self) -> None:
-        if self._latched or self._charge_blink_steps == 0:
-            return
-        self._charge_blink_steps -= 1
-        if self._charge_blink_steps == 0:
-            self._show_battery()
-            return
-        self._set_led(OFF if self._charge_blink_steps % 2 else GREEN)
 
     def _show_battery(self) -> None:
         self._set_led(

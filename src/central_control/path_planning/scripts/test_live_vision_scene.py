@@ -643,6 +643,95 @@ def main() -> int:
             preference="ordered",
             candidate_limit=4,
         )
+        # START에서 입차 버튼을 누르면 비어 있는 C1/C2보다 P5~P8 정책이
+        # 우선한다. 이전 자동 충전 배정 때문에 START→C로 가던 회귀를 막는다.
+        entry_button_localizer = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(120.0, 120.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            waiting_parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=start_waiting_policy,
+            command_driven_routes=True,
+        )
+        start_scene = entry_button_localizer.observe(
+            [detection((120.0, 120.0), 0.90, track_id=7)],
+            (800, 1600),
+            frame_index=13,
+            observed_at_unix_sec=103.0,
+        )
+        assert start_scene.planning_request is None
+        accepted, message = entry_button_localizer.request_route_command(
+            7, "entry", start_scene.tracked_vehicles
+        )
+        assert accepted, message
+        entry_button_scene = entry_button_localizer.observe(
+            [detection((120.0, 120.0), 0.90, track_id=7)],
+            (800, 1600),
+            frame_index=14,
+            observed_at_unix_sec=103.1,
+        )
+        assert entry_button_scene.planning_request is not None
+        assert entry_button_scene.planning_request.slot_name == "P5"
+        assert entry_button_scene.planning_request.assignment_policy == (
+            "entry_to_parking"
+        )
+
+        # P5~P8에 도착한 뒤에는 입차 단계가 경로를 더 만들지 않고, 충전
+        # 버튼을 눌렀을 때만 C2(점유 시 C1) 경로로 전환한다.
+        charge_button_localizer = SceneLocalizer(
+            EgoVehicleTracker(
+                transform,
+                rear_axle_offset_cm=4.0,
+                initial_center_bev_px=(900.0, 700.0),
+                initial_yaw_rad=math.radians(40.0),
+                position_alpha=1.0,
+                yaw_alpha=1.0,
+            ),
+            waiting_parking,
+            vehicle_state_manager=VehicleStateManager(transform),
+            charge_coordinator=ChargeEpisodeCoordinator(("C2", "C1")),
+            parking_assignment=start_waiting_policy,
+            command_driven_routes=True,
+        )
+        p5_ego = detection((900.0, 700.0), 0.90, track_id=7)
+        p5_scene = charge_button_localizer.observe(
+            [p5_ego],
+            (800, 1600),
+            frame_index=15,
+            observed_at_unix_sec=103.2,
+        )
+        assert p5_scene.planning_request is None
+        accepted, message = charge_button_localizer.request_route_command(
+            7, "entry", p5_scene.tracked_vehicles
+        )
+        assert accepted, message
+        parked_scene = charge_button_localizer.observe(
+            [p5_ego],
+            (800, 1600),
+            frame_index=16,
+            observed_at_unix_sec=103.3,
+        )
+        assert parked_scene.planning_request is None
+        accepted, message = charge_button_localizer.request_route_command(
+            7, "charge", parked_scene.tracked_vehicles
+        )
+        assert accepted, message
+        charge_button_scene = charge_button_localizer.observe(
+            [p5_ego],
+            (800, 1600),
+            frame_index=17,
+            observed_at_unix_sec=103.4,
+        )
+        assert charge_button_scene.planning_request is not None
+        assert charge_button_scene.planning_request.slot_name == "C2"
+
         start_waiting_scene = SceneLocalizer(
             EgoVehicleTracker(
                 transform,
@@ -763,7 +852,7 @@ def main() -> int:
         assert episode_scene.planning_request is not None
         assert episode_scene.planning_request.slot_name == "C2"
 
-        # C2에 실제로 도착한 ego가 space 충전 완료 이벤트를 받으면, 아직
+        # C2에 실제로 도착한 ego가 웹의 주차칸 이동 요청을 받으면, 아직
         # 화면상 C2에 있어도 C2 재계획 대신 P1~P4 대기 주차 단계로 전환한다.
         post_charge_policy = ParkingAssignmentPolicy(
             name="charge_to_exit",
@@ -793,10 +882,10 @@ def main() -> int:
             [c2_ego], (800, 1600), frame_index=14, observed_at_unix_sec=104.0
         )
         assert charging_scene.planning_request is None
-        completed, message = post_charge_localizer.complete_charging(
-            42, charging_scene.tracked_vehicles
+        completed, message = post_charge_localizer.request_route_command(
+            42, "park", charging_scene.tracked_vehicles
         )
-        assert completed and "충전이 완료되었습니다" in message
+        assert completed, message
         post_charge_scene = post_charge_localizer.observe(
             [c2_ego], (800, 1600), frame_index=15, observed_at_unix_sec=104.1
         )

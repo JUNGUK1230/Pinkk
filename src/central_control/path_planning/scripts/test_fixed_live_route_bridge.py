@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+import math
 import sys
 import time
 
@@ -149,6 +150,7 @@ def main() -> int:
             SimpleNamespace(
                 x_cm=float(c1_goal[0]),
                 y_cm=float(c1_goal[1]),
+                yaw_rad=float(c1_goal[2]),
             ),
         )
     )
@@ -156,6 +158,17 @@ def main() -> int:
     c1_scene.planning_request = None
     # 기존 C1 종점은 새 종점에서 3cm 떨어져 있다. 주차칸에 이미 겹쳤어도
     # 완료 반경 2.5cm 밖이면 경로를 유지해야 한다.
+    arrival_controller.update(c1_scene, route_revision=0)
+    assert arrival_controller.outcome is not None
+    assert arrival_controller._active_key is not None
+    assert not arrival_controller.consume_invalidation()
+    # 위치가 정확해도 차체가 비뚤어져 있으면 MPC가 마지막 자세를 맞출 수
+    # 있도록 기존 trajectory를 유지해야 한다.
+    c1_scene.vehicle = SimpleNamespace(
+        track_id=7,
+        center_cm=(float(c1_goal[0]), float(c1_goal[1])),
+        yaw_rad=float(c1_goal[2]) + math.radians(20.0),
+    )
     arrival_controller.update(c1_scene, route_revision=0)
     assert arrival_controller.outcome is not None
     assert arrival_controller._active_key is not None

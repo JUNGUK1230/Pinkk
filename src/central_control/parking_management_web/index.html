@@ -39,8 +39,8 @@
 <section class="panel"><div class="panel-head"><div><div class="title">주차장 실시간 관제</div><div class="sub">YOLO BEV 객체 인식과 LiDAR 맵을 동시에 표시</div></div><div class="tools"><button class="tool" onclick="refreshFeeds()">새로고침</button><button class="tool" onclick="toggleFullscreen()">전체화면</button></div></div>
 <div class="monitor-grid" id="monitorGrid"><div class="monitor"><div class="monitor-title"><span>YOLO BEV</span><span class="monitor-live">● LIVE</span></div><img id="yoloFeed" alt="YOLO BEV 화면"></div><div class="monitor"><div class="monitor-title"><span>LiDAR MAP</span><span class="monitor-live">● LIVE</span></div><img id="lidarFeed" alt="LiDAR 맵 화면"></div></div></section>
 <section class="fleet">
-<section class="panel"><div class="panel-head"><div><div class="title">PINKY_01</div><div class="sub">/pinkk/vehicle_1 · vehicle_1 · PINKY-001</div></div><span id="batteryState1" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar1" class="fill" style="width:0%"></div></div><span id="batteryText1" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage1" class="value">-- V</span><span class="value">pinky_01</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(1,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(1,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(1,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(1,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(1,'pause')">일시 정지</button><button class="robot-control danger" onclick="sendRobotCommand(1,'emergency_stop')">긴급 정지</button></div></div></section>
-<section class="panel"><div class="panel-head"><div><div class="title">PINKY_02</div><div class="sub">/pinkk/vehicle_2 · vehicle_2 · PINKY-002</div></div><span id="batteryState2" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar2" class="fill" style="width:0%"></div></div><span id="batteryText2" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage2" class="value">-- V</span><span class="value">pinky_02</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(2,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(2,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(2,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(2,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(2,'pause')">일시 정지</button><button class="robot-control danger" onclick="sendRobotCommand(2,'emergency_stop')">긴급 정지</button></div></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_01</div><div class="sub">/pinkk/vehicle_1 · vehicle_1 · PINKY-001</div></div><span id="batteryState1" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar1" class="fill" style="width:0%"></div></div><span id="batteryText1" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage1" class="value">-- V</span><span class="value">pinky_01</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(1,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(1,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(1,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(1,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(1,'park')">주차칸으로 이동</button><button class="robot-control danger" onclick="sendRobotCommand(1,'emergency_stop')">긴급 정지</button></div></div></section>
+<section class="panel"><div class="panel-head"><div><div class="title">PINKY_02</div><div class="sub">/pinkk/vehicle_2 · vehicle_2 · PINKY-002</div></div><span id="batteryState2" class="badge">연결 대기</span></div><div class="vehicle"><div class="row"><span class="label">배터리</span><div class="battery"><div id="batteryBar2" class="fill" style="width:0%"></div></div><span id="batteryText2" class="value">--%</span></div><div class="row"><span class="label">전압</span><span id="batteryVoltage2" class="value">-- V</span><span class="value">pinky_02</span></div><div class="robot-controls"><button class="robot-control" onclick="sendRobotCommand(2,'entry')">입차</button><button class="robot-control" onclick="sendRobotCommand(2,'exit')">출차</button><button class="robot-control" onclick="sendRobotCommand(2,'charge')">충전</button><button class="robot-control" onclick="sendRobotCommand(2,'replan')">경로 재생성</button><button class="robot-control" onclick="sendRobotCommand(2,'park')">주차칸으로 이동</button><button class="robot-control danger" onclick="sendRobotCommand(2,'emergency_stop')">긴급 정지</button></div></div></section>
 </section>
 <section class="summary"><article class="sum"><small>전체 주차면</small><strong id="totalParkingSlots">--</strong><p>일반 주차구역</p></article><article class="sum"><small>사용 중</small><strong id="occupiedParkingSlots">--</strong><p id="occupancyPercent">점유율 --%</p></article><article class="sum"><small>충전 가능</small><strong id="chargingAvailability">-- / --</strong><p>실시간 충전구역 상태</p></article><article class="sum"><small>입구 공간</small><strong id="entranceSpaceState">--</strong><p id="entranceVehicleIds">YOLO 판정 대기</p></article><article class="sum"><small>출구 공간</small><strong id="exitSpaceState">--</strong><p id="exitVehicleIds">YOLO 판정 대기</p></article><article class="sum"><small>등록 로봇</small><strong>2</strong><p>PINKY_01 · PINKY_02</p></article></section>
 <section class="panel"><div class="panel-head"><div><div class="title">경로 생성 현황</div><div class="sub">Hybrid A* 경로 계획 및 임무 진행 상태</div></div></div><div class="route"><div class="route-line"><span>담당 로봇</span><strong id="activeRobot">PINKY_01</strong></div><div class="route-line"><span>현재 상태</span><strong id="sceneStatus">중앙제어 연결 대기</strong></div><div class="route-line"><span>목적지</span><strong id="targetSlot">--</strong></div><div class="route-line"><span>경로 상태</span><strong id="routeStatus" style="color:#8fb5ff">연결 대기</strong></div><div class="route-line"><span>예상 완료</span><strong id="estimatedCompletion">--</strong></div><div class="progress"><div></div></div></div></section>
@@ -111,7 +111,7 @@ async function shutdownServer(){
 const centralControlTopic='/pinkk/web/control';
 const commandPriorities={
   emergency_stop:1,
-  pause:2,
+  park:2,
   replan:3,
   exit:4,
   charge:5,
@@ -119,7 +119,7 @@ const commandPriorities={
 };
 const requestEventCatalog={
   emergency_stop_requested:['system','긴급 정지 요청','critical'],
-  pause_requested:['system','일시 정지 요청','warning'],
+  parking_move_requested:['parking','주차칸 이동 요청','info'],
   manual_entry_requested:['access','입차 요청','info'],
   manual_exit_requested:['access','출차 요청','info'],
   charging_requested:['charging','충전 요청','info'],
@@ -217,7 +217,7 @@ function showReceivedEvent(event){
 }
 let commandToastTimer;
 function showCommandNotification(robot,command){
-  const labels={entry:'입차',exit:'출차',charge:'충전',replan:'경로 재생성',pause:'일시 정지',emergency_stop:'긴급 정지'};
+  const labels={entry:'입차',exit:'출차',charge:'충전',replan:'경로 재생성',park:'주차칸으로 이동',emergency_stop:'긴급 정지'};
   const toast=document.getElementById('commandToast');
   clearTimeout(commandToastTimer);
   toast.innerHTML=`<strong>PINKY_0${robot}</strong>${labels[command]||command} 요청을 접수했습니다.`;
@@ -353,11 +353,13 @@ async function sendRobotCommand(robot,command){
     replan:'경로 생성 중',
     entry:'입차 중',
     exit:'출차 중',
-    charge:'충전 중'
+    charge:'충전 중',
+    park:'주차칸 이동 중'
   };
-  if(statusByCommand[command])showRobotStatus(robot,statusByCommand[command]);
-  if(command==='pause')showRobotStatus(robot,'일시 정지',{persistent:true});
-  const lcdStatus=statusByCommand[command]||(command==='pause'?'일시 정지':null);
+  if(statusByCommand[command]){
+    showRobotStatus(robot,statusByCommand[command],{persistent:command==='charge'});
+  }
+  const lcdStatus=statusByCommand[command]||null;
   if(lcdStatus){
     rosSend({
       op:'publish',
@@ -368,7 +370,7 @@ async function sendRobotCommand(robot,command){
   }
   const eventByCommand={
     emergency_stop:['system','emergency_stop_requested'],
-    pause:['system','pause_requested'],
+    park:['parking','parking_move_requested'],
     entry:['access','manual_entry_requested'],
     exit:['access','manual_exit_requested'],
     charge:['charging','charging_requested'],

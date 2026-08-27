@@ -280,11 +280,22 @@ class IntegratedPlanningController:
         self,
         route_selector: object,
         completion_radius_cm: float = 3.0,
+        completion_yaw_tolerance_deg: float = 8.0,
     ) -> None:
         if not math.isfinite(completion_radius_cm) or completion_radius_cm <= 0.0:
             raise ValueError("route completion radius must be positive and finite")
+        if (
+            not math.isfinite(completion_yaw_tolerance_deg)
+            or completion_yaw_tolerance_deg <= 0.0
+        ):
+            raise ValueError(
+                "route completion yaw tolerance must be positive and finite"
+            )
         self.route_selector = route_selector
         self.completion_radius_cm = float(completion_radius_cm)
+        self.completion_yaw_tolerance_rad = math.radians(
+            float(completion_yaw_tolerance_deg)
+        )
         self._executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="pinkk-fixed-route",
@@ -308,6 +319,29 @@ class IntegratedPlanningController:
         if self.outcome is not None:
             return "Fixed route ready and published"
         return "waiting for vehicle section and target"
+
+    def _goal_reached(self, vehicle: object, trajectory: tuple[object, ...]) -> bool:
+        """위치와 차체 방향이 모두 맞은 경우에만 중앙 경로를 완료한다."""
+        if not trajectory:
+            return False
+        goal = trajectory[-1]
+        goal_distance_cm = math.hypot(
+            float(getattr(goal, "x_cm")) - vehicle.center_cm[0],
+            float(getattr(goal, "y_cm")) - vehicle.center_cm[1],
+        )
+        goal_yaw_error = abs(
+            (
+                float(getattr(goal, "yaw_rad"))
+                - float(vehicle.yaw_rad)
+                + math.pi
+            )
+            % (2.0 * math.pi)
+            - math.pi
+        )
+        return (
+            goal_distance_cm <= self.completion_radius_cm
+            and goal_yaw_error <= self.completion_yaw_tolerance_rad
+        )
 
     def update(
         self,
@@ -333,12 +367,7 @@ class IntegratedPlanningController:
             if not trajectory:
                 self.invalidate()
                 return
-            goal = trajectory[-1]
-            goal_distance_cm = math.hypot(
-                float(getattr(goal, "x_cm")) - scene.vehicle.center_cm[0],
-                float(getattr(goal, "y_cm")) - scene.vehicle.center_cm[1],
-            )
-            if goal_distance_cm <= self.completion_radius_cm:
+            if self._goal_reached(scene.vehicle, trajectory):
                 completed_target = self._active_key[1]
                 self.invalidate()
                 if forced_target == completed_target:
@@ -369,12 +398,7 @@ class IntegratedPlanningController:
                 if not trajectory:
                     self.invalidate()
                     return
-                goal = trajectory[-1]
-                goal_distance_cm = math.hypot(
-                    float(getattr(goal, "x_cm")) - scene.vehicle.center_cm[0],
-                    float(getattr(goal, "y_cm")) - scene.vehicle.center_cm[1],
-                )
-                if goal_distance_cm <= self.completion_radius_cm:
+                if self._goal_reached(scene.vehicle, trajectory):
                     self.invalidate()
                 return
             detector = getattr(self.route_selector, "detect_location", None)
@@ -675,6 +699,7 @@ def detections_from_result(
 
 def build_localizer(
     config: dict[str, object],
+    command_driven_routes: bool = False,
 ) -> tuple[SceneLocalizer, AffineBevToLidar]:
     transform = AffineBevToLidar(resolve_path(str(config["registration_path"])))
     initial_center_value = config.get("initial_ego_center_bev_px")
@@ -762,6 +787,7 @@ def build_localizer(
             parking_assignment=parking_assignment,
             post_charge_parking_assignment=post_charge_parking_assignment,
             vehicle_min_confidence=vehicle_min_confidence,
+            command_driven_routes=command_driven_routes,
         ),
         transform,
     )
@@ -1210,7 +1236,13 @@ def main() -> int:
         camera_matrix, dist_coeffs, homography, bev_width, bev_height = (
             load_camera_geometry(config)
         )
-        localizer, transform = build_localizer(config)
+        ros_publish_enabled = (
+            not args.no_ros and bool(config.get("ros_publish_enabled", True))
+        )
+        localizer, transform = build_localizer(
+            config,
+            command_driven_routes=ros_publish_enabled,
+        )
         model_path = resolve_path(str(config["model_path"]))
         model = YOLO(str(model_path))
         if model.task != "segment":
@@ -1220,9 +1252,6 @@ def main() -> int:
         write_runtime_files = bool(config.get("write_runtime_files", False))
         output_path = resolve_path(str(config["scene_output_path"]))
         bev_output_path = resolve_path(str(config["bev_output_path"]))
-        ros_publish_enabled = (
-            not args.no_ros and bool(config.get("ros_publish_enabled", True))
-        )
         lidar_map_path = resolve_path(str(config["lidar_map_path"]))
         ros_publisher = (
             DirectRosPublisher(
@@ -1331,17 +1360,20 @@ def main() -> int:
         print(
             "Manual vehicle selection enabled | TAB: camera vehicle | "
             "1/2: bind vehicle namespace | A: automatic matching | "
-            "SPACE: charge complete | q/ESC: quit"
+            "SPACE: parking move fallback | q/ESC: quit"
         )
     else:
         print(
             "Automatic vehicle selection enabled | TAB: camera vehicle | "
-            "1/2: manual bind | SPACE: charge complete | q/ESC: quit"
+            "1/2: manual bind | SPACE: parking move fallback | q/ESC: quit"
         )
     planning_controller = IntegratedPlanningController(
         route_selector,
         completion_radius_cm=float(
             config.get("route_completion_radius_cm", 3.0)
+        ),
+        completion_yaw_tolerance_deg=float(
+            config.get("route_completion_yaw_tolerance_deg", 8.0)
         ),
     )
     route_publish_scheduler = RoutePublishScheduler(
@@ -1353,6 +1385,7 @@ def main() -> int:
     )
     replan_revision = 0
     forced_route_targets: dict[str, str] = {}
+    pending_route_commands: dict[str, str] = {}
     pending_replan_vehicle_ids: set[str] = set()
     automatic_target_initialized = False
     automatic_identity_lock = AutomaticIdentityLock()
@@ -1496,8 +1529,10 @@ def main() -> int:
                     selected_vehicle_id, requested_command = path_target_request
                     if requested_command == "exit":
                         forced_route_targets[selected_vehicle_id] = "EXIT"
-                    elif requested_command in {"entry", "charge"}:
+                        pending_route_commands.pop(selected_vehicle_id, None)
+                    elif requested_command in {"entry", "charge", "park"}:
                         forced_route_targets.pop(selected_vehicle_id, None)
+                        pending_route_commands[selected_vehicle_id] = requested_command
                     if requested_command == "replan":
                         # 현재 section이 확정된 뒤 endpoint 재선택과 TRANSIT
                         # 마지막 경로 재발행 중 하나를 선택한다.
@@ -1581,6 +1616,21 @@ def main() -> int:
                     and scene.vehicle is not None
                     and scene.vehicle.track_id == target_track_id
                 )
+            route_command_applied = False
+            if ros_publisher is not None and identity_ready:
+                active_vehicle_id = ros_publisher.active_vehicle_id
+                route_command = pending_route_commands.pop(active_vehicle_id, None)
+                if route_command is not None and target_track_id is not None:
+                    accepted, message = localizer.request_route_command(
+                        target_track_id,
+                        route_command,
+                        scene.tracked_vehicles,
+                    )
+                    route_command_applied = True
+                    print(
+                        "Route command "
+                        f"{'accepted' if accepted else 'rejected'}: {message}"
+                    )
             forced_route_target = (
                 forced_route_targets.get(ros_publisher.active_vehicle_id)
                 if ros_publisher is not None
@@ -1622,7 +1672,7 @@ def main() -> int:
                 pending_replan_vehicle_ids.discard(
                     ros_publisher.active_vehicle_id
                 )
-            if identity_ready:
+            if identity_ready and not route_command_applied:
                 planning_controller.update(
                     scene,
                     replan_revision,

@@ -43,6 +43,9 @@ realtime_localization:
   # 차체가 주차칸에 일부 겹친 것만으로 경로를 지우지 않고, 고정 경로의 실제
   # 마지막 rear-axle 점에 이 거리 이내로 도착했을 때만 완료 처리한다.
   route_completion_radius_cm: 3.0
+  # 목표 위치 안에 들어와도 차체가 비뚤어져 있으면 실행 경로를 유지한다.
+  # MPC의 최종 yaw 허용값 6도보다 조금 넓혀 카메라 측정 흔들림만 허용한다.
+  route_completion_yaw_tolerance_deg: 8.0
 
   # 2026-07-27 확인: 상단 USB Camera는 /dev/video3 (1920x1080 MJPG)다.
   # USB 재연결 후 번호가 달라지면 `v4l2-ctl --list-devices`로 다시 확인한다.

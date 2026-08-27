@@ -94,11 +94,13 @@ class PinkyStatusLcd(Node):
             "입차 중": ((255, 255, 255), 58),
             "출차 중": ((255, 255, 255), 58),
             "충전 중": ((80, 220, 120), 58),
+            "주차칸 이동 중": ((255, 255, 255), 44),
             "일시 정지": ((255, 190, 0), 52),
         }
         if text not in styles:
             return
-        self._persistent_status = text == "일시 정지"
+        # 충전 상태는 다음 주행 상태 명령이 올 때까지 화면에 유지한다.
+        self._persistent_status = text in {"충전 중", "일시 정지"}
         self._status_until = float("inf") if self._persistent_status else time.monotonic() + 5.0
         color, size = styles[text]
         self._show_text(text, color, size, f"status:{text}")

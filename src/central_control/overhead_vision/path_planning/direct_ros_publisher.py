@@ -34,7 +34,7 @@ LIDAR_IMAGE_TOPIC = "/pinkk/lidar_map/image"
 USER_BEV_IMAGE_TOPIC = "/pinkk/camera_bev/image"
 MANAGEMENT_STATUS_TOPIC = "/pinkk/management/status"
 CONTROL_REQUEST_TOPIC = "/pinkk/web/control"
-PATH_COMMANDS = frozenset(("entry", "exit", "charge", "replan"))
+PATH_COMMANDS = frozenset(("entry", "exit", "charge", "park", "replan"))
 TRAJECTORY_FIELDS = (
     "x_m",
     "y_m",

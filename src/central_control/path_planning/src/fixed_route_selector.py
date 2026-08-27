@@ -48,47 +48,18 @@ class FixedRouteSelector:
             self.config = yaml.safe_load(file)
         if self.config.get("trajectory_reference") != "vehicle_center":
             raise ValueError("fixed route trajectory reference must be vehicle_center")
+        if self.config.get("waypoint_reference") != "vehicle_center":
+            raise ValueError("fixed route waypoint reference must be vehicle_center")
         self.rear_axle_to_center_cm = float(
             self.config["rear_axle_to_center_cm"]
         )
         if self.rear_axle_to_center_cm < 0.0:
             raise ValueError("rear_axle_to_center_cm must not be negative")
-        self.rear_axle_endpoints = self.config["endpoints"]
-        self.endpoints = {
-            name: {
-                **endpoint,
-                **(
-                    {
-                        "staging": list(
-                            self.to_vehicle_center_pose(endpoint["staging"])
-                        )
-                    }
-                    if "staging" in endpoint
-                    else {}
-                ),
-                **(
-                    {
-                        "goal": list(
-                            self.to_vehicle_center_pose(endpoint["goal"])
-                        )
-                    }
-                    if "goal" in endpoint
-                    else {}
-                ),
-            }
-            for name, endpoint in self.rear_axle_endpoints.items()
-        }
+        # YAML endpoint poses and generated CSV trajectories now share the same
+        # vehicle-center reference, so localization can compare them directly.
+        self.endpoints = self.config["endpoints"]
         self.allowed_transitions = self.config["allowed_transitions"]
         self.endpoint_radius_cm = endpoint_radius_cm
-
-    def to_vehicle_center_pose(self, pose: list[float] | Pose) -> Pose:
-        """Rear-axle pose를 동일 yaw의 vehicle-center pose로 변환한다."""
-        x_cm, y_cm, yaw_rad = map(float, pose)
-        return (
-            x_cm + self.rear_axle_to_center_cm * math.cos(yaw_rad),
-            y_cm + self.rear_axle_to_center_cm * math.sin(yaw_rad),
-            yaw_rad,
-        )
 
     def detect_location(self, pose: Pose) -> str:
         """Return a known endpoint name or ``TRANSIT`` for a road position."""

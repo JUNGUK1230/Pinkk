@@ -26,7 +26,9 @@ def main() -> int:
     cases = (
         ("START", "C2"),
         ("P8", "C1"),
-        ("C2", "P3"),
+        *((charger, parking) for charger in ("C1", "C2") for parking in (
+            "P1", "P2", "P3", "P4",
+        )),
         *((source, "EXIT") for source in (
             "P1", "P2", "P3", "P4",
             "P5", "P6", "P7", "P8",

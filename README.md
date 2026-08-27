@@ -55,7 +55,7 @@ cd "$(git rev-parse --show-toplevel)"
 | 사용자 웹 | 시험 구현 | 입차/출차 요청, 배터리, BEV 스트림 |
 | 온라인 Hybrid A* | 진단용 | 운영 중에는 탐색하지 않고 고정 경로를 사용 |
 | 로봇팔 | 골격만 존재 | 설정과 디렉터리만 있으며 동작 파이프라인은 미구현 |
-| 통합 명령 중재기 | 일부 구현 | `entry/exit/charge/replan`은 처리, 일반 `pause` 중재와 이벤트 노드는 미완성 |
+| 통합 명령 중재기 | 일부 구현 | `entry/exit/charge/park/replan` 경로 요청 처리, 별도 이벤트 노드는 미완성 |
 
 ## 2. 전체 구조와 데이터 흐름
 
@@ -668,8 +668,7 @@ MPC YAML을 실행 중 저장하면 1초 안에 전체 값을 검증한 뒤 원�
   parking polygon, endpoint와 모든 고정 경로를 다시 검증해야 합니다.
 - 동적 장애물을 MPC 최적화 안에 넣지는 않습니다. 현재는 진행 방향 LaserScan
   sector의 비상정지로 처리합니다.
-- `pause` 요청의 완전한 중앙 중재와 별도 management event publisher는 아직
-  구현되지 않았습니다.
+- 별도 management event publisher는 아직 구현되지 않았습니다.
 - 사용자 웹은 운영 모드(`debug=False`)로 실행되지만 Flask 내장 서버이므로 외부
   인터넷에 직접 공개하지 않고 주차장 내부망에서 사용합니다.
 - 로봇팔은 아직 실제 자동 주차 흐름에 연결되어 있지 않습니다.

@@ -818,6 +818,7 @@ class SceneLocalizer:
         parking_assignment: ParkingAssignmentPolicy | None = None,
         post_charge_parking_assignment: ParkingAssignmentPolicy | None = None,
         vehicle_min_confidence: float = 0.0,
+        command_driven_routes: bool = False,
     ) -> None:
         if not 0.0 <= vehicle_min_confidence <= 1.0:
             raise ValueError("vehicle_min_confidence must be in [0, 1]")
@@ -830,11 +831,13 @@ class SceneLocalizer:
         self.goal_heading_weight_cm = goal_heading_weight_cm
         self.target_slot_name = target_slot_name
         self.parking_assignment = parking_assignment
-        # 충전 완료는 YOLO만으로 알 수 없는 외부 이벤트다. 현재는 운영자가
-        # space를 눌러 전달하며, 해당 track_id만 P1~P4 대기 주차 단계로 넘긴다.
+        # 충전 완료는 YOLO만으로 알 수 없는 외부 이벤트다. 운영자의 웹 버튼
+        # 또는 SPACE fallback으로 해당 track_id만 P1~P4 주차 단계로 넘긴다.
         self.post_charge_parking_assignment = post_charge_parking_assignment
         self.vehicle_min_confidence = vehicle_min_confidence
+        self.command_driven_routes = bool(command_driven_routes)
         self._charge_completed_vehicle_ids: set[int] = set()
+        self._route_commands: dict[int, str] = {}
 
     def select_next_ego(self) -> tuple[bool, str]:
         changed, message = self.tracker.select_next_ego()
@@ -878,11 +881,44 @@ class SceneLocalizer:
                 f"(state={vehicle.state})",
             )
         self._charge_completed_vehicle_ids.add(vehicle_track_id)
+        self._route_commands[vehicle_track_id] = "park"
         return (
             True,
             "충전이 완료되었습니다. "
             f"track_id={vehicle_track_id}의 P1~P4 대기 주차 경로를 생성합니다.",
         )
+
+    def request_route_command(
+        self,
+        vehicle_track_id: int,
+        command: str,
+        tracked_vehicles: Sequence[TrackedVehicleObservation],
+    ) -> tuple[bool, str]:
+        """웹 명령을 선택 차량의 명시적인 운행 단계로 저장한다."""
+        if command not in {"entry", "charge", "park"}:
+            return False, f"지원하지 않는 경로 명령입니다: {command}"
+        track_id = int(vehicle_track_id)
+        self._route_commands[track_id] = command
+        vehicle = next(
+            (item for item in tracked_vehicles if item.track_id == track_id),
+            None,
+        )
+        if command in {"entry", "charge"}:
+            self._charge_completed_vehicle_ids.discard(track_id)
+        if command == "charge" and self.charge_coordinator is not None:
+            self.charge_coordinator.select_vehicle(track_id)
+        if command == "park":
+            if vehicle is None or vehicle.state != "charging":
+                self._charge_completed_vehicle_ids.discard(track_id)
+                state = "unknown" if vehicle is None else vehicle.state
+                return (
+                    False,
+                    "주차칸 이동 요청 실패: 차량이 C1/C2에 있지 않습니다 "
+                    f"(state={state})",
+                )
+            self._charge_completed_vehicle_ids.add(track_id)
+        state = "unknown" if vehicle is None else vehicle.state
+        return True, f"track_id={track_id} command={command} state={state}"
 
     def observe(
         self,
@@ -962,7 +998,41 @@ class SceneLocalizer:
             ),
             None,
         )
+        route_command = self._route_commands.get(vehicle.track_id)
         post_charge_requested = vehicle.track_id in self._charge_completed_vehicle_ids
+        if self.command_driven_routes and route_command is None:
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "waiting for an entry, charge, or parking move command",
+                tracked_vehicles,
+                charge_assignment,
+            )
+        if route_command == "entry" and current_vehicle_state == "waiting_for_charge":
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "entry completed; vehicle is waiting in P5~P8",
+                tracked_vehicles,
+                charge_assignment,
+            )
+        if route_command == "park" and not post_charge_requested:
+            return SceneObservation(
+                frame_index,
+                observed_at,
+                vehicle,
+                slots,
+                None,
+                "parking move requires the vehicle to be in C1/C2",
+                tracked_vehicles,
+                charge_assignment,
+            )
         # 충전칸에 실제로 정차한 차량은 충전 완료 이벤트 전까지 다음 목적지를
         # 받으면 안 된다. coordinator에 새 배정 후보가 없는 경우에도 기존
         # 일반 주차 정책으로 빠지는 것을 여기서 막는다.
@@ -1017,7 +1087,8 @@ class SceneLocalizer:
             candidate_slot_names = tuple(slot.name for slot in empty_slots)
             assignment_policy = self.post_charge_parking_assignment.name
         elif (
-            charge_assignment is not None
+            route_command != "entry"
+            and charge_assignment is not None
             and charge_assignment.status == "waiting_for_charge_slot"
             and current_vehicle_state == "waiting_for_charge"
         ):
@@ -1034,7 +1105,8 @@ class SceneLocalizer:
                 charge_assignment,
             )
         elif (
-            charge_assignment is not None
+            route_command != "entry"
+            and charge_assignment is not None
             and charge_assignment.status == "assigned_to_charge"
             and vehicle.track_id != charge_assignment.vehicle_track_id
         ):
@@ -1052,7 +1124,8 @@ class SceneLocalizer:
                 charge_assignment,
             )
         elif (
-            charge_assignment is not None
+            route_command != "entry"
+            and charge_assignment is not None
             and charge_assignment.status == "assigned_to_charge"
             and charge_assignment.target_slot_name is not None
         ):

@@ -198,11 +198,12 @@
     heading_feedback_deadband_deg: 2.0
     # [m] 전진 중 6mm 이내 횡오차는 카메라 흔들림으로 무시한다.
     cross_track_deadband_m: 0.006
-    # 후진 주차에서만 전진보다 강한 위치·헤딩 보정을 적용한다.
+    # 후진 주차에서만 전진보다 강한 위치·헤딩 보정을 적용한다. 미세
+    # 흔들림을 막기 위해 deadband는 유지하고 보정 gain만 소폭 높인다.
     reverse_cross_track_deadband_m: 0.006
     reverse_heading_feedback_deadband_deg: 2.0
-    reverse_cross_track_gain_scale: 1.20
-    reverse_heading_gain_scale: 1.15
+    reverse_cross_track_gain_scale: 1.28
+    reverse_heading_gain_scale: 1.22
     # [m] 횡오차 1.2cm까지는 정상속도를 유지한다.
     cross_track_slowdown_start_m: 0.012
     # [m] 횡오차가 4cm에 도달할 때 아래 최소 속도 비율까지 감속한다.

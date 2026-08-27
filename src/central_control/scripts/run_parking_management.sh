@@ -202,7 +202,7 @@ wait_for_vehicle_topics() {
     local all_ready
     local topic
     local count
-    echo "Waiting for Pinky battery and LiDAR publishers via static DDS peers..."
+    echo "Waiting for Pinky battery publishers via static DDS peers..."
     # Wi-Fi를 바꾼 뒤 남은 ros2 daemon이 이전 인터페이스를 계속 사용하지
     # 않도록 현재 discovery 환경으로 다시 시작한다.
     ros2 daemon stop >/dev/null 2>&1 || true
@@ -210,9 +210,7 @@ wait_for_vehicle_topics() {
         all_ready=true
         for topic in \
             /pinkk/vehicle_1/battery/percent \
-            /pinkk/vehicle_1/scan \
-            /pinkk/vehicle_2/battery/percent \
-            /pinkk/vehicle_2/scan; do
+            /pinkk/vehicle_2/battery/percent; do
             count="$(publisher_count "$topic")"
             if [[ ! "${count:-0}" =~ ^[1-9][0-9]*$ ]]; then
                 all_ready=false
@@ -220,17 +218,23 @@ wait_for_vehicle_topics() {
             fi
         done
         if $all_ready; then
-            echo "Both Pinky vehicles are visible on their battery and scan topics."
+            echo "Both Pinky vehicles are visible on their battery topics."
+            for topic in \
+                /pinkk/vehicle_1/scan \
+                /pinkk/vehicle_2/scan; do
+                count="$(publisher_count "$topic")"
+                if [[ ! "${count:-0}" =~ ^[1-9][0-9]*$ ]]; then
+                    echo "WARNING: $topic has no publisher; continuing without this LiDAR." >&2
+                fi
+            done
             return 0
         fi
         sleep 1
     done
-    echo "ERROR: Pinky ROS topics were not discovered within 40 seconds." >&2
+    echo "ERROR: Pinky battery topics were not discovered within 40 seconds." >&2
     for topic in \
         /pinkk/vehicle_1/battery/percent \
-        /pinkk/vehicle_1/scan \
-        /pinkk/vehicle_2/battery/percent \
-        /pinkk/vehicle_2/scan; do
+        /pinkk/vehicle_2/battery/percent; do
         echo "  $topic publishers=$(publisher_count "$topic")" >&2
     done
     return 1

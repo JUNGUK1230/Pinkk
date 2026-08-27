@@ -135,6 +135,9 @@ def main() -> int:
         '{"vehicle_id":"vehicle_1","command":"entry"}'
     ) == ("vehicle_1", "entry")
     assert parse_path_target_request(
+        '{"vehicle_id":"vehicle_1","command":"park"}'
+    ) == ("vehicle_1", "park")
+    assert parse_path_target_request(
         '{"vehicle_id":"vehicle_1","ros_namespace":"/pinkk/vehicle_2",'
         '"command":"entry"}'
     ) is None
